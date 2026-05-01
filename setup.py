@@ -281,12 +281,112 @@ def _check_schema():
     print(f"  Pipelines continue running with defaults for any missing fields.")
 
 
+def onboard():
+    """Run all backfill pipelines in sequence to populate the dashboard from day one.
+
+    Processes the last 30 days of emails and all available transcripts, then
+    warms the dashboard cache. Run this once after setup to get real data
+    immediately rather than waiting for the daily automated runs.
+
+    Usage:
+        python3 setup.py --onboard            # last 30 days
+        python3 setup.py --onboard --days 90  # last 90 days
+    """
+    import subprocess, time
+    section("--onboard  Populating dashboard from historical data")
+
+    cfg_dir = _config_target_dir()
+    pipeline_dir = _HERE
+
+    # Verify prerequisites
+    ctx_ok = (cfg_dir / "firm_context.yaml").exists()
+    cfg_ok = (cfg_dir / "firm_config.json").exists()
+    if not ctx_ok or not cfg_ok:
+        print(f"  {FAIL}  Config files missing. Run: python3 setup.py --fix first.")
+        sys.exit(1)
+
+    days = getattr(_args, "days", 30)
+    print(f"  Backfill window: {days} days")
+    print(f"  This will process emails, transcripts, and podcasts.")
+    print(f"  Expect 10-40 minutes depending on volume.\n")
+
+    results = {}
+
+    def _run(label: str, cmd: list):
+        print(f"\n{'─'*60}")
+        print(f"  ▶  {label}")
+        print(f"{'─'*60}")
+        start = time.time()
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=False,
+                cwd=str(pipeline_dir),
+                timeout=1800,  # 30 min per step
+            )
+            elapsed = int(time.time() - start)
+            ok = result.returncode == 0
+            results[label] = "✓" if ok else f"✗ (exit {result.returncode})"
+            print(f"\n  {'✓' if ok else '✗'}  {label} complete ({elapsed}s)")
+        except subprocess.TimeoutExpired:
+            results[label] = "✗ (timeout)"
+            print(f"\n  ✗  {label} timed out after 30 minutes")
+        except Exception as e:
+            results[label] = f"✗ ({e})"
+            print(f"\n  ✗  {label} failed: {e}")
+
+    # Step 1 — Email backfill
+    _run(
+        "Email triage (last {days} days)".format(days=days),
+        [sys.executable, str(pipeline_dir / "cos_gmail_mini_v2.py"),
+         "--backfill", f"{days}d"],
+    )
+
+    # Step 2 — Transcript backfill
+    _run(
+        "Transcript backfill (all available)",
+        [sys.executable, str(pipeline_dir / "cos_otter_backfill.py"), "--backfill"],
+    )
+
+    # Step 3 — Podcast backfill
+    _run(
+        "Podcast transcription (last {days} days)".format(days=days),
+        [sys.executable, str(pipeline_dir / "podcast_transcribe.py"), "--backfill"],
+    )
+
+    # Step 4 — Dashboard warmup
+    print(f"\n{'─'*60}")
+    print(f"  ▶  Dashboard cache warmup")
+    print(f"{'─'*60}")
+    try:
+        import urllib.request
+        urllib.request.urlopen("http://localhost:7777/warmup", timeout=10)
+        results["Dashboard warmup"] = "✓"
+        print(f"  {PASS}  Dashboard cache refreshed")
+    except Exception:
+        results["Dashboard warmup"] = "! (server not running — start it with setup_launchagents.sh)"
+        print(f"  {WARN}  Dashboard server not reachable — start it first")
+
+    # Summary
+    print(f"\n{'═'*60}")
+    print(f"  ONBOARDING COMPLETE")
+    print(f"{'═'*60}")
+    for label, status in results.items():
+        icon = PASS if status == "✓" else (WARN if status.startswith("!") else FAIL)
+        print(f"  {icon}  {label}: {status}")
+    print()
+    print(f"  Open http://localhost:7777 to see your dashboard.")
+    print(f"  If tiles are sparse, more data will populate on the next automated run.")
+
+
 # Parse args before doing any validation
 _parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 _parser.add_argument("--fix",          action="store_true", help="Copy missing config files from templates")
 _parser.add_argument("--create-docs",  action="store_true", help="Auto-create required Google Docs and populate IDs into firm_config.json")
 _parser.add_argument("--demo",         action="store_true", help="Populate dashboard with synthetic data (no OAuth required)")
 _parser.add_argument("--check",        action="store_true", help="Check firm_context.yaml schema version and list new fields since last update")
+_parser.add_argument("--onboard",      action="store_true", help="Run all backfill pipelines to populate the dashboard from historical data")
+_parser.add_argument("--days",         type=int, default=30, help="Backfill window in days for --onboard (default 30)")
 _args = _parser.parse_args()
 
 if _args.fix:
@@ -303,6 +403,10 @@ if _args.demo:
 
 if _args.check:
     _check_schema()
+    sys.exit(0)
+
+if _args.onboard:
+    onboard()
     sys.exit(0)
 
 

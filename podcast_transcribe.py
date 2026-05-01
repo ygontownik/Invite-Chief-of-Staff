@@ -83,24 +83,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _usage import log_usage  # noqa: E402
 
-# ── Firm config (Package A — externalized podcast list and folder ID) ─────────
-_PIPELINE_DIR = Path.home() / "tomac-cove-pipeline"
+# ── Firm context and config ────────────────────────────────────────────────────
+_PIPELINE_DIR = Path(__file__).resolve().parent
 if str(_PIPELINE_DIR) not in sys.path:
     sys.path.insert(0, str(_PIPELINE_DIR))
 
-
-def _load_firm_config() -> dict:
-    """Load firm_config.json — returns {} if missing (script falls back to defaults)."""
-    cfg_path = _PIPELINE_DIR / "firm_config.json"
-    try:
-        import json as _json
-        with open(cfg_path) as f:
-            return _json.load(f)
-    except (FileNotFoundError, Exception):
-        return {}
-
-
-_FIRM_CFG = _load_firm_config()
+import _firm_context as _fc  # noqa: E402
+_CTX      = _fc.load_firm_context()
+_FIRM_CFG = _fc.load_firm_config()
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
@@ -136,15 +126,37 @@ DOC_INDEX_PATH   = os.path.expanduser("~/credentials/podcast_doc_index.json")
 CREDS_PATH       = os.path.expanduser("~/credentials/gdrive_credentials.json")
 TOKEN_PATH       = os.path.expanduser("~/credentials/gdrive_token.pickle")
 
-# Podcast feeds — loaded from firm_config.json["podcast_feeds"] with fallback
-# to the legacy hardcoded list for backwards compatibility on existing deploys.
-FEEDS = _FIRM_CFG.get("podcast_feeds") or {
-    "Catalyst":                "https://feeds.megaphone.fm/catalyst",
-    "Open Circuit":            "https://feeds.megaphone.fm/open-circuit",
-    "Energy Capital":          "https://api.substack.com/feed/podcast/1180283.rss",
-    "Infrastructure Investor": "https://feed.podbean.com/infrastructureinvestorpodcast/feed.xml",
-    "Energy Gang":             "https://rss.art19.com/the-energy-gang",
-}
+# Podcast feeds — priority order:
+#   1. personal.content_feeds.podcasts in firm_context.yaml  (per-person)
+#   2. podcast_feeds in firm_config.json                     (firm-level override)
+#   3. Built-in defaults                                     (fallback)
+#
+# personal.content_feeds.podcasts is a list of {name, rss} dicts.
+# Convert to the {name: rss_url} dict format used throughout this script.
+def _load_feeds() -> dict:
+    # 1. Personal feeds from firm_context.yaml
+    personal_podcasts = (
+        _CTX.get("personal", {})
+            .get("content_feeds", {})
+            .get("podcasts", [])
+    )
+    if personal_podcasts:
+        return {p["name"]: p["rss"] for p in personal_podcasts if p.get("name") and p.get("rss")}
+
+    # 2. Firm-level override from firm_config.json
+    if _FIRM_CFG.get("podcast_feeds"):
+        return _FIRM_CFG["podcast_feeds"]
+
+    # 3. Built-in defaults (original hardcoded list)
+    return {
+        "Catalyst":                "https://feeds.megaphone.fm/catalyst",
+        "Open Circuit":            "https://feeds.megaphone.fm/open-circuit",
+        "Energy Capital":          "https://api.substack.com/feed/podcast/1180283.rss",
+        "Infrastructure Investor": "https://feed.podbean.com/infrastructureinvestorpodcast/feed.xml",
+        "Energy Gang":             "https://rss.art19.com/the-energy-gang",
+    }
+
+FEEDS = _load_feeds()
 
 SUMMARY_DOC_NAME = "Podcast Summaries"
 BACKFILL_DAYS    = 28

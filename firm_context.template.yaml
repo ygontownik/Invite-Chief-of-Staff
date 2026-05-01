@@ -170,3 +170,80 @@ prompt_overrides:
   # Useful for firm-specific watch items that apply to all calls.
   # memo_focus_supplement: "Always flag any mention of FERC Order 1920 or DOE loan guarantees."
   memo_focus_supplement: ""
+
+# ── TRANSCRIPT SOURCES ─────────────────────────────────────────────────────────
+# Which recording services to scan for new transcripts.
+# Each team member configures this in their own copy of firm_context.yaml
+# to match their recording setup.
+#
+# Supported types:
+#   "google_drive_folder" — any service that syncs to Google Drive
+#                           (Otter AI, Beside AI, Fireflies, Grain, etc.)
+#   "local_folder"        — local directory (desktop recorder output, manual saves)
+#
+# The pipeline ONLY looks inside the folder_ids listed here.
+# Every other file in your Google Drive is untouched.
+#
+# If this section is omitted entirely, the pipeline falls back to the legacy
+# Otter AI folder IDs from drive-docs.yaml — so existing setups keep working.
+
+transcript_sources:
+  - type: "google_drive_folder"
+    name: "Otter AI"                          # label shown in logs and memo headers
+    folder_ids:
+      - "YOUR_OTTER_ROOT_FOLDER_ID"           # where Zapier drops new recordings
+      - "YOUR_OTTER_DEAL_FOLDER_ID"           # deal/investment calls subfolder
+      - "YOUR_OTTER_RECRUITING_FOLDER_ID"     # recruiting calls subfolder
+      - "YOUR_OTTER_OTHER_FOLDER_ID"          # other calls subfolder
+    root_folder_id: "YOUR_OTTER_ROOT_FOLDER_ID"  # files get moved out of here after triage
+    category_hint: "auto"                     # auto-detect category from content
+
+  # Add more sources as needed:
+  # - type: "google_drive_folder"
+  #   name: "Beside AI"
+  #   folder_ids:
+  #     - "YOUR_BESIDE_AI_FOLDER_ID"
+  #   category_hint: "auto"
+  #
+  # - type: "local_folder"
+  #   name: "Desktop Recorder"
+  #   path: "~/recordings"
+  #   category_hint: "auto"
+
+# ── PERSONAL CONTENT & BRIEFING ───────────────────────────────────────────────
+# Per-person configuration. Each team member sets this in their own copy of
+# firm_context.yaml (on their machine). Changes here do not need to be pushed
+# to the shared config repo — keep them local or push if the whole team shares
+# the same interests.
+#
+# podcast_feeds here ADDS TO (not replaces) any feeds in firm_config.json.
+# To override firm-level feeds entirely, set firm_config.json podcast_feeds to {}.
+
+personal:
+  content_feeds:
+    podcasts:
+      # Add RSS feeds you want transcribed and summarized daily
+      # - name: "Catalyst"
+      #   rss: "https://feeds.megaphone.fm/your-feed-url"
+      #   drive_doc_id: "GOOGLE_DOC_ID_FOR_SUMMARIES"  # optional — uses default if omitted
+      # - name: "Your Favorite Show"
+      #   rss: "https://example.com/feed.rss"
+    blogs:
+      # Add RSS/Atom feeds for blogs, newsletters, research sites
+      # Entries are fetched daily and appended to your briefing
+      # - name: "RBN Energy Daily"
+      #   url: "https://rbnenergy.com/feed"
+      #   type: "rss"
+      # - name: "Substack Newsletter"
+      #   url: "https://newsletter.substack.com/feed"
+      #   type: "rss"
+
+  daily_briefing:
+    enabled: true
+    delivery_email: ""          # defaults to principal email if blank
+    delivery_time: "07:30"      # local time HH:MM
+    include_sections:
+      - "podcasts"              # new podcast episodes transcribed overnight
+      - "calls_today"           # calls scheduled today (from calendar)
+      - "market_updates"        # blog/RSS items from content_feeds.blogs
+      - "cost_summary"          # weekly API spend (Fridays only)
