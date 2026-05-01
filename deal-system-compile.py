@@ -31,8 +31,8 @@ from pathlib import Path
 #   ~/dashboards/data/deals/           ← authoritative deal sources (YAML + xlsx)
 #   ~/dashboards/routines/compile/     ← this script + compile-dashboard.py + cos-briefing.py
 #   ~/dashboards/data/compiled/        ← JSON + briefing MD consumed by dashboards
-_HERE        = Path(__file__).resolve().parent       # ~/dashboards/routines/compile/
-_ROOT        = _HERE.parent.parent                   # ~/dashboards/
+_ROOT        = Path.home() / 'dashboards'            # ~/dashboards/ (hardcoded — symlink breaks __file__ inference)
+_HERE        = _ROOT / 'routines' / 'compile'        # ~/dashboards/routines/compile/
 DEAL_SYSTEM  = _ROOT / 'data' / 'deals'              # source-of-truth deal folders
 COMPILED_DIR = _ROOT / 'data' / 'compiled'           # dashboard-consumed outputs
 

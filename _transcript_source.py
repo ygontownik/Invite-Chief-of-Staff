@@ -127,6 +127,21 @@ class GoogleDriveFolderSource(TranscriptSource):
         self._root_folder_id: Optional[str] = cfg.get("root_folder_id")
         self._category_hint: str = cfg.get("category_hint", "auto")
 
+        # Optional: per-folder category hint overrides.
+        # Maps folder_id → category_hint. Useful when one source has subfolders
+        # by category (e.g. Otter AI root + deal + recruiting + other subfolders).
+        # Keys not in this dict fall back to self._category_hint.
+        # Accepted as both public config key and private key (legacy fallback path).
+        self._folder_hints: dict[str, str] = (
+            cfg.get("folder_hints") or cfg.get("_folder_hints") or {}
+        )
+
+        # Optional: maps detected category name → destination folder_id.
+        # When a file is processed from the root folder, it is moved to the
+        # matching subfolder. Omit to skip file moving.
+        # Example: {"Tomac Cove": "DEAL_FOLDER_ID", "Recruiting": "REC_FOLDER_ID"}
+        self._category_folders: dict[str, str] = cfg.get("category_folders") or {}
+
         # Validate
         if not self._folder_ids:
             raise ValueError(f"TranscriptSource '{self._name}': folder_ids must be a non-empty list")
@@ -138,6 +153,31 @@ class GoogleDriveFolderSource(TranscriptSource):
     @property
     def source_type(self) -> str:
         return "google_drive_folder"
+
+    def hint_for_folder(self, folder_id: str) -> str:
+        """Return the category hint for a specific folder_id.
+
+        Checks per-folder overrides first; falls back to the source-level hint.
+        """
+        return self._folder_hints.get(folder_id, self._category_hint)
+
+    def iter_folders(self) -> list[tuple[str, str, bool]]:
+        """Return [(folder_id, category_hint, is_root), ...] for all configured folders.
+
+        is_root is True for the triage/root folder — files processed from there
+        should be moved to a category subfolder afterwards (if category_folders is set).
+        """
+        return [
+            (fid, self.hint_for_folder(fid), fid == self._root_folder_id)
+            for fid in self._folder_ids
+        ]
+
+    def category_folder_for(self, category: str, fallback: Optional[str] = None) -> Optional[str]:
+        """Return the destination folder_id for a detected category.
+
+        Returns None if no mapping configured (caller should skip file moving).
+        """
+        return self._category_folders.get(category, fallback)
 
     def list_new(
         self,
@@ -151,6 +191,7 @@ class GoogleDriveFolderSource(TranscriptSource):
         results: list[TranscriptFile] = []
         for folder_id in self._folder_ids:
             is_root = (folder_id == self._root_folder_id)
+            hint = self.hint_for_folder(folder_id)
             files = self._list_drive_folder(drive_token, folder_id, since)
             for f in files:
                 fid = f["id"]
@@ -179,7 +220,7 @@ class GoogleDriveFolderSource(TranscriptSource):
                     name=fname,
                     source_name=self._name,
                     source_type=self.source_type,
-                    category_hint=self._category_hint,
+                    category_hint=hint,
                     mime_type=mime,
                     folder_id=folder_id,
                     is_root_folder=is_root,
@@ -392,11 +433,17 @@ def _legacy_otter_sources(ctx: dict, docs: dict) -> list[TranscriptSource]:
         "folder_ids": [root, tomac, recruiting, other],
         "root_folder_id": root,
         "category_hint": "auto",
-        "_folder_hints": {
-            root: "auto",
+        "folder_hints": {
+            # Root gets auto-detect; subfolders have explicit category routing
             tomac: deal_ws,
             recruiting: recruit_ws,
             other: "Other",
+        },
+        "category_folders": {
+            # After processing root-folder files, move them to the right subfolder
+            deal_ws: tomac,
+            recruit_ws: recruiting,
+            "Other": other,
         },
     })
     calls_source = GoogleDriveFolderSource({

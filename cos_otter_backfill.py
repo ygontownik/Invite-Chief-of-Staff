@@ -35,6 +35,7 @@ _PIPELINE_DIR = Path.home() / "tomac-cove-pipeline"
 if str(_PIPELINE_DIR) not in sys.path:
     sys.path.insert(0, str(_PIPELINE_DIR))
 import _firm_context as _fc  # noqa: E402
+import _transcript_source as _ts  # noqa: E402
 _CTX = _fc.load_firm_context()
 _OWNERS        = _fc.owner_whitelist_str(_CTX)   # e.g. "Yoni|Mark|Nik"
 _DEAL_WS       = _fc.workstream_deal(_CTX)        # e.g. "Tomac Cove"
@@ -130,12 +131,17 @@ CLAUDE_MODEL    = "claude-sonnet-4-6"
 MEMO_MODEL      = "claude-opus-4-7"
 ANTHROPIC_KEY   = os.environ.get("ANTHROPIC_API_KEY", "")
 
-# Drive folders to scan
-OTTER_ROOT_FOLDER       = "1zJly0cCiqsbZ3umYBXse7nYE7tUpFGOr"  # Zapier drops here
-OTTER_RECRUITING_FOLDER = "1tMEGofeqzfF93YhPCyGe0dgJj8tzdRlF"
-OTTER_TOMAC_FOLDER      = "1pHmuq_TfLY46GDg0BzRIwrq57ictIT5S"
-OTTER_OTHER_FOLDER      = "1dt-s-D1SWaTrpIEsi0GiBAu1BCQCoPGq"
-CALL_TRANSCRIPTS_FOLDER = "1jYntgSVBsW5-5rdx18TeZhHRsI9xT74p"
+# ── Legacy folder constants — used only by consolidate_transcript_siblings ─────
+# The main processing loop is now config-driven via _transcript_source.py.
+# These constants remain as dead-code safety-nets; they are NOT referenced by
+# the scan loop. If transcript_sources is omitted from firm_context.yaml,
+# _legacy_otter_sources() re-constructs equivalent sources from drive-docs.yaml
+# or these same defaults.
+OTTER_ROOT_FOLDER       = _DOCS.get("otter_ai",          "1zJly0cCiqsbZ3umYBXse7nYE7tUpFGOr")
+OTTER_RECRUITING_FOLDER = _DOCS.get("otter_recruiting",   "1tMEGofeqzfF93YhPCyGe0dgJj8tzdRlF")
+OTTER_TOMAC_FOLDER      = _DOCS.get("otter_tomac",        "1pHmuq_TfLY46GDg0BzRIwrq57ictIT5S")
+OTTER_OTHER_FOLDER      = _DOCS.get("otter_other",        "1dt-s-D1SWaTrpIEsi0GiBAu1BCQCoPGq")
+CALL_TRANSCRIPTS_FOLDER = _DOCS.get("call_transcripts",   "1jYntgSVBsW5-5rdx18TeZhHRsI9xT74p")
 
 AUDIO_EXTENSIONS = {".m4a", ".mp3", ".wav", ".ogg", ".aac"}
 
@@ -265,7 +271,9 @@ def move_file_to_folder(token, file_id, new_folder_id, old_folder_id):
         return json.loads(r.read())
 
 
-CATEGORY_FOLDER = {
+# Legacy category→folder map. Only used if a GoogleDriveFolderSource has no
+# category_folders configured and we need a fallback for root-file moving.
+_LEGACY_CATEGORY_FOLDER = {
     _DEAL_WS:    OTTER_TOMAC_FOLDER,
     _RECRUIT_WS: OTTER_RECRUITING_FOLDER,
     "Other":     OTTER_OTHER_FOLDER,
@@ -1520,11 +1528,33 @@ def write_processing_header(token, doc_id, category, now_str, actions, tomac_int
 
 # ── Process one transcript ────────────────────────────────────────────────────
 
-def process_transcript(token, file_id, file_name, hint_category, source_label, stats, mime_type="application/vnd.google-apps.document", pipeline_context=""):
+def process_transcript(token, file_id, file_name, hint_category, source_label, stats,
+                       mime_type="application/vnd.google-apps.document",
+                       pipeline_context="",
+                       pre_loaded_text=None):
+    """Process a single transcript file — memo pass + extraction + Doc writes.
+
+    Args:
+        token:            Google OAuth access token (can be None for local files)
+        file_id:          Drive file ID or local path string (used as unique ID)
+        file_name:        Display name of the file
+        hint_category:    Category hint passed by the source ("auto", "Recruiting", etc.)
+        source_label:     Human-readable source name shown in logs
+        stats:            Mutable stats dict updated in-place
+        mime_type:        Drive MIME type (ignored when pre_loaded_text is set)
+        pipeline_context: Deal pipeline JSON injected into extraction prompt
+        pre_loaded_text:  Pre-read transcript text (skips Drive read; for local files)
+    """
     today = datetime.now().strftime("%Y-%m-%d")
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-    is_gdoc = "google-apps.document" in mime_type
-    doc_link = f"https://docs.google.com/document/d/{file_id}/edit" if is_gdoc else f"https://drive.google.com/file/d/{file_id}/view"
+    is_gdoc = "google-apps.document" in mime_type and pre_loaded_text is None
+    if pre_loaded_text is not None:
+        # Local file — no Drive URL
+        doc_link = f"file://{file_id}" if file_id.startswith("/") else file_id
+    elif is_gdoc:
+        doc_link = f"https://docs.google.com/document/d/{file_id}/edit"
+    else:
+        doc_link = f"https://drive.google.com/file/d/{file_id}/view"
 
     print(f"\n  → Processing: {file_name}", flush=True)
 
@@ -1537,12 +1567,15 @@ def process_transcript(token, file_id, file_name, hint_category, source_label, s
         hint_category = "Other"
         print(f"    ℹ️   Intel/conference call detected — forcing category=Other, skipping actions", flush=True)
 
-    # Read transcript
-    try:
-        text, doc_obj = read_file_content(token, file_id, mime_type)
-    except Exception as e:
-        print(f"    ❌  Could not read file: {e}", file=sys.stderr)
-        return None
+    # Read transcript (skip for local files that passed pre_loaded_text)
+    if pre_loaded_text is not None:
+        text, doc_obj = pre_loaded_text, None
+    else:
+        try:
+            text, doc_obj = read_file_content(token, file_id, mime_type)
+        except Exception as e:
+            print(f"    ❌  Could not read file: {e}", file=sys.stderr)
+            return None
 
     if len(text) < 150:
         print(f"    ⚠️   Too short ({len(text)} chars) — skipping", flush=True)
@@ -1565,17 +1598,19 @@ def process_transcript(token, file_id, file_name, hint_category, source_label, s
     # is the fallback. Result is passed into Pass 2 as the PARTICIPANTS hint.
     # Non-fatal: any failure leaves participants=None and Pass 2 falls back to
     # title-only extraction inside extract_all.
+    # Skipped for local files (no Drive metadata, no calendar match possible).
     participants_hint, participants_source = [], "none"
-    try:
-        meta = drive_get_meta(token, file_id)
-        mod_time = meta.get("modifiedTime") if meta else None
-        participants_hint, participants_source = resolve_participants(
-            token, file_id, file_name, file_modified_time=mod_time
-        )
-        if participants_hint:
-            print(f"    ℹ️   Participants ({participants_source}): {', '.join(participants_hint)}", flush=True)
-    except Exception as e:
-        print(f"    ⚠️   Participant resolution skipped: {e}", file=sys.stderr)
+    if pre_loaded_text is None:
+        try:
+            meta = drive_get_meta(token, file_id)
+            mod_time = meta.get("modifiedTime") if meta else None
+            participants_hint, participants_source = resolve_participants(
+                token, file_id, file_name, file_modified_time=mod_time
+            )
+            if participants_hint:
+                print(f"    ℹ️   Participants ({participants_source}): {', '.join(participants_hint)}", flush=True)
+        except Exception as e:
+            print(f"    ⚠️   Participant resolution skipped: {e}", file=sys.stderr)
 
     # ── Pass 1: Structured memo (Sonnet) ─────────────────────────────────────
     # Format-constrained six-section prose. Always Sonnet — Opus is reserved
@@ -1660,12 +1695,14 @@ def process_transcript(token, file_id, file_name, hint_category, source_label, s
     # Write processing header + memo — Google Docs get prepend via Docs API,
     # plain text files get header prepended via Drive upload re-upload.
     # Doc structure after write: PROCESSED header → INVESTOR MEMO → Otter AI summary → transcript
-    write_processing_header(
-        token, file_id, category, now_str, actions, tomac_intel, rec_intel,
-        n_added, len(contacts), rec_result, tomac_result,
-        is_gdoc=is_gdoc, original_text=text if not is_gdoc else "",
-        memo_text=memo_text,
-    )
+    # Local files (pre_loaded_text is set) have no Drive ID — skip header write.
+    if pre_loaded_text is None:
+        write_processing_header(
+            token, file_id, category, now_str, actions, tomac_intel, rec_intel,
+            n_added, len(contacts), rec_result, tomac_result,
+            is_gdoc=is_gdoc, original_text=text if not is_gdoc else "",
+            memo_text=memo_text,
+        )
 
     # Persist status_update items for cos_email_resolver.py — these are signals
     # that something already tracked has progressed (e.g. "FEA was delivered",
@@ -1846,18 +1883,23 @@ def main():
     # ── Fast-exit pre-check ───────────────────────────────────────────────────
     # Before loading pipeline context (heavy) do a quick scan with the date
     # filter to count unprocessed candidates. If zero, nothing to do.
+    _sources = _ts.get_transcript_sources(_CTX, _DOCS)
     if not force and not target_ids:
         _candidate_count = 0
-        _all_folders = [
-            OTTER_ROOT_FOLDER, OTTER_RECRUITING_FOLDER,
-            OTTER_TOMAC_FOLDER, OTTER_OTHER_FOLDER, CALL_TRANSCRIPTS_FOLDER,
-        ]
-        for _fid in _all_folders:
-            try:
-                _files = drive_list_folder(token, _fid, since=since)
-                _candidate_count += sum(1 for f in _files if f["id"] not in tracker)
-            except Exception:
-                _candidate_count += 1  # err on the side of proceeding
+        for _src in _sources:
+            if _src.source_type == "google_drive_folder":
+                for _fid, _, _ in _src.iter_folders():
+                    try:
+                        _files = drive_list_folder(token, _fid, since=since)
+                        _candidate_count += sum(1 for f in _files if f["id"] not in tracker)
+                    except Exception:
+                        _candidate_count += 1  # err on the side of proceeding
+            elif _src.source_type == "local_folder":
+                try:
+                    _local_files = _src.list_new(None, since, set(tracker.keys()))
+                    _candidate_count += len(_local_files)
+                except Exception:
+                    _candidate_count += 1
         if _candidate_count == 0:
             print(f"PRE-CHECK: 0 unprocessed files in scan window. Nothing to do.", flush=True)
             sys.exit(0)
@@ -1874,153 +1916,150 @@ def main():
         "files": [],
     }
 
-    # ── Source A: Otter AI folders ────────────────────────────────────────────
+    # ── Process all transcript sources ────────────────────────────────────────
+    # Sources come from transcript_sources in firm_context.yaml.
+    # If not configured, _ts.get_transcript_sources() returns legacy Otter folders.
 
-    otter_folders = [
-        (OTTER_ROOT_FOLDER,       "auto",        "Otter AI / Root (Zapier)"),
-        (OTTER_RECRUITING_FOLDER, "Recruiting",  "Otter AI / Recruiting"),
-        (OTTER_TOMAC_FOLDER,      "Tomac Cove",  "Otter AI / Tomac Cove"),
-        (OTTER_OTHER_FOLDER,      "Other",        "Otter AI / Other"),
-    ]
+    print(f"── Transcript sources: {len(_sources)} configured ──────────────────────────", flush=True)
+    for src_num, source in enumerate(_sources, 1):
+        src_label = source.name
+        print(f"\n\n── Source {src_num}/{len(_sources)}: {src_label} ({source.source_type}) ──────────────────────────", flush=True)
 
-    print("── Source A: Otter AI Transcripts ──────────────────────────────────", flush=True)
-
-    for folder_id, hint_cat, label in otter_folders:
-        print(f"\n  Scanning folder: {label}", flush=True)
-        try:
-            files = drive_list_folder(token, folder_id, since=since)
-        except Exception as e:
-            print(f"  ❌  Could not list folder {folder_id}: {e}", file=sys.stderr)
-            continue
-
-        print(f"  Found {len(files)} files", flush=True)
-
-        # Consolidate Otter duplicate siblings (Zapier double-fire + .txt export)
-        # before the per-file loop. One call = one Google Doc, rest → trash.
-        try:
-            files = consolidate_transcript_siblings(token, files, tracker, folder_id)
-        except Exception as e:
-            print(f"  ⚠️   consolidate_transcript_siblings failed: {e}", file=sys.stderr)
-
-        for f in files:
-            fid   = f["id"]
-            fname = f["name"]
-            mime  = f.get("mimeType", "")
-
-            # --id filter: skip if not in target set
-            if target_ids and fid not in target_ids:
-                continue
-
-            # Skip audio files
-            ext = Path(fname).suffix.lower()
-            if ext in AUDIO_EXTENSIONS or "audio" in mime:
-                stats["skipped_audio"] += 1
-                continue
-
-            # Skip PDFs and non-text formats
-            if mime and "google-apps.document" not in mime and "text" not in mime and "plain" not in mime:
-                if ext not in (".txt", ".md", ".rtf"):
-                    print(f"    ⚠️   Skipping unsupported format: {fname} ({mime})", flush=True)
+        # ── Google Drive folder source ─────────────────────────────────────────
+        if source.source_type == "google_drive_folder":
+            for folder_id, hint_cat, is_root in source.iter_folders():
+                folder_label = f"{src_label} / root" if is_root else f"{src_label} / {folder_id[:8]}…"
+                print(f"\n  Scanning folder: {folder_label}", flush=True)
+                try:
+                    files = drive_list_folder(token, folder_id, since=since)
+                except Exception as e:
+                    print(f"  ❌  Could not list folder {folder_id}: {e}", file=sys.stderr)
                     continue
 
-            # Check dedup (skip if already processed unless --force or in --id list)
-            if fid in tracker and not force and not (target_ids and fid in target_ids):
-                stats["skipped_dedup"] += 1
+                print(f"  Found {len(files)} files", flush=True)
+
+                # Consolidate duplicate siblings (Zapier double-fire + .txt/.gdoc pairs).
+                # Safe to run on any Drive folder — no-op when no siblings exist.
+                try:
+                    files = consolidate_transcript_siblings(token, files, tracker, folder_id)
+                except Exception as e:
+                    print(f"  ⚠️   consolidate_transcript_siblings failed: {e}", file=sys.stderr)
+
+                for f in files:
+                    fid   = f["id"]
+                    fname = f["name"]
+                    mime  = f.get("mimeType", "")
+
+                    # --id filter
+                    if target_ids and fid not in target_ids:
+                        continue
+
+                    # Skip audio
+                    ext = Path(fname).suffix.lower()
+                    if ext in AUDIO_EXTENSIONS or "audio" in mime:
+                        stats["skipped_audio"] += 1
+                        continue
+
+                    # Skip unsupported formats
+                    if mime and "google-apps.document" not in mime and "text" not in mime and "plain" not in mime:
+                        if ext not in (".txt", ".md", ".rtf", ".vtt", ".srt"):
+                            print(f"    ⚠️   Skipping unsupported format: {fname} ({mime})", flush=True)
+                            continue
+
+                    # Check dedup
+                    if fid in tracker and not force and not (target_ids and fid in target_ids):
+                        stats["skipped_dedup"] += 1
+                        continue
+
+                    # Check for pre-existing processing header (belt-and-suspenders,
+                    # catches files processed by cos_transcript_hook.py but not yet
+                    # in the dedup tracker on this machine).
+                    if not force and not (target_ids and fid in target_ids):
+                        try:
+                            _peek, _ = read_file_content(token, fid, mime)
+                            if _peek.startswith("╔══ PROCESSED:") or "PROCESSED:" in _peek[:200]:
+                                print(f"    ⏭   Already has processing header: {fname}", flush=True)
+                                stats["skipped_already_marked"] += 1
+                                mark_processed(tracker, fid, fname, "pre-processed")
+                                save_dedup(tracker)
+                                continue
+                        except Exception:
+                            pass  # If peek fails, proceed and let process_transcript handle it
+
+                    # Process
+                    result = process_transcript(
+                        token, fid, fname, hint_cat, src_label, stats,
+                        mime_type=mime, pipeline_context=pipeline_context,
+                    )
+                    if result is None:
+                        stats["errors"] += 1
+                        mark_processed(tracker, fid, fname, "error")
+                    elif result.get("skipped"):
+                        mark_processed(tracker, fid, fname, "skipped_short")
+                    else:
+                        cat = result.get("category", "Other")
+                        mark_processed(tracker, fid, fname, cat)
+                        stats["files"].append({"name": fname, "category": cat, "source": src_label})
+                        # Move file from root → category subfolder (triage routing)
+                        if is_root:
+                            dest = (
+                                source.category_folder_for(cat)
+                                or _LEGACY_CATEGORY_FOLDER.get(cat)
+                            )
+                            if dest:
+                                try:
+                                    move_file_to_folder(token, fid, dest, folder_id)
+                                    print(f"    📁  Moved to {cat} folder", flush=True)
+                                except Exception as e:
+                                    print(f"    ⚠️   Could not move to {cat} folder: {e}", file=sys.stderr)
+                    save_dedup(tracker)
+
+        # ── Local folder source ────────────────────────────────────────────────
+        elif source.source_type == "local_folder":
+            try:
+                local_files = source.list_new(
+                    None, since, set(tracker.keys()),
+                    target_ids=set(target_ids) if target_ids else None,
+                )
+            except Exception as e:
+                print(f"  ❌  Could not list local source {src_label}: {e}", file=sys.stderr)
                 continue
 
-            # Process
-            result = process_transcript(token, fid, fname, hint_cat, label, stats, mime_type=mime, pipeline_context=pipeline_context)
-            if result is None:
-                stats["errors"] += 1
-                mark_processed(tracker, fid, fname, "error")
-            elif result.get("skipped"):
-                mark_processed(tracker, fid, fname, "skipped_short")
-            else:
-                cat = result.get("category", "Other")
-                mark_processed(tracker, fid, fname, cat)
-                stats["files"].append({"name": fname, "category": cat, "source": label})
-                # Move file from root → category subfolder (only for root-folder files)
-                if folder_id == OTTER_ROOT_FOLDER:
-                    dest = CATEGORY_FOLDER.get(cat, OTTER_OTHER_FOLDER)
-                    try:
-                        move_file_to_folder(token, fid, dest, OTTER_ROOT_FOLDER)
-                        print(f"    📁  Moved to {cat} folder", flush=True)
-                    except Exception as e:
-                        print(f"    ⚠️   Could not move to {cat} folder: {e}", file=sys.stderr)
-            save_dedup(tracker)
+            print(f"  Found {len(local_files)} local file(s)", flush=True)
 
-    # ── Source B: Call Transcripts folder ─────────────────────────────────────
+            for tf in local_files:
+                print(f"\n  → {tf.name}", flush=True)
+                try:
+                    pre_text = source.download_text(tf, None)
+                except Exception as e:
+                    print(f"  ❌  Could not read {tf.name}: {e}", file=sys.stderr)
+                    stats["errors"] += 1
+                    continue
 
-    print("\n\n── Source B: Call Transcripts ──────────────────────────────────────", flush=True)
-    print(f"\n  Scanning folder: Call Transcripts", flush=True)
-    try:
-        call_files = drive_list_folder(token, CALL_TRANSCRIPTS_FOLDER, since=since)
-        print(f"  Found {len(call_files)} files", flush=True)
-    except Exception as e:
-        print(f"  ❌  Could not list Call Transcripts folder: {e}", file=sys.stderr)
-        call_files = []
+                if not pre_text or len(pre_text) < 150:
+                    print(f"    ⚠️   Too short — skipping: {tf.name}", flush=True)
+                    mark_processed(tracker, tf.id, tf.name, "skipped_short")
+                    save_dedup(tracker)
+                    continue
 
-    for f in call_files:
-        fid   = f["id"]
-        fname = f["name"]
-        mime  = f.get("mimeType", "")
+                result = process_transcript(
+                    token, tf.id, tf.name, tf.category_hint, src_label, stats,
+                    pipeline_context=pipeline_context,
+                    pre_loaded_text=pre_text,
+                )
+                if result is None:
+                    stats["errors"] += 1
+                    mark_processed(tracker, tf.id, tf.name, "error")
+                elif result.get("skipped"):
+                    mark_processed(tracker, tf.id, tf.name, "skipped_short")
+                else:
+                    cat = result.get("category", "Other")
+                    mark_processed(tracker, tf.id, tf.name, cat)
+                    stats["files"].append({"name": tf.name, "category": cat, "source": src_label})
+                save_dedup(tracker)
 
-        # --id filter: skip if not in target set
-        if target_ids and fid not in target_ids:
-            continue
-
-        # Skip audio files
-        ext = Path(fname).suffix.lower()
-        if ext in AUDIO_EXTENSIONS or "audio" in mime:
-            stats["skipped_audio"] += 1
-            continue
-
-        # Only process Google Docs and text files
-        if "google-apps.document" not in mime and "text" not in mime:
-            if ext not in (".txt", ".md"):
-                print(f"    ⚠️   Skipping non-doc: {fname} ({mime})", flush=True)
-                continue
-
-        # Check dedup tracker (skip if already processed unless --force or in --id list)
-        if fid in tracker and not force and not (target_ids and fid in target_ids):
-            stats["skipped_dedup"] += 1
-            continue
-
-        # Read content to check for processing header
-        try:
-            text, _ = read_file_content(token, fid, mime)
-        except Exception as e:
-            print(f"  ❌  Could not read {fname}: {e}", file=sys.stderr)
-            stats["errors"] += 1
-            continue
-
-        already_marked = text.startswith("╔══ PROCESSED:") or "PROCESSED:" in text[:200]
-        if already_marked and not force and not (target_ids and fid in target_ids):
-            # Already processed by another pipeline run
-            print(f"    ⏭   Already has processing header: {fname}", flush=True)
-            stats["skipped_already_marked"] += 1
-            mark_processed(tracker, fid, fname, "pre-processed")
-            save_dedup(tracker)
-            continue
-
-        if len(text) < 150:
-            print(f"    ⚠️   Too short ({len(text)} chars) — skipping: {fname}", flush=True)
-            mark_processed(tracker, fid, fname, "skipped_short")
-            save_dedup(tracker)
-            continue
-
-        # Determine category from folder hint (call transcripts = auto-detect)
-        result = process_transcript(token, fid, fname, "auto", "Call Transcripts", stats, mime_type=mime, pipeline_context=pipeline_context)
-        if result is None:
-            stats["errors"] += 1
-            mark_processed(tracker, fid, fname, "error")
-        elif result.get("skipped"):
-            mark_processed(tracker, fid, fname, "skipped_short")
         else:
-            cat = result.get("category", "Other")
-            mark_processed(tracker, fid, fname, cat)
-            stats["files"].append({"name": fname, "category": cat, "source": "Call Transcripts"})
-        save_dedup(tracker)
+            print(f"  ⚠️   Unknown source type '{source.source_type}' — skipping.", file=sys.stderr)
 
     # ── Dashboard warmup ──────────────────────────────────────────────────────
 

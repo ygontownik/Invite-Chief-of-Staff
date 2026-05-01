@@ -92,9 +92,12 @@ def _delete_session(token: str):
     _save_sessions()
 
 def _load_active_packages() -> list:
-    """Return the list of active package names from firm_config.json.
-    Delegates to _firm_context so COS_CONFIG_DIR is respected automatically."""
-    return _fc.load_active_packages()
+    """Return the list of active package names from firm_config.json."""
+    cfg_path = Path.home() / 'cos-pipeline' / 'firm_config.json'
+    try:
+        return json.loads(cfg_path.read_text()).get('packages', [])
+    except Exception:
+        return []
 
 
 def _load_tiles():
@@ -627,7 +630,7 @@ BRIEFING_DASHBOARD  = _HERE / 'templates' / 'briefing-dashboard.html'
 BRIEFING_MD         = _ROOT / 'data' / 'compiled' / 'deal-briefing-latest.md'
 ALL_DASHBOARD       = _HERE / 'templates' / 'all-dashboard.html'
 TILES_CONFIG        = _ROOT / 'config' / 'dashboard-tiles.yaml'
-FIRM_CONFIG_PATH    = _fc.find_firm_config()   # respects COS_CONFIG_DIR → ~/cos-pipeline-config/ → pipeline dir
+FIRM_CONFIG_PATH    = Path.home() / 'cos-pipeline' / 'firm_config.json'
 TC_BUILD            = _HERE / 'tomac-cove-build'
 SHARED_STATIC       = _HERE / 'static'               # shared design-system.css + assets
 TOPNAV_PARTIAL      = _HERE / 'templates' / '_topnav.html'

@@ -212,6 +212,19 @@ transcript_sources:
       - "YOUR_OTTER_OTHER_FOLDER_ID"          # other calls subfolder (optional)
     root_folder_id: "YOUR_OTTER_ROOT_FOLDER_ID"  # processed files get moved out of here
     category_hint: "auto"                     # auto-detect; or set "Recruiting"/"Deal"/"Other"
+    # Optional: per-subfolder category hints (override the source-level category_hint).
+    # Useful when subfolders are already sorted by category — saves the LLM from
+    # re-detecting what's already known. Omit for single-folder sources.
+    folder_hints:
+      "YOUR_OTTER_DEAL_FOLDER_ID":       "Deal"         # or your workstream_categories.deal value
+      "YOUR_OTTER_RECRUITING_FOLDER_ID": "Recruiting"
+      "YOUR_OTTER_OTHER_FOLDER_ID":      "Other"
+    # Optional: after processing a root-folder file, move it to the right subfolder.
+    # Omit to keep all files in root after processing.
+    category_folders:
+      "Deal":       "YOUR_OTTER_DEAL_FOLDER_ID"
+      "Recruiting": "YOUR_OTTER_RECRUITING_FOLDER_ID"
+      "Other":      "YOUR_OTTER_OTHER_FOLDER_ID"
 
   # ── Add more sources — one block per recording service ──────────────────────
   #
