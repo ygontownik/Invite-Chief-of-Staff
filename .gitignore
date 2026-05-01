@@ -25,7 +25,10 @@ service_account*.json
 # ── PERSONAL / FIRM-SPECIFIC DOCS ─────────────────────────────────────────────
 YONI_CONTEXT.md
 "Chief of Staff Dashboard.html"
+
+# Ignore generated dashboard HTML but allow docs/ reference HTML
 *.html
+!docs/*.html
 
 # ── RUNTIME STATE ─────────────────────────────────────────────────────────────
 __pycache__/

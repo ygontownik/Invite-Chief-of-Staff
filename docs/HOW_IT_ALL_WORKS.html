@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>COS Pipeline — How It All Works</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #f5f4f0;
+    color: #1a1a1a;
+    padding: 40px 32px;
+    font-size: 13px;
+  }
+
+  h1 {
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    margin-bottom: 6px;
+  }
+
+  .subtitle {
+    color: #666;
+    font-size: 13px;
+    margin-bottom: 32px;
+  }
+
+  /* ── Legend ── */
+  .legend {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    margin-bottom: 28px;
+    padding: 14px 18px;
+    background: white;
+    border-radius: 8px;
+    border: 1px solid #e0ddd8;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  .dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+
+  /* ── Section headers ── */
+  .phase {
+    margin-bottom: 28px;
+  }
+
+  .phase-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: #888;
+    margin-bottom: 12px;
+    padding-left: 4px;
+  }
+
+  /* ── Swim lane grid ── */
+  .lanes {
+    display: grid;
+    grid-template-columns: 130px 1fr 1fr 1fr 1fr 1fr;
+    gap: 0;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid #ddd;
+  }
+
+  .lane-header {
+    background: #2c2c2c;
+    color: white;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    padding: 10px 12px;
+    text-align: center;
+    line-height: 1.3;
+    border-right: 1px solid #444;
+  }
+
+  .lane-header:last-child { border-right: none; }
+
+  .row-label {
+    background: #f0efe9;
+    font-size: 11px;
+    font-weight: 600;
+    color: #555;
+    padding: 12px 10px;
+    border-right: 1px solid #ddd;
+    border-top: 1px solid #ddd;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    line-height: 1.3;
+  }
+
+  .cell {
+    padding: 10px 12px;
+    border-right: 1px solid #e8e8e8;
+    border-top: 1px solid #e8e8e8;
+    min-height: 70px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: flex-start;
+    justify-content: flex-start;
+  }
+
+  .cell:last-child { border-right: none; }
+
+  .cell.empty {
+    background: #fafafa;
+  }
+
+  /* ── Cards inside cells ── */
+  .card {
+    border-radius: 6px;
+    padding: 7px 10px;
+    font-size: 11.5px;
+    line-height: 1.4;
+    width: 100%;
+    position: relative;
+  }
+
+  /* Color palette */
+  .c-github-pub  { background: #e8f0fe; border-left: 3px solid #4285f4; color: #1a3a6b; }
+  .c-github-priv { background: #fce8f3; border-left: 3px solid #c2185b; color: #6b0f3a; }
+  .c-personal    { background: #fff3e0; border-left: 3px solid #ef6c00; color: #6b3700; }
+  .c-external    { background: #f3e5f5; border-left: 3px solid #7b1fa2; color: #4a0072; }
+  .c-drive       { background: #e8f5e9; border-left: 3px solid #2e7d32; color: #1b4d1f; }
+  .c-dashboard   { background: #fff8e1; border-left: 3px solid #f9a825; color: #6b4a00; }
+
+  .card strong { display: block; font-weight: 700; margin-bottom: 2px; }
+  .card span { color: inherit; opacity: 0.85; }
+
+  /* ── Arrow connector ── */
+  .arrow {
+    font-size: 16px;
+    color: #aaa;
+    text-align: center;
+    padding: 4px 0;
+    align-self: center;
+    width: 100%;
+  }
+
+  /* ── Notes ── */
+  .note {
+    margin-top: 8px;
+    padding: 10px 14px;
+    background: white;
+    border-left: 3px solid #bbb;
+    border-radius: 0 6px 6px 0;
+    font-size: 11.5px;
+    color: #555;
+    line-height: 1.5;
+  }
+
+  .note strong { color: #333; }
+
+  /* ── Personal vs Shared table ── */
+  .pvs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 28px;
+  }
+
+  .pvs-col {
+    background: white;
+    border-radius: 10px;
+    border: 1px solid #e0ddd8;
+    overflow: hidden;
+  }
+
+  .pvs-header {
+    font-size: 12px;
+    font-weight: 700;
+    padding: 10px 16px;
+    letter-spacing: 0.3px;
+  }
+
+  .pvs-header.personal { background: #fff3e0; color: #6b3700; }
+  .pvs-header.shared   { background: #e8f5e9; color: #1b4d1f; }
+
+  .pvs-item {
+    padding: 8px 16px;
+    font-size: 12px;
+    border-top: 1px solid #f0ede8;
+    line-height: 1.4;
+    display: flex;
+    gap: 8px;
+  }
+
+  .pvs-item .icon { flex-shrink: 0; width: 18px; }
+  .pvs-item .desc { color: #555; font-size: 11px; margin-top: 1px; }
+
+  /* ── Team 2 cold start ── */
+  .steps {
+    background: white;
+    border-radius: 10px;
+    border: 1px solid #e0ddd8;
+    overflow: hidden;
+    margin-bottom: 28px;
+  }
+
+  .step {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 12px 18px;
+    border-top: 1px solid #f0ede8;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .step:first-child { border-top: none; }
+
+  .step-num {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #2c2c2c;
+    color: white;
+    font-size: 11px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .step-body strong { font-weight: 600; }
+  .step-body .where { font-size: 11px; color: #888; margin-top: 2px; }
+
+  /* ── Footer ── */
+  footer {
+    margin-top: 32px;
+    font-size: 11px;
+    color: #aaa;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<h1>COS Pipeline — How It All Works</h1>
+<p class="subtitle">Plain-English guide to every flow: setup, daily operations, code updates, and what's personal vs. shared.</p>
+
+<!-- ── Legend ── -->
+<div class="legend">
+  <div class="legend-item"><div class="dot" style="background:#4285f4"></div> Public GitHub (code anyone can use)</div>
+  <div class="legend-item"><div class="dot" style="background:#c2185b"></div> Private GitHub (your firm's config)</div>
+  <div class="legend-item"><div class="dot" style="background:#ef6c00"></div> Your computer only (never shared)</div>
+  <div class="legend-item"><div class="dot" style="background:#7b1fa2"></div> External services (Gmail, AI, recorder)</div>
+  <div class="legend-item"><div class="dot" style="background:#2e7d32"></div> Shared Google Drive (your team's data)</div>
+  <div class="legend-item"><div class="dot" style="background:#f9a825"></div> Dashboard (what you see in the browser)</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- PHASE 1: ONE-TIME SETUP -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<div class="phase">
+  <div class="phase-title">① One-Time Setup — done once per person, per machine</div>
+
+  <div class="lanes">
+    <!-- Headers -->
+    <div class="lane-header">Stage</div>
+    <div class="lane-header">Public GitHub<br><span style="font-weight:400;opacity:.7">Code for everyone</span></div>
+    <div class="lane-header">Private GitHub<br><span style="font-weight:400;opacity:.7">Your firm's config</span></div>
+    <div class="lane-header">Your Computer<br><span style="font-weight:400;opacity:.7">Local only</span></div>
+    <div class="lane-header">External Services<br><span style="font-weight:400;opacity:.7">Google, Anthropic</span></div>
+    <div class="lane-header">Shared Google Drive<br><span style="font-weight:400;opacity:.7">Team data</span></div>
+
+    <!-- Row 1: Clone code -->
+    <div class="row-label">Get the code</div>
+    <div class="cell">
+      <div class="card c-github-pub">
+        <strong>github.com/ygontownik/Dashboard</strong>
+        <span>All pipeline scripts, templates, documentation</span>
+      </div>
+    </div>
+    <div class="cell empty"></div>
+    <div class="cell">
+      <div class="card c-personal">
+        <strong>git clone → ~/cos-pipeline/</strong>
+        <span>Downloads all the code to your machine</span>
+      </div>
+    </div>
+    <div class="cell empty"></div>
+    <div class="cell empty"></div>
+
+    <!-- Row 2: Fill in identity -->
+    <div class="row-label">Fill in who you are</div>
+    <div class="cell">
+      <div class="card c-github-pub">
+        <strong>firm_context.template.yaml</strong>
+        <span>Blank form — your starting point</span>
+      </div>
+    </div>
+    <div class="cell">
+      <div class="card c-github-priv">
+        <strong>Private config repo</strong>
+        <span>Team shares one repo so updates sync automatically</span>
+      </div>
+    </div>
+    <div class="cell">
+      <div class="card c-personal">
+        <strong>firm_context.yaml</strong>
+        <span>Your name, firm, team, sectors, recording folders, personal podcast feeds — filled in once, never changes unless your setup does</span>
+      </div>
+    </div>
+    <div class="cell empty"></div>
+    <div class="cell empty"></div>
+
+    <!-- Row 3: Create docs -->
+    <div class="row-label">Create your data home</div>
+    <div class="cell empty"></div>
+    <div class="cell empty"></div>
+    <div class="cell">
+      <div class="card c-personal">
+        <strong>python3 setup.py --create-docs</strong>
+        <span>Runs once. Opens Google sign-in in your browser.</span>
+      </div>
+    </div>
+    <div class="cell">
+      <div class="card c-external">
+        <strong>Google authorizes access</strong>
+        <span>You sign in. Pipeline gets permission to read your Gmail and write to Drive.</span>
+      </div>
+    </div>
+    <div class="cell">
+      <div class="card c-drive">
+        <strong>4 blank Google Docs created</strong>
+        <span>Follow-ups · Pipeline · People · Recruiting. These are your firm's dataroom — they fill up over time.</span>
+      </div>
+    </div>
+
+    <!-- Row 4: Start -->
+    <div class="row-label">Start the engine</div>
+    <div class="cell empty"></div>
+    <div class="cell empty"></div>
+    <div class="cell">
+      <div class="card c-personal">
+        <strong>./setup_launchagents.sh</strong>
+        <span>Installs background jobs on your Mac. They run automatically on schedule from now on — no manual action needed.</span>
+      </div>
+    </div>
+    <div class="cell empty"></div>
+    <div class="cell empty"></div>
+  </div>
+
+  <div class="note">
+    <strong>Team 2 starting point:</strong> On day one you have 4 organized but empty Google Docs — your dataroom structure exists, it just has no data yet.
+    Run <code>python3 setup.py --onboard</code> to immediately populate them with the last 30 days of emails, any existing transcripts in your configured folders, and recent podcast episodes. After ~30 minutes you'll have a real dashboard, not an empty one.
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- PHASE 2: DAILY OPERATIONS -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<div class="phase">
+  <div class="phase-title">② Daily Operations — runs automatically, no action needed</div>
+
+  <div class="lanes">
+    <div class="lane-header">Trigger</div>
+    <div class="lane-header">What starts it</div>
+    <div class="lane-header">What it reads</div>
+    <div class="lane-header">What AI does</div>
+    <div class="lane-header">Where results go</div>
+    <div class="lane-header">What you see</div>
+
+    <!-- Email -->
+    <div class="row-label">Email<br><span style="font-weight:400;color:#999">Every 2 hours</span></div>
+    <div class="cell">
+      <div class="card c-personal">
+        <strong>Background job wakes up</strong>
+        <span>Fires at :05 past every other hour, Mon–Fri</span>
+      </div>
+    </div>
+    <div class="cell">
+      <div class="card c-external">
+        <strong>Your Gmail or Outlook inbox</strong>
+        <span>New emails since last check. Only your inbox — nobody else's unless they're cc'd.</span>
+      </div>
+    </div>
+    <div class="cell">
+      <div class="card c-external">
+        <strong>Fast sort first (cheap)</strong>
+        <span>Every email gets a category: Deal / Recruiting / Research / Ignore. Only important ones go to the next step.</span>
+      </div>
+      <div class="card c-external">
+        <strong>Deep read on what matters (thorough)</strong>
+        <span>Deal and recruiting emails get a full analysis: what's the ask, what do I owe them, what do they owe me.</span>
+      </div>
+    </div>
+    <div class="cell">
+      <div class="card c-drive">
+        <strong>Action items → Follow-ups Doc</strong>
+        <span>Tagged with your name as owner. Mark and Nik's emails go to the same doc tagged with their names.</span>
+      </div>
+      <div class="card c-drive">
+        <strong>Deal threads → Pipeline Doc</strong>
+      </div>
+      <div class="card c-drive">
+        <strong>Recruiting threads → Recruiting Doc</strong>
+      </div>
+    </div>
+    <div class="cell">
+      <div class="card c-dashboard">
+        <strong>Follow-ups tile updates</strong>
+        <span>New action items appear, sorted by due date and owner</span>
+      </div>
+    </div>
+
+    <!-- Calls -->
+    <div class="row-label">Calls &amp; Transcripts<br><span style="font-weight:400;color:#999">Every morning 7:22am</span></div>
+    <div class="cell">
+      <div class="card c-personal">
+        <strong>Background job wakes up</strong>
+        <span>Fires daily at 7:22am, checks for overnight recordings</span>
+      </div>
+    </div>
+    <div class="cell">
+      <div class="card c-external">
+        <strong>Your recording service</strong>
+        <span>Otter AI, Beside AI, Fireflies — whichever you configured. It syncs transcripts to the Google Drive folders you listed in firm_context.yaml.</span>
+      </div>
+    </div>
+    <div class="cell">
+      <div class="card c-external">
+        <strong>Pass 1 — Write the memo</strong>
+        <span>Reads the transcript. Writes a 6-section investor memo: core argument, what was agreed, what's unresolved, what you need to form a view, names &amp; firms, open questions.</span>
+      </div>
+      <div class="card c-external">
+        <strong>Pass 2 — Extract the actions</strong>
+        <span>Reads the memo. Pulls out every commitment: who said they'd do what, by when, who owes whom. Figures out if it was you or the other person who committed.</span>
+      </div>
+    </div>
+    <div class="cell">
+      <div class="card c-drive">
+        <strong>Memo → Pipeline Doc</strong>
+        <span>Full 6-section memo appended</span>
+      </div>
+      <div class="card c-drive">
+        <strong>Action items → Follow-ups Doc</strong>
+        <span>New rows added for each commitment</span>
+      </div>
+      <div class="card c-drive">
+        <strong>New contacts → People Doc</strong>
+        <span>Anyone named in the call who isn't already tracked</span>
+      </div>
+    </div>
+    <div class="cell">
+      <div class="card c-dashboard">
+        <strong>Follow-ups tile</strong>
+        <span>Your actions + what the other party owes you</span>
+      </div>
+      <div class="card c-dashboard">
+        <strong>Pipeline tile</strong>
+        <span>Deal and LP intelligence updated</span>
+      </div>
+      <div class="card c-dashboard">
+        <strong>People tile</strong>
+        <span>New contacts appear</span>
+      </div>
+    </div>
+
+    <!-- Podcasts -->
+    <div class="row-label">Podcasts &amp; Blogs<br><span style="font-weight:400;color:#999">Daily</span></div>
+    <div class="cell">
+      <div class="card c-personal">
+        <strong>Background job wakes up</strong>
+        <span>Checks your personal RSS feeds daily</span>
+      </div>
+    </div>
+    <div class="cell">
+      <div class="card c-external">
+        <strong>Your RSS feeds</strong>
+        <span>Podcasts and blogs listed in your firm_context.yaml personal section. Each person on the team has their own list.</span>
+      </div>
+    </div>
+    <div class="cell">
+      <div class="card c-external">
+        <strong>Transcribe the audio</strong>
+        <span>New episodes sent to AssemblyAI — returns a full transcript in ~5 min per episode</span>
+      </div>
+      <div class="card c-external">
+        <strong>Write the memo</strong>
+        <span>Same 6-section format as calls: core argument, consensus, tension, open questions, names &amp; firms</span>
+      </div>
+    </div>
+    <div class="cell">
+      <div class="card c-drive">
+        <strong>Memo → your podcast Doc</strong>
+        <span>Each show has its own Google Doc. New entries prepend to the top.</span>
+      </div>
+    </div>
+    <div class="cell">
+      <div class="card c-dashboard">
+        <strong>Briefing email at 7:30am</strong>
+        <span>Sent to your email: new episodes, upcoming calls today, market items from your feeds</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>GitHub is never involved in daily operations.</strong> Every step above runs entirely on your machine, reading from your accounts, writing to your Google Drive. The code is already downloaded — it just runs on schedule. GitHub only comes back into the picture when someone improves the code and pushes an update.
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- PHASE 3: CODE UPDATES -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<div class="phase">
+  <div class="phase-title">③ When the Code Gets Better — how improvements reach everyone</div>
+
+  <div class="lanes">
+    <div class="lane-header">Who does it</div>
+    <div class="lane-header">What they do</div>
+    <div class="lane-header">Goes to GitHub</div>
+    <div class="lane-header">Other people</div>
+    <div class="lane-header">Their data</div>
+    <div class="lane-header">Result</div>
+
+    <!-- Universal fix -->
+    <div class="row-label">Anyone finds a bug or improvement</div>
+    <div class="cell">
+      <div class="card c-personal">
+        <strong>Fix it on their machine</strong>
+        <span>Edit a .py file. Test it. Works.</span>
+      </div>
+    </div>
+    <div class="cell">
+      <div class="card c-github-pub">
+        <strong>Push to public repo (or open a PR)</strong>
+        <span>If it's a universal improvement — helps any firm — it goes to GitHub. If it's personal, it stays local.</span>
+      </div>
+    </div>
+    <div class="cell">
+      <div class="card c-personal">
+        <strong>git pull in ~/cos-pipeline/</strong>
+        <span>They get the fix. Takes 5 seconds.</span>
+      </div>
+    </div>
+    <div class="cell">
+      <div class="card c-drive">
+        <strong>Not touched</strong>
+        <span>Their Google Docs, their action items, their data — completely unaffected by code updates</span>
+      </div>
+    </div>
+    <div class="cell">
+      <div class="card c-dashboard">
+        <strong>Pipeline runs better</strong>
+        <span>Next automated run uses the improved code</span>
+      </div>
+    </div>
+
+    <!-- Config update (same firm) -->
+    <div class="row-label">Someone on your team updates the firm config</div>
+    <div class="cell">
+      <div class="card c-personal">
+        <strong>Edit firm_context.yaml</strong>
+        <span>e.g. new hire added, new peer firm to watch, updated draft voice rule</span>
+      </div>
+    </div>
+    <div class="cell">
+      <div class="card c-github-priv">
+        <strong>Push to private config repo</strong>
+        <span>github.com/yourfirm/your-config (private, team only)</span>
+      </div>
+    </div>
+    <div class="cell">
+      <div class="card c-personal">
+        <strong>git pull in ~/cos-pipeline-config/</strong>
+        <span>Next pipeline run picks up the new config automatically — no restart needed</span>
+      </div>
+    </div>
+    <div class="cell">
+      <div class="card c-drive">
+        <strong>Not touched</strong>
+      </div>
+    </div>
+    <div class="cell">
+      <div class="card c-dashboard">
+        <strong>Prompts reflect new reality</strong>
+        <span>e.g. new hire's name now appears in action item attribution</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- PERSONAL VS SHARED -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<div class="phase">
+  <div class="phase-title">④ Personal vs. Shared — what lives where</div>
+
+  <div class="pvs">
+    <!-- Personal -->
+    <div class="pvs-col">
+      <div class="pvs-header personal">🔒 Personal — on your machine only, never seen by others</div>
+      <div class="pvs-item">
+        <div class="icon">📄</div>
+        <div>
+          <strong>firm_context.yaml</strong>
+          <div class="desc">Your name, your firm, your team, your recording folders, your podcast feeds, your briefing preferences</div>
+        </div>
+      </div>
+      <div class="pvs-item">
+        <div class="icon">🔑</div>
+        <div>
+          <strong>API keys &amp; passwords</strong>
+          <div class="desc">Anthropic key, dashboard password — stored in Mac Keychain, never in files</div>
+        </div>
+      </div>
+      <div class="pvs-item">
+        <div class="icon">🎫</div>
+        <div>
+          <strong>Google &amp; Outlook login tokens</strong>
+          <div class="desc">~/credentials/*.pickle — generated when you sign in, stays on your machine</div>
+        </div>
+      </div>
+      <div class="pvs-item">
+        <div class="icon">📋</div>
+        <div>
+          <strong>What's already been processed</strong>
+          <div class="desc">~/credentials/processed_*.json — tracks emails and transcripts already seen so nothing runs twice</div>
+        </div>
+      </div>
+      <div class="pvs-item">
+        <div class="icon">⏰</div>
+        <div>
+          <strong>Your schedule</strong>
+          <div class="desc">LaunchAgent .plist files — your timings, your machine's paths, auto-generated</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Shared -->
+    <div class="pvs-col">
+      <div class="pvs-header shared">🤝 Shared — visible to some or all</div>
+      <div class="pvs-item">
+        <div class="icon">💻</div>
+        <div>
+          <strong>All pipeline code (Public GitHub)</strong>
+          <div class="desc">Every .py file, template, and doc. Any firm can use it. Improvements push here and everyone benefits.</div>
+        </div>
+      </div>
+      <div class="pvs-item">
+        <div class="icon">🔒</div>
+        <div>
+          <strong>Firm config repo (Private GitHub)</strong>
+          <div class="desc">firm_context.yaml base + firm_config.json. Shared within your firm only. Firm 1 can't see Firm 2's config.</div>
+        </div>
+      </div>
+      <div class="pvs-item">
+        <div class="icon">📁</div>
+        <div>
+          <strong>4 Google Docs (your firm's dataroom)</strong>
+          <div class="desc">Follow-ups · Pipeline · People · Recruiting. Every team member's pipeline writes here. Everyone reads the same data.</div>
+        </div>
+      </div>
+      <div class="pvs-item">
+        <div class="icon">📊</div>
+        <div>
+          <strong>The dashboard</strong>
+          <div class="desc">Runs on one machine. Everyone at the firm accesses the same URL. Same data, same tiles.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- FIRM 2 COLD START -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<div class="phase">
+  <div class="phase-title">⑤ Brand New Firm (Team 2) — from nothing to live dashboard</div>
+
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <strong>Clone the public code</strong> — <code>git clone github.com/ygontownik/Dashboard ~/cos-pipeline</code>
+        <div class="where">Takes 30 seconds. Gets all the pipeline scripts onto your machine.</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <strong>Run the installer</strong> — <code>./setup.sh</code>
+        <div class="where">Guided, step by step. Asks for your name, firm, team, investment focus, recording service folder IDs, podcast feeds. Stores your Anthropic API key securely in your Mac's Keychain.</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <strong>Create your dataroom</strong> — <code>python3 setup.py --create-docs</code>
+        <div class="where">Opens Google sign-in in your browser. After you approve, creates 4 blank Google Docs (Follow-ups, Pipeline, People, Recruiting) and writes their IDs into your config automatically. These are now your firm's shared dataroom.</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-body">
+        <strong>Configure your recording service</strong> — point Otter/Beside/Fireflies at the folder IDs in your firm_context.yaml
+        <div class="where">Each service has a Drive sync setting. Paste in the folder ID. From now on, recordings land there automatically.</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">5</div>
+      <div class="step-body">
+        <strong>Populate from history</strong> — <code>python3 setup.py --onboard --days 30</code>
+        <div class="where">Processes your last 30 days of email, any transcripts already in your Drive folders, and recent podcast episodes. Runs for 10–40 minutes depending on volume. When it finishes, your dashboard has real data.</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">6</div>
+      <div class="step-body">
+        <strong>Start the background jobs</strong> — <code>./setup_launchagents.sh</code>
+        <div class="where">Installs the automated schedules on your Mac. From this point, email is checked every 2 hours and calls are processed every morning at 7:22am — with no manual action.</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">7</div>
+      <div class="step-body">
+        <strong>Open the dashboard</strong> — <code>http://localhost:7777</code>
+        <div class="where">Your data. Your firm. Completely separate from Firm 1. They can't see yours, you can't see theirs.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>Second person at Firm 2:</strong> They clone the same public code repo, clone your private config repo (you invite them as a collaborator), set the COS_CONFIG_DIR environment variable, and run <code>./setup.sh</code> for their OAuth. They access the dashboard at the same URL as you. Their emails and transcripts feed into the same shared Google Docs. Done.
+  </div>
+</div>
+
+<footer>
+  github.com/ygontownik/Dashboard &nbsp;·&nbsp; docs/HOW_IT_ALL_WORKS.html &nbsp;·&nbsp; Plain-English guide to every flow
+</footer>
+
+</body>
+</html>
