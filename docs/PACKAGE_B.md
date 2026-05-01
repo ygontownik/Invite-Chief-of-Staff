@@ -21,8 +21,11 @@ All output flows to:
 | Script | Trigger | Model routing | Cost / run |
 |--------|---------|---------------|-----------|
 | `cos_gmail_mini_v2.py` | LaunchAgent every 2h, Mon–Fri 8am–8pm | Haiku triage all → Sonnet enrich DEAL/RECRUIT ≥0.7 | ~$0.02–0.08 |
+| **`cos_capture_pipeline.py`** | **LaunchAgent daily 7:22am** | Sonnet — full capture + reconciliation + auto-drafts in one call | ~$0.10–0.30 / run |
 | `cos_otter_backfill.py` | LaunchAgent daily | Pass 1 Sonnet (memo) + Pass 2 Opus (deal/LP extraction, multi-hop) | ~$0.10–0.50 / transcript |
 | `cos_transcript_hook.py` | Fired by `call_recorder.py` post-recording | Sonnet (single-pass) | ~$0.02–0.05 / call |
+
+**`cos_capture_pipeline.py`** is the daily centerpiece — it replaced the old `cos-capture-pipeline` Claude Code SKILL on 2026-04-30 with a portable Python implementation. Same behavior, no Claude Code dependency, supports Gmail OR Outlook via the email provider abstraction. The legacy SKILL is preserved at `~/.claude/scheduled-tasks/cos-capture-pipeline/SKILL.md.archive-pre-python-migration`.
 
 All three load identity, owner whitelist, peer firms, and team behavior from `firm_context.yaml` at import time. Every prompt — including the 1.5 KB "who you are" header — is generated dynamically with prompt caching enabled, so the cached prefix delivers ~90% effective input cost reduction across runs.
 
@@ -113,3 +116,68 @@ The `[DEAL_WORKSTREAM]` token is replaced at runtime with `firm_context.yaml.wor
 | Heavy use (200 emails, 25 calls) | ~$10–15 / day |
 
 Prompt caching keeps marginal cost low — the firm identity header (~1.5 KB) caches across all items in a single run.
+
+---
+
+## Email Provider Abstraction
+
+`cos_capture_pipeline.py` and other Package B scripts read inboxes through a provider abstraction (`_email_provider.py`) so the same code works against Gmail or Microsoft 365 / Outlook.
+
+Selection is config-driven:
+
+```json
+// firm_config.json
+{ "email_provider": "gmail" }     // or "outlook"
+```
+
+| Provider | OAuth | Token cache | API |
+|---------|-------|-------------|-----|
+| `gmail` | Google OAuth (existing flow) | `~/credentials/gmail_mini_token.pickle` | Gmail v1 REST |
+| `outlook` | MS device-code flow | `~/credentials/ms_token.json` | Microsoft Graph v1.0 |
+
+### Outlook one-time setup
+
+You have two paths — pick whichever fits your situation. Neither requires a paid Azure subscription.
+
+**Path A — Use Microsoft's public client (zero setup, works for personal Outlook accounts):**
+
+1. Don't create any client config file.
+2. Set `"email_provider": "outlook"` in `firm_config.json`.
+3. First run prints a notice that it's using Microsoft's public Azure-CLI client and starts a device-code flow. Sign in with your Outlook account in the browser, paste the printed code, done.
+
+This uses Microsoft's pre-registered Azure CLI client ID (`04b07795-8ddb-461a-bbee-02f9e1bf7b46`) — the same one `az login` uses. It's appropriate for personal / individual use. Enterprises typically prefer Path B for audit and policy reasons.
+
+**Path B — Register your own app (recommended for enterprise / shared deployment):**
+
+1. Go to **https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade** (this URL bypasses the Azure subscription prompt and goes straight to App registrations under Microsoft Entra ID).
+2. Click **+ New registration**.
+   - Type: "Public client" / native
+   - For personal Outlook accounts: tenant_id = `consumers`
+   - For Microsoft 365 work account: tenant_id = your org tenant ID, or `common`
+3. Note the Application (client) ID.
+4. API permissions tab → add Microsoft Graph delegated permissions:
+   `Mail.Read`, `Mail.ReadWrite`, `User.Read`, `offline_access`. Grant admin consent if it's your org tenant.
+5. Save at `~/credentials/ms_oauth_client.json`:
+   ```json
+   {"client_id": "00000000-0000-0000-0000-000000000000", "tenant_id": "consumers"}
+   ```
+6. Set `"email_provider": "outlook"` in `firm_config.json`.
+7. First run triggers the device-code flow as in Path A.
+
+After that, all pipeline scripts read from your Outlook mailbox the same way Gmail users access theirs.
+
+---
+
+## Future: Agentic Action Enrichment (Plan C — not yet built)
+
+The current pipeline drafts email replies on your behalf. The natural next layer is enriching other action types so each follow-up on the dashboard has a click-through that takes you to a pre-prepared artifact:
+
+| Action pattern | What Claude could pre-do | Click-through goes to |
+|---------------|-------------------------|----------------------|
+| "Register for [conference]" | Look up the registration page, populate name/email/firm | Pre-filled registration form |
+| "Send X to Y by [date]" | Locate X in Drive, draft an email with X attached | Email draft (already done for emails) |
+| "Pull [data] before call with Z" | Fetch the data, attach to the action item as an artifact | Inline data viewer |
+| "Look into Y" | Web research → 1-page brief | Brief in Drive |
+| "Schedule call with X" | Find mutually free slot, draft calendar invite | Pre-filled calendar event |
+
+Architecturally this is a tool-use loop on top of `cos_capture_pipeline.py` — the foundation (provider abstraction, firm-context-driven prompts, JSON spec → batch writes) is already there. Ship as Plan C in a future iteration when there's a specific action type that's high-value enough to automate.

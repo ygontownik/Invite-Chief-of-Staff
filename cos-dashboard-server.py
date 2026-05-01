@@ -1745,6 +1745,12 @@ class Handler(BaseHTTPRequestHandler):
             if user != 'owner':
                 self._send_403(); return
             self._handle_routines_log()
+        elif self.path.split('?')[0] in ('/portfolio', '/portfolio/'):
+            idx = TC_BUILD / 'index.html'
+            if idx.exists():
+                self._serve_file(idx, 'text/html; charset=utf-8')
+            else:
+                self.send_response(404); self.end_headers()
         elif self.path.split('?')[0] in ('/tomac-cove', '/tomac-cove/'):
             self._serve_html_template(COS_DASHBOARD, user)
         elif self.path.startswith('/static/'):
@@ -2552,6 +2558,8 @@ class Handler(BaseHTTPRequestHandler):
             # Manual edit of deck/model/partner fields on a deal tile.
             # Auth gate already applied above (localhost-or-owner).
             self._handle_deal_override()
+        elif self.path == '/deal/workstream':
+            self._handle_deal_workstream()
         elif self.path == '/admin/invite':
             if not self._is_localhost():
                 user = self._authenticate()
@@ -2753,6 +2761,76 @@ class Handler(BaseHTTPRequestHandler):
             'field':  field,
             'value':  v,
         })
+
+    def _handle_deal_workstream(self):
+        """POST /deal/workstream — add, edit, delete, or toggle_status on a workstream.
+        Writes directly to deal.md YAML frontmatter and triggers a background recompile."""
+        import yaml as _yaml
+        body = self._read_json_body()
+        if body is None:
+            self.send_json(400, {'ok': False, 'error': 'invalid JSON'}); return
+        ticker = re.sub(r'[^a-z0-9_-]', '', str(body.get('ticker') or '').strip().lower())
+        action = str(body.get('action') or '').strip()
+        ws_in  = body.get('workstream') or {}
+        if not ticker or action not in ('add', 'edit', 'delete', 'toggle_status'):
+            self.send_json(400, {'ok': False, 'error': 'invalid ticker or action'}); return
+        deal_path = _ROOT / 'data' / 'deals' / ticker / 'deal.md'
+        if not deal_path.exists():
+            self.send_json(404, {'ok': False, 'error': 'deal not found'}); return
+        text = deal_path.read_text()
+        m = re.match(r'^---\n(.*?)\n---\n(.*)$', text, re.DOTALL)
+        if not m:
+            self.send_json(500, {'ok': False, 'error': 'malformed deal.md'}); return
+        try:
+            fm = _yaml.safe_load(m.group(1)) or {}
+        except Exception as e:
+            self.send_json(500, {'ok': False, 'error': f'yaml parse error: {e}'}); return
+        body_text = m.group(2)
+        workstreams = fm.get('workstreams') or []
+        if not isinstance(workstreams, list):
+            workstreams = []
+        STATUS_CYCLE = ['not-started', 'in-progress', 'done']
+        if action == 'add':
+            title = str(ws_in.get('title') or '').strip()[:200]
+            if not title:
+                self.send_json(400, {'ok': False, 'error': 'title required'}); return
+            workstreams.append({
+                'id': f"ws-{int(time.time() * 1000) % 1_000_000_000}",
+                'title': title,
+                'owner': str(ws_in.get('owner') or '').strip()[:80],
+                'status': 'not-started',
+                'note': str(ws_in.get('note') or '').strip()[:1000],
+            })
+        elif action in ('edit', 'toggle_status', 'delete'):
+            ws_id = str(ws_in.get('id') or '').strip()
+            if not ws_id:
+                self.send_json(400, {'ok': False, 'error': 'workstream id required'}); return
+            if action == 'delete':
+                workstreams = [w for w in workstreams if w.get('id') != ws_id]
+            else:
+                for ws in workstreams:
+                    if ws.get('id') != ws_id:
+                        continue
+                    if action == 'toggle_status':
+                        cur = ws.get('status', 'not-started')
+                        idx = STATUS_CYCLE.index(cur) if cur in STATUS_CYCLE else 0
+                        ws['status'] = STATUS_CYCLE[(idx + 1) % len(STATUS_CYCLE)]
+                    else:  # edit
+                        for k in ('title', 'owner', 'note'):
+                            if k in ws_in:
+                                ws[k] = str(ws_in[k] or '').strip()[:({'title':200,'owner':80,'note':1000}[k])]
+                    break
+        fm['workstreams'] = workstreams
+        new_yaml = _yaml.dump(fm, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        deal_path.write_text(f'---\n{new_yaml}---\n{body_text}')
+        try:
+            subprocess.Popen(
+                [sys.executable, COMPILE_SCRIPT],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+        except Exception:
+            pass
+        self.send_json(200, {'ok': True, 'workstreams': workstreams})
 
     def _handle_routines_kickstart(self):
         # POST /routines/<task>/kickstart  body: {"confirm":"yes"}

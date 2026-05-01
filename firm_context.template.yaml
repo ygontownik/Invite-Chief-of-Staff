@@ -90,3 +90,32 @@ peer_firms:
   - "Peer Firm 3"
   - "Peer Firm 4"
   # Add competitors / co-investors relevant to your strategy
+
+# ── DRAFT VOICE ───────────────────────────────────────────────────────────────
+# Used by cos_capture_pipeline.py when it auto-drafts email replies on your behalf.
+# These rules shape tone, sign-off, and what to never include. All optional —
+# sensible defaults are applied if omitted.
+
+draft_voice:
+  tone: "professional, concise, warm but not flowery"
+  preferred_signoff: "Best,\n[principal_first_name]"
+  default_greeting: "Hi [first_name],"   # [first_name] auto-resolves to recipient
+  brevity: "2-4 sentences for routine replies; up to 8 for substantive responses"
+  always_include:
+    - "If sender asked a specific question, answer it directly in the first sentence"
+    - "If declining or pushing out a meeting, propose at least one alternative"
+  never_include:
+    - "Apologies for late reply (just respond)"
+    - "Hope you're well / hope your week is going great (skip pleasantries)"
+    - "Looking forward to hearing from you (assume they will)"
+    - "Promises about specific deal terms without explicit principal sign-off"
+    - "Speculation about firm strategy not already public"
+  attach_resume_to:
+    # Email patterns where the script should attach the latest resume from Drive
+    - "recruiting@*"
+    - "talent@*"
+  context_to_include_in_replies:
+    # Up to 3 short sentences of context Claude leans on when drafting.
+    # Useful for: how you sign off, recurring caveats, things to reference.
+    - "If discussing fund formation, note that Fund I is in early stage."
+    - "Never commit to specific deal terms over email without a follow-up call."
