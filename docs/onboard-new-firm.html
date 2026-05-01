@@ -305,7 +305,7 @@
 <div class="header">
   <div class="label">COS Pipeline</div>
   <h1>New Firm Setup</h1>
-  <p>First install &nbsp;·&nbsp; 8 steps &nbsp;·&nbsp; ~45 minutes &nbsp;·&nbsp; one person does this once</p>
+  <p>First install &nbsp;·&nbsp; 9 steps &nbsp;·&nbsp; ~60 minutes &nbsp;·&nbsp; one person does this once</p>
 </div>
 
 <div class="container">
@@ -339,8 +339,9 @@
   <div class="cost-bar">
     <h3>Estimated monthly cost (typical solo GP use)</h3>
     <div class="cost-grid">
-      <div class="cost-item"><strong>~$15–30</strong> Anthropic API (Claude)</div>
-      <div class="cost-item"><strong>~$5–15</strong> AssemblyAI (if using podcast transcription)</div>
+      <div class="cost-item"><strong>~$15–30</strong> Anthropic API (Claude) — email triage, memos, action items</div>
+      <div class="cost-item"><strong>~$20/mo</strong> Claude Code CLI subscription — personal briefing + SKILL pipelines (optional)</div>
+      <div class="cost-item"><strong>~$5–15</strong> AssemblyAI — podcast transcription (optional)</div>
       <div class="cost-item"><strong>$0</strong> Google APIs (within free tier)</div>
       <div class="cost-item"><strong>$0</strong> GitHub (public repo, free)</div>
     </div>
@@ -354,11 +355,11 @@
         <div class="step-num">1</div>
         <div>
           <div class="step-title">Install prerequisites</div>
-          <div class="step-time">5 minutes &nbsp;·&nbsp; one-time</div>
+          <div class="step-time">10 minutes &nbsp;·&nbsp; one-time</div>
         </div>
       </div>
       <div class="step-body">
-        <p>You need Python 3.11+ and Git on your Mac. Run these in Terminal to check:</p>
+        <p><strong>Python 3.11+ and Git.</strong> Run these in Terminal to check:</p>
         <div class="code-block">
           <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
           <code>python3 --version
@@ -370,7 +371,30 @@ git --version</code>
           <button class="url-copy-btn" onclick="copyUrl(this)">Copy URL</button>
         </div>
         <p>If Git is missing: run <code class="inline">xcode-select --install</code> in Terminal.</p>
-        <div class="tip">Homebrew (<a href="https://brew.sh" target="_blank">brew.sh</a>) makes macOS package installs easier if you don't have it yet: <strong>brew.sh</strong></div>
+        <div class="tip">Homebrew (<a href="https://brew.sh" target="_blank">brew.sh</a>) makes macOS package installs easier if you don't have it yet.</div>
+
+        <p style="margin-top: 20px;"><strong>GitHub account.</strong> Needed later to host your private firm config repo so teammates can pull shared settings. Free at:</p>
+        <div class="url-block">
+          <a href="https://github.com/signup" target="_blank">https://github.com/signup</a>
+          <button class="url-copy-btn" onclick="copyUrl(this)">Copy URL</button>
+        </div>
+
+        <p style="margin-top: 20px;"><strong>Claude Code CLI</strong> — required only for SKILL-based pipelines (personal briefing, podcast transcription). Not required for email triage, dashboard, or transcript processing.</p>
+        <div class="purple-note" style="margin: 10px 0 14px;">
+          <strong>Two modes — pick one:</strong>
+          <div style="margin-top: 8px; display: flex; flex-direction: column; gap: 8px;">
+            <div><strong>API only</strong> — Anthropic API key is enough. Email triage, call transcript memos, action items, dashboard all work. No Claude Code subscription needed. Monthly cost: ~$15–30.</div>
+            <div><strong>API + Claude Code</strong> — Adds personal daily briefing and podcast transcription via scheduled SKILL pipelines. Requires Claude Code CLI installed and authenticated (~$20/mo additional). Recommended for full functionality.</div>
+          </div>
+        </div>
+        <p>If you want the full experience, install Claude Code now (requires Node.js 18+):</p>
+        <div class="code-block">
+          <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+          <code>node --version            # need 18+; install from nodejs.org if missing
+npm install -g @anthropic-ai/claude-code
+claude login              # opens browser — sign in with your Anthropic account</code>
+        </div>
+        <div class="tip">If you're starting with API-only mode, skip the Claude Code install. You can add it later without redoing any other steps.</div>
       </div>
     </div>
 
@@ -509,25 +533,40 @@ cd ~/cos-pipeline
         <div class="step-num">5</div>
         <div>
           <div class="step-title">Customize your firm identity and investment focus</div>
-          <div class="step-time">10 minutes &nbsp;·&nbsp; edit one file</div>
+          <div class="step-time">15 minutes &nbsp;·&nbsp; edit one file</div>
         </div>
       </div>
       <div class="step-body">
-        <p>Setup created <code class="inline">~/cos-pipeline/firm_context.yaml</code> from a template with your name and firm. Now open it and fill in the rest — this is what teaches the AI who you are and what to look for:</p>
+        <p>Setup created <code class="inline">~/cos-pipeline/firm_context.yaml</code> from a template with your name and firm. Open it and fill in the rest — this is what teaches the AI who you are and what to look for:</p>
         <div class="code-block">
           <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
           <code>open -a TextEdit ~/cos-pipeline/firm_context.yaml</code>
         </div>
-        <p>Key sections to fill in:</p>
+
+        <p><strong>Shared firm sections</strong> (everyone on your team uses these):</p>
         <ul>
           <li><strong>investment_focus</strong> — your sector priorities in order (e.g. "power &amp; utilities", "digital infrastructure")</li>
-          <li><strong>team</strong> — add your partners/colleagues with their roles</li>
+          <li><strong>team</strong> — your partners/colleagues with their roles; drives speaker attribution on call transcripts</li>
           <li><strong>peer_firms</strong> — competitors and co-investors you want flagged in intel</li>
-          <li><strong>key_people</strong> — counterparties and contacts worth flagging in action items</li>
-          <li><strong>deal_keywords</strong> in <code class="inline">firm_config.json</code> — active deal names and target company names</li>
+          <li><strong>key_people</strong> — counterparties and contacts you want flagged in action items</li>
+          <li><strong>deal_keywords</strong> in <code class="inline">firm_config.json</code> — active deal names, target company names</li>
         </ul>
-        <p>The more specific this file is, the better the AI's classification, memo quality, and action items will be.</p>
-        <div class="purple-note"><strong>Keychain service prefix.</strong> In <code class="inline">firm_config.json</code>, set <code class="inline">"keychain_service_prefix"</code> to something unique for your firm (e.g. <code class="inline">"cascade-pipeline"</code>). This isolates your secrets from any other firm's installation on the same machine and makes your API billing self-contained.</div>
+
+        <p><strong>Personal section</strong> — goes at the bottom of your local copy only. Never commit this to the shared repo. It controls your personal briefing and podcast feeds:</p>
+        <div class="code-block">
+          <div class="code-label">firm_context.yaml — personal: block</div>
+          <code>personal:
+  briefing_email: "you@yourdomain.com"   # where daily briefing is emailed
+  podcast_feeds:
+    - show: "Catalyst"
+      rss:  "https://feeds.megaphone.fm/catalyst"
+    - show: "Your Favorite Show"
+      rss:  "https://example.com/feed.rss"
+  briefing_time: "07:00"                 # local time for daily briefing delivery</code>
+        </div>
+        <p>Each person on the team adds their own <code class="inline">personal:</code> block to their local <code class="inline">firm_context.yaml</code> with their own email and podcast feeds. If you share a config repo, this section stays out of it — add it after pulling.</p>
+
+        <div class="purple-note"><strong>Keychain service prefix.</strong> In <code class="inline">firm_config.json</code>, set <code class="inline">"keychain_service_prefix"</code> to something unique for your firm (e.g. <code class="inline">"cascade-pipeline"</code>). This isolates your secrets from any other firm's installation on the same machine and makes your API billing fully self-contained.</div>
       </div>
     </div>
 
@@ -552,10 +591,52 @@ python3 setup.py --create-docs</code>
       </div>
     </div>
 
-    <!-- Step 7: Transcript sources -->
+    <!-- Step 7: AssemblyAI (optional) -->
     <div class="step">
       <div class="step-header">
         <div class="step-num">7</div>
+        <div>
+          <div class="step-title">Set up podcast transcription (optional)</div>
+          <div class="step-time">5 minutes &nbsp;·&nbsp; skip if not using podcasts</div>
+        </div>
+      </div>
+      <div class="step-body">
+        <p>If you added podcast feeds to your <code class="inline">personal:</code> block in Step 5, the pipeline transcribes each new episode using AssemblyAI and writes structured memos to Google Docs. You need your own AssemblyAI account — Anthropic is not used for this step.</p>
+        <div class="substeps">
+          <div class="substep">
+            <div class="substep-num">1</div>
+            <div class="substep-body">Sign up (free tier available; transcription billed per minute after that):
+              <div class="url-block" style="margin-top: 8px;">
+                <a href="https://www.assemblyai.com" target="_blank">https://www.assemblyai.com</a>
+                <button class="url-copy-btn" onclick="copyUrl(this)">Copy URL</button>
+              </div>
+            </div>
+          </div>
+          <div class="substep">
+            <div class="substep-num">2</div>
+            <div class="substep-body">Go to your dashboard → copy your <strong>API Key</strong></div>
+          </div>
+          <div class="substep">
+            <div class="substep-num">3</div>
+            <div class="substep-body">Store it in your Keychain (same prefix as your other secrets):
+              <div class="code-block" style="margin-top: 8px;">
+                <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+                <code>security add-generic-password \
+  -s "cos-pipeline/ASSEMBLYAI_API_KEY" \
+  -a "$USER" -w "YOUR_KEY_HERE" -U</code>
+              </div>
+              Replace <code class="inline">cos-pipeline</code> with your <code class="inline">keychain_service_prefix</code> if you changed it.
+            </div>
+          </div>
+        </div>
+        <div class="tip">Typical cost: ~$0.009/minute of audio. A 45-minute podcast episode costs about $0.40. Most users spend $5–15/month on this.</div>
+      </div>
+    </div>
+
+    <!-- Step 8: Transcript sources -->
+    <div class="step">
+      <div class="step-header">
+        <div class="step-num">8</div>
         <div>
           <div class="step-title">Connect your call transcript source</div>
           <div class="step-time">5 minutes &nbsp;·&nbsp; add Drive folder IDs</div>
@@ -577,10 +658,10 @@ python3 setup.py --create-docs</code>
       </div>
     </div>
 
-    <!-- Step 8: Verify + install tasks -->
+    <!-- Step 9: Verify + install tasks -->
     <div class="step">
       <div class="step-header">
-        <div class="step-num">8</div>
+        <div class="step-num">9</div>
         <div>
           <div class="step-title">Validate and install background tasks</div>
           <div class="step-time">2 minutes</div>
