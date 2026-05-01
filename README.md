@@ -106,6 +106,25 @@ python3 cos_capture_pipeline.py --since 24h
 
 ---
 
+## What Gets Captured — Where to Save Things
+
+**→ [docs/WHAT_GETS_CAPTURED.md](docs/WHAT_GETS_CAPTURED.md)**
+
+The short version:
+
+| Content | What to do |
+|---------|-----------|
+| Call transcript (Otter, Beside, Fireflies, etc.) | Configure the service's Drive sync to point at a folder ID in your `transcript_sources` config |
+| Manual transcript | Paste text into a `.txt` file → save to any configured Drive folder |
+| Desktop recording | `call_recorder.py` saves automatically; add a `local_folder` source pointing at `~/recordings` |
+| Podcast / blog | Add RSS feed to `personal.content_feeds` in `firm_context.yaml` |
+| Email | Nothing — your inbox is scanned automatically every 2 hours |
+| Research PDF | Not yet supported |
+
+The pipeline **only** reads the specific folder IDs listed in `transcript_sources`. No other Drive content is touched.
+
+---
+
 ## File Map — What Goes Where
 
 ### Firm-specific (fill these in, never committed to git)

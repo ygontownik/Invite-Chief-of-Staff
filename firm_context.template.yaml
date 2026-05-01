@@ -172,42 +172,63 @@ prompt_overrides:
   memo_focus_supplement: ""
 
 # ── TRANSCRIPT SOURCES ─────────────────────────────────────────────────────────
-# Which recording services to scan for new transcripts.
-# Each team member configures this in their own copy of firm_context.yaml
-# to match their recording setup.
+# Tells the pipeline WHERE to look for call transcripts.
 #
-# Supported types:
-#   "google_drive_folder" — any service that syncs to Google Drive
-#                           (Otter AI, Beside AI, Fireflies, Grain, etc.)
-#   "local_folder"        — local directory (desktop recorder output, manual saves)
+# ┌─────────────────────────────────────────────────────────────────────────┐
+# │ IMPORTANT: The pipeline ONLY reads the specific folders listed here.    │
+# │ Every other file in your Google Drive is completely untouched.          │
+# │ Saving a transcript anywhere else = it will not be picked up.           │
+# └─────────────────────────────────────────────────────────────────────────┘
 #
-# The pipeline ONLY looks inside the folder_ids listed here.
-# Every other file in your Google Drive is untouched.
+# HOW TO SAVE TRANSCRIPTS SO THEY GET CAPTURED:
+#   Otter AI   → Zapier: New Otter recording → Upload to your folder_id below
+#   Beside AI  → Beside settings → Drive sync → point at your folder_id
+#   Fireflies  → Fireflies integrations → Drive → select your folder
+#   Grain      → Grain workspace settings → Drive export → your folder
+#   Read AI    → Read AI settings → Drive integration → your folder
+#   Manual     → Paste transcript text into a .txt file, save to any folder_id below
+#   Desktop    → Use local_folder source pointing at ~/recordings
 #
-# If this section is omitted entirely, the pipeline falls back to the legacy
-# Otter AI folder IDs from drive-docs.yaml — so existing setups keep working.
+# SUPPORTED FILE FORMATS: .txt  .vtt  .srt  .md  .rtf  Google Docs
+# IGNORED AUTOMATICALLY:  .m4a  .mp3  .wav  .pdf  .xlsx  .png  (audio/binary)
+#
+# HOW TO FIND A FOLDER ID:
+#   Open the folder in Google Drive → copy the last part of the URL:
+#   drive.google.com/drive/folders/THIS_IS_THE_FOLDER_ID
+#
+# See docs/WHAT_GETS_CAPTURED.md for the full reference.
+#
+# Supported source types:
+#   "google_drive_folder" — any service syncing to Drive (Otter, Beside, Fireflies…)
+#   "local_folder"        — a directory on this machine (desktop recorder, manual)
 
 transcript_sources:
   - type: "google_drive_folder"
     name: "Otter AI"                          # label shown in logs and memo headers
     folder_ids:
-      - "YOUR_OTTER_ROOT_FOLDER_ID"           # where Zapier drops new recordings
-      - "YOUR_OTTER_DEAL_FOLDER_ID"           # deal/investment calls subfolder
-      - "YOUR_OTTER_RECRUITING_FOLDER_ID"     # recruiting calls subfolder
-      - "YOUR_OTTER_OTHER_FOLDER_ID"          # other calls subfolder
-    root_folder_id: "YOUR_OTTER_ROOT_FOLDER_ID"  # files get moved out of here after triage
-    category_hint: "auto"                     # auto-detect category from content
+      - "YOUR_OTTER_ROOT_FOLDER_ID"           # ← save/sync Otter recordings here
+      - "YOUR_OTTER_DEAL_FOLDER_ID"           # deal/investment calls subfolder (optional)
+      - "YOUR_OTTER_RECRUITING_FOLDER_ID"     # recruiting calls subfolder (optional)
+      - "YOUR_OTTER_OTHER_FOLDER_ID"          # other calls subfolder (optional)
+    root_folder_id: "YOUR_OTTER_ROOT_FOLDER_ID"  # processed files get moved out of here
+    category_hint: "auto"                     # auto-detect; or set "Recruiting"/"Deal"/"Other"
 
-  # Add more sources as needed:
+  # ── Add more sources — one block per recording service ──────────────────────
+  #
+  # Beside AI example:
   # - type: "google_drive_folder"
   #   name: "Beside AI"
   #   folder_ids:
-  #     - "YOUR_BESIDE_AI_FOLDER_ID"
+  #     - "YOUR_BESIDE_AI_FOLDER_ID"          # ← configure Beside Drive sync to this folder
   #   category_hint: "auto"
   #
+  # Fireflies / Grain / Read AI / Fathom — same pattern as Beside AI above.
+  # Each service has a Drive integration setting where you paste the folder ID.
+  #
+  # Desktop recorder (call_recorder.py) or manual transcript files:
   # - type: "local_folder"
   #   name: "Desktop Recorder"
-  #   path: "~/recordings"
+  #   path: "~/recordings"                    # ← save .txt transcript files here
   #   category_hint: "auto"
 
 # ── PERSONAL CONTENT & BRIEFING ───────────────────────────────────────────────
