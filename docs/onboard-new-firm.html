@@ -537,7 +537,12 @@ cd ~/cos-pipeline
         </div>
       </div>
       <div class="step-body">
-        <p>Setup created <code class="inline">~/cos-pipeline/firm_context.yaml</code> from a template with your name and firm. Open it and fill in the rest — this is what teaches the AI who you are and what to look for:</p>
+        <p>Rather than editing the YAML directly, use the configuration wizard — it asks you questions and generates the correct config blocks to paste in:</p>
+        <div class="url-block">
+          <a href="configure.html" target="_blank">→ Open the configuration wizard</a>
+          <button class="url-copy-btn" onclick="copyUrl(this)">Copy URL</button>
+        </div>
+        <p>Or open the file directly if you prefer editing YAML:</p>
         <div class="code-block">
           <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
           <code>open -a TextEdit ~/cos-pipeline/firm_context.yaml</code>

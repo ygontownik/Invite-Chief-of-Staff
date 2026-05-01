@@ -1,0 +1,1147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>COS Pipeline — Configure Your Identity</title>
+<style>
+  :root {
+    --cream:    #faf8f4;
+    --paper:    #f4f1ea;
+    --border:   #ddd8cc;
+    --ink:      #1a1714;
+    --muted:    #6b6460;
+    --blue:     #2563eb;
+    --blue-bg:  #eff6ff;
+    --blue-border: #bfdbfe;
+    --green:    #15803d;
+    --green-bg: #f0fdf4;
+    --green-border: #86efac;
+    --amber:    #92400e;
+    --amber-bg: #fffbeb;
+    --purple:   #6d28d9;
+    --purple-bg:#f5f3ff;
+    --purple-border: #c4b5fd;
+    --code-bg:  #1e1b18;
+    --code-fg:  #e8e3da;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    background: var(--cream);
+    color: var(--ink);
+  }
+
+  /* ── Header ── */
+  .header {
+    border-bottom: 1px solid var(--border);
+    background: var(--paper);
+    padding: 32px 0;
+    text-align: center;
+  }
+  .header .label { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+  .header h1 { font-size: 26px; font-weight: 700; }
+  .header p { margin-top: 8px; color: var(--muted); font-size: 14px; }
+
+  /* ── Layout ── */
+  .page { max-width: 800px; margin: 0 auto; padding: 48px 24px 80px; }
+
+  /* ── Progress ── */
+  .progress-bar {
+    display: flex; gap: 0; margin-bottom: 40px;
+    border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+    background: white;
+  }
+  .progress-step {
+    flex: 1; padding: 10px 8px; text-align: center;
+    font-size: 11px; font-weight: 600; color: var(--muted);
+    cursor: pointer; border-right: 1px solid var(--border);
+    transition: all .15s;
+  }
+  .progress-step:last-child { border-right: none; }
+  .progress-step:hover { background: var(--cream); color: var(--ink); }
+  .progress-step.active { background: var(--ink); color: white; }
+  .progress-step.done { background: var(--green-bg); color: var(--green); }
+
+  /* ── Section cards ── */
+  .section {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px 32px;
+    margin-bottom: 20px;
+  }
+  .section-header {
+    display: flex; align-items: flex-start; gap: 14px; margin-bottom: 24px;
+  }
+  .section-num {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--ink); color: white;
+    font-size: 12px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; margin-top: 2px;
+  }
+  .section-title { font-size: 18px; font-weight: 700; margin-bottom: 3px; }
+  .section-sub { font-size: 13px; color: var(--muted); }
+
+  /* ── Form elements ── */
+  .field { margin-bottom: 20px; }
+  .field label {
+    display: block; font-size: 13px; font-weight: 600;
+    color: var(--ink); margin-bottom: 6px;
+  }
+  .field .hint { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+
+  input[type="text"], textarea, select {
+    width: 100%;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 9px 12px;
+    font-size: 14px;
+    font-family: inherit;
+    color: var(--ink);
+    background: var(--cream);
+    transition: border-color .15s;
+    outline: none;
+  }
+  input[type="text"]:focus, textarea:focus, select:focus {
+    border-color: var(--blue); background: white;
+  }
+  textarea { resize: vertical; min-height: 80px; }
+
+  .field-row { display: flex; gap: 12px; }
+  .field-row .field { flex: 1; margin-bottom: 0; }
+
+  /* ── Radio groups ── */
+  .radio-group { display: flex; flex-direction: column; gap: 8px; }
+  .radio-group.inline { flex-direction: row; flex-wrap: wrap; gap: 8px; }
+
+  .radio-option {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all .15s;
+    background: var(--cream);
+  }
+  .radio-option:hover { border-color: #aaa; background: white; }
+  .radio-option.selected { border-color: var(--blue); background: var(--blue-bg); }
+  .radio-option input[type="radio"] { display: none; }
+  .radio-dot {
+    width: 16px; height: 16px; border-radius: 50%;
+    border: 2px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; margin-top: 2px; transition: all .15s;
+  }
+  .radio-option.selected .radio-dot { border-color: var(--blue); }
+  .radio-dot::after {
+    content: ''; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--blue); display: none;
+  }
+  .radio-option.selected .radio-dot::after { display: block; }
+  .radio-label { font-size: 14px; font-weight: 600; color: var(--ink); }
+  .radio-desc  { font-size: 12px; color: var(--muted); margin-top: 1px; }
+
+  /* ── Checkbox chips ── */
+  .chip-group { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 13px; font-weight: 500;
+    color: var(--muted);
+    background: white;
+    transition: all .15s;
+    user-select: none;
+  }
+  .chip:hover { border-color: #aaa; color: var(--ink); }
+  .chip.selected { border-color: var(--blue); background: var(--blue-bg); color: var(--blue); font-weight: 600; }
+  .chip .chip-order {
+    font-size: 10px; font-weight: 700;
+    background: var(--blue); color: white;
+    border-radius: 10px; padding: 0 5px; min-width: 16px; text-align: center;
+    display: none;
+  }
+  .chip.selected .chip-order { display: block; }
+
+  /* ── Tag input ── */
+  .tag-input-wrap {
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 6px 8px; background: var(--cream);
+    display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+    min-height: 42px; cursor: text; transition: border-color .15s;
+  }
+  .tag-input-wrap:focus-within { border-color: var(--blue); background: white; }
+  .tag {
+    display: flex; align-items: center; gap: 4px;
+    background: var(--ink); color: white;
+    border-radius: 12px; padding: 2px 10px 2px 10px;
+    font-size: 12px; font-weight: 600;
+  }
+  .tag-remove {
+    cursor: pointer; opacity: .6; font-size: 14px; line-height: 1;
+    margin-left: 2px;
+  }
+  .tag-remove:hover { opacity: 1; }
+  .tag-input {
+    border: none; outline: none; background: transparent;
+    font-size: 13px; flex: 1; min-width: 120px;
+    padding: 3px 4px; font-family: inherit; color: var(--ink);
+  }
+
+  /* ── Team members ── */
+  .team-list { display: flex; flex-direction: column; gap: 12px; }
+  .team-member {
+    border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px; background: var(--cream);
+    display: flex; gap: 12px; align-items: flex-start;
+  }
+  .team-member-fields { flex: 1; display: flex; flex-direction: column; gap: 10px; }
+  .team-remove {
+    background: none; border: 1px solid var(--border); border-radius: 6px;
+    padding: 4px 8px; cursor: pointer; font-size: 12px; color: var(--muted);
+    flex-shrink: 0; margin-top: 2px; transition: all .15s;
+  }
+  .team-remove:hover { border-color: #e53e3e; color: #e53e3e; }
+  .add-btn {
+    display: flex; align-items: center; gap: 6px;
+    background: none; border: 1px dashed var(--border);
+    border-radius: 8px; padding: 10px 16px;
+    font-size: 13px; font-weight: 600; color: var(--muted);
+    cursor: pointer; width: 100%; justify-content: center;
+    transition: all .15s;
+  }
+  .add-btn:hover { border-color: var(--blue); color: var(--blue); }
+
+  /* ── Output section ── */
+  .output-section {
+    margin-top: 40px;
+    border-top: 2px solid var(--ink);
+    padding-top: 40px;
+  }
+  .output-section h2 {
+    font-size: 20px; font-weight: 700; margin-bottom: 6px;
+  }
+  .output-section > p {
+    font-size: 14px; color: var(--muted); margin-bottom: 28px;
+  }
+
+  .output-tabs {
+    display: flex; gap: 0; border-bottom: 1px solid var(--border);
+    margin-bottom: 0;
+  }
+  .output-tab {
+    padding: 10px 18px; font-size: 13px; font-weight: 600;
+    color: var(--muted); cursor: pointer; border: 1px solid transparent;
+    border-bottom: none; border-radius: 8px 8px 0 0;
+    margin-bottom: -1px; background: transparent;
+    transition: all .15s;
+  }
+  .output-tab:hover { color: var(--ink); }
+  .output-tab.active {
+    color: var(--ink); background: white;
+    border-color: var(--border); border-bottom-color: white;
+  }
+
+  .output-pane {
+    background: white; border: 1px solid var(--border); border-top: none;
+    border-radius: 0 0 10px 10px; overflow: hidden; display: none;
+  }
+  .output-pane.active { display: block; }
+
+  .output-toolbar {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 16px; border-bottom: 1px solid var(--border);
+    background: var(--paper);
+  }
+  .output-filename { font-size: 12px; font-weight: 700; color: var(--muted); font-family: monospace; }
+  .copy-output-btn {
+    font-size: 12px; font-weight: 600;
+    padding: 4px 12px; border-radius: 6px;
+    border: 1px solid var(--border); background: white;
+    cursor: pointer; color: var(--ink); transition: all .15s;
+  }
+  .copy-output-btn:hover { background: var(--ink); color: white; border-color: var(--ink); }
+  .copy-output-btn.copied { background: var(--green-bg); color: var(--green); border-color: var(--green); }
+
+  .output-code {
+    font-family: "SFMono-Regular", "Menlo", monospace;
+    font-size: 12px; line-height: 1.7;
+    padding: 20px;
+    color: var(--ink);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 500px;
+    overflow-y: auto;
+    background: #fdfcf9;
+  }
+
+  /* ── Tip / note ── */
+  .tip {
+    background: var(--green-bg); border: 1px solid var(--green-border);
+    border-radius: 8px; padding: 12px 16px;
+    font-size: 13px; color: #166534; margin-top: 16px;
+  }
+  .note {
+    background: var(--amber-bg); border: 1px solid #fcd34d;
+    border-radius: 8px; padding: 12px 16px;
+    font-size: 13px; color: var(--amber); margin-top: 16px;
+  }
+  .note strong { display: block; margin-bottom: 2px; }
+
+  /* ── Divider ── */
+  .field-divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+
+  .footer {
+    text-align: center; color: var(--muted); font-size: 12px;
+    padding: 32px 0; border-top: 1px solid var(--border); margin-top: 48px;
+  }
+  .footer a { color: var(--muted); }
+
+  @media (max-width: 600px) {
+    .section { padding: 20px; }
+    .field-row { flex-direction: column; }
+    .radio-group.inline { flex-direction: column; }
+    .progress-step { font-size: 9px; padding: 8px 4px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="label">COS Pipeline</div>
+  <h1>Configure Your Identity</h1>
+  <p>Your answers shape every memo, action item, and email draft the pipeline produces.<br>Takes 10 minutes. Generates copy-paste config at the bottom.</p>
+</div>
+
+<div class="page">
+
+  <!-- Section 1: You -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-num">1</div>
+      <div>
+        <div class="section-title">Who you are</div>
+        <div class="section-sub">Used in every prompt — tells the AI whose lens to apply</div>
+      </div>
+    </div>
+
+    <div class="field-row">
+      <div class="field">
+        <label>Full name</label>
+        <input type="text" id="p-name" placeholder="Sarah Mitchell" oninput="update()">
+      </div>
+      <div class="field">
+        <label>Prior firm(s)</label>
+        <input type="text" id="p-prior" placeholder="BlackRock Infrastructure, Macquarie" oninput="update()">
+      </div>
+    </div>
+
+    <div class="field">
+      <label>One sentence about your background</label>
+      <div class="hint">This appears in every prompt. Be specific — years, capital deployed, what you're known for.</div>
+      <input type="text" id="p-background" placeholder="~15 years infra PE, $8B+ deployed across power, digital, and midstream" oninput="update()">
+    </div>
+
+    <div class="field">
+      <label>Your role / frame</label>
+      <div class="radio-group inline" id="investor-frame">
+        <label class="radio-option selected" onclick="selectRadio('investor-frame', this, 'principal investor')">
+          <input type="radio" name="frame" value="principal investor" checked>
+          <div class="radio-dot"></div>
+          <div><div class="radio-label">Principal investor / GP</div></div>
+        </label>
+        <label class="radio-option" onclick="selectRadio('investor-frame', this, 'LP / allocator')">
+          <input type="radio" name="frame" value="LP / allocator">
+          <div class="radio-dot"></div>
+          <div><div class="radio-label">LP / allocator</div></div>
+        </label>
+        <label class="radio-option" onclick="selectRadio('investor-frame', this, 'corporate development')">
+          <input type="radio" name="frame" value="corporate development">
+          <div class="radio-dot"></div>
+          <div><div class="radio-label">Corporate development</div></div>
+        </label>
+        <label class="radio-option" onclick="selectRadio('investor-frame', this, 'analyst')">
+          <input type="radio" name="frame" value="analyst">
+          <div class="radio-dot"></div>
+          <div><div class="radio-label">Analyst</div></div>
+        </label>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Active job search?</label>
+      <div class="radio-group inline" id="job-search">
+        <label class="radio-option" onclick="selectRadio('job-search', this, 'false')">
+          <input type="radio" name="jobsearch" value="false">
+          <div class="radio-dot"></div>
+          <div><div class="radio-label">No</div></div>
+        </label>
+        <label class="radio-option selected" onclick="selectRadio('job-search', this, 'true')">
+          <input type="radio" name="jobsearch" value="true" checked>
+          <div class="radio-dot"></div>
+          <div><div class="radio-label">Yes — flag recruiting intel as high priority</div></div>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <!-- Section 2: Firm -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-num">2</div>
+      <div>
+        <div class="section-title">Your firm</div>
+        <div class="section-sub">Used in speaker attribution and memo attribution</div>
+      </div>
+    </div>
+
+    <div class="field-row">
+      <div class="field">
+        <label>Firm full name</label>
+        <input type="text" id="firm-name" placeholder="Cascade Capital Partners" oninput="update()">
+      </div>
+      <div class="field">
+        <label>Short name / ticker</label>
+        <input type="text" id="firm-short" placeholder="CCP" oninput="update()">
+      </div>
+    </div>
+  </div>
+
+  <!-- Section 3: Investment Focus -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-num">3</div>
+      <div>
+        <div class="section-title">Investment focus</div>
+        <div class="section-sub">Select sectors in priority order — click in the order you care about them. The AI uses this to weight memo relevance and flag intel.</div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Sectors (click in priority order)</label>
+      <div class="chip-group" id="focus-chips">
+        <div class="chip" onclick="toggleFocus(this, 'power &amp; utilities (generation, transmission)')"><span class="chip-order"></span>Power &amp; utilities</div>
+        <div class="chip" onclick="toggleFocus(this, 'digital infrastructure (data centers, fiber, towers)')"><span class="chip-order"></span>Digital infrastructure</div>
+        <div class="chip" onclick="toggleFocus(this, 'midstream / LNG (pipelines, processing, export)')"><span class="chip-order"></span>Midstream / LNG</div>
+        <div class="chip" onclick="toggleFocus(this, 'energy transition (storage, nuclear, geothermal, solar)')"><span class="chip-order"></span>Energy transition</div>
+        <div class="chip" onclick="toggleFocus(this, 'transportation (airports, ports, rail, roads)')"><span class="chip-order"></span>Transportation</div>
+        <div class="chip" onclick="toggleFocus(this, 'water &amp; environmental infrastructure')"><span class="chip-order"></span>Water &amp; environmental</div>
+        <div class="chip" onclick="toggleFocus(this, 'social infrastructure (healthcare, education, government)')"><span class="chip-order"></span>Social infrastructure</div>
+        <div class="chip" onclick="toggleFocus(this, 'renewables (utility-scale solar, wind)')"><span class="chip-order"></span>Renewables</div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Specific sub-themes or watch items</label>
+      <div class="hint">The AI appends this to every transcript analysis. Name regulatory orders, deal structures, or themes you always want called out.</div>
+      <textarea id="focus-supplement" placeholder="e.g. Always flag FERC Order 1920 implications. Flag any data center large-load interconnection discussion. Note any GenCo carveout structures." oninput="update()"></textarea>
+    </div>
+
+    <div class="field">
+      <label>Competitor / peer firms to flag</label>
+      <div class="hint">Any mention of these in call transcripts or emails triggers a competitive intel flag in action items.</div>
+      <div class="tag-input-wrap" onclick="this.querySelector('input').focus()">
+        <div id="peer-tags"></div>
+        <input class="tag-input" id="peer-input" placeholder="Type firm name, press Enter" onkeydown="addTag(event, 'peer')">
+      </div>
+    </div>
+  </div>
+
+  <!-- Section 4: Team -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-num">4</div>
+      <div>
+        <div class="section-title">Your team</div>
+        <div class="section-sub">This drives speaker attribution on call transcripts — who gets credited for which action items. Fill out "call behavior" carefully.</div>
+      </div>
+    </div>
+
+    <div class="team-list" id="team-list"></div>
+    <button class="add-btn" onclick="addTeamMember()" style="margin-top: 12px;">+ Add team member</button>
+
+    <div class="note" style="margin-top: 16px;">
+      <strong>Why this matters.</strong> On internal calls, the AI uses each person's stated call behavior to figure out who made which commitment. If your deal lead "drives the agenda" and you "validate and provide market context" — those are different action owners. Leave this blank and internal call action items will be mis-attributed.
+    </div>
+  </div>
+
+  <!-- Section 5: Analytical Voice -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-num">5</div>
+      <div>
+        <div class="section-title">Analytical style</div>
+        <div class="section-sub">How memos are structured and what the AI leads with</div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Memo output format</label>
+      <div class="radio-group" id="memo-format">
+        <label class="radio-option selected" onclick="selectRadio('memo-format', this, 'sixsection')">
+          <input type="radio" name="memoformat" checked>
+          <div class="radio-dot"></div>
+          <div>
+            <div class="radio-label">Six-section investor memo (default)</div>
+            <div class="radio-desc">Core Argument · Consensus · Tension · Open Questions · What You'd Need · Key Names. Best for deal and LP calls.</div>
+          </div>
+        </label>
+        <label class="radio-option" onclick="selectRadio('memo-format', this, 'brief')">
+          <input type="radio" name="memoformat">
+          <div class="radio-dot"></div>
+          <div>
+            <div class="radio-label">Brief summary</div>
+            <div class="radio-desc">3–4 paragraph narrative. Good for advisory and check-in calls where a full memo is overkill.</div>
+          </div>
+        </label>
+        <label class="radio-option" onclick="selectRadio('memo-format', this, 'comprehensive')">
+          <input type="radio" name="memoformat">
+          <div class="radio-dot"></div>
+          <div>
+            <div class="radio-label">Comprehensive coverage</div>
+            <div class="radio-desc">Extended six-section format with more depth per section. Good for IC-level calls and diligence sessions.</div>
+          </div>
+        </label>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Primary analytical question the AI should answer first</label>
+      <div class="radio-group" id="primary-question">
+        <label class="radio-option selected" onclick="selectRadio('primary-question', this, 'investment')">
+          <input type="radio" name="primq" checked>
+          <div class="radio-dot"></div>
+          <div>
+            <div class="radio-label">Is there an investment here?</div>
+            <div class="radio-desc">Lead with the investment implication. Who else is looking? What would it take to act?</div>
+          </div>
+        </label>
+        <label class="radio-option" onclick="selectRadio('primary-question', this, 'risk')">
+          <input type="radio" name="primq">
+          <div class="radio-dot"></div>
+          <div>
+            <div class="radio-label">What are the key risks?</div>
+            <div class="radio-desc">Lead with downside. What could kill the thesis? What's not being said?</div>
+          </div>
+        </label>
+        <label class="radio-option" onclick="selectRadio('primary-question', this, 'relationship')">
+          <input type="radio" name="primq">
+          <div class="radio-dot"></div>
+          <div>
+            <div class="radio-label">What's the relationship / next step?</div>
+            <div class="radio-desc">Lead with who to call and when. Good for pipeline-building and LP relationship calls.</div>
+          </div>
+        </label>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Specificity preference</label>
+      <div class="radio-group" id="specificity">
+        <label class="radio-option selected" onclick="selectRadio('specificity', this, 'strict')">
+          <input type="radio" name="spec" checked>
+          <div class="radio-dot"></div>
+          <div>
+            <div class="radio-label">Named assets, firms, and numbers only — never thematic</div>
+            <div class="radio-desc">If it's in the transcript, name it. No floating assertions. Good for active deal calls.</div>
+          </div>
+        </label>
+        <label class="radio-option" onclick="selectRadio('specificity', this, 'mixed')">
+          <input type="radio" name="spec">
+          <div class="radio-dot"></div>
+          <div>
+            <div class="radio-label">Lead with specifics, thematic summary acceptable</div>
+            <div class="radio-desc">Name what's named, summarize what isn't. Good for market/sector calls.</div>
+          </div>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <!-- Section 6: Email Voice -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-num">6</div>
+      <div>
+        <div class="section-title">Email draft voice</div>
+        <div class="section-sub">How the AI sounds when it drafts replies on your behalf</div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Tone</label>
+      <div class="radio-group" id="email-tone">
+        <label class="radio-option selected" onclick="selectRadio('email-tone', this, 'professional, direct, principal-investor frame — no fluff')">
+          <input type="radio" name="tone" checked>
+          <div class="radio-dot"></div>
+          <div>
+            <div class="radio-label">Professional and direct</div>
+            <div class="radio-desc">Principal investor frame. No pleasantries. Answer first, context second.</div>
+          </div>
+        </label>
+        <label class="radio-option" onclick="selectRadio('email-tone', this, 'warm, relationship-focused, senior professional')">
+          <input type="radio" name="tone">
+          <div class="radio-dot"></div>
+          <div>
+            <div class="radio-label">Warm and relationship-focused</div>
+            <div class="radio-desc">Invests in the person, not just the answer. Good for LP and founder relationships.</div>
+          </div>
+        </label>
+        <label class="radio-option" onclick="selectRadio('email-tone', this, 'formal, measured, institutional')">
+          <input type="radio" name="tone">
+          <div class="radio-dot"></div>
+          <div>
+            <div class="radio-label">Formal and institutional</div>
+            <div class="radio-desc">Measured. Appropriate for regulated counterparties, government contacts, formal pitches.</div>
+          </div>
+        </label>
+        <label class="radio-option" onclick="selectRadio('email-tone', this, 'concise, direct, brevity above all')">
+          <input type="radio" name="tone">
+          <div class="radio-dot"></div>
+          <div>
+            <div class="radio-label">Maximally concise</div>
+            <div class="radio-desc">One paragraph max. Answer only. No framing.</div>
+          </div>
+        </label>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Default reply length</label>
+      <div class="radio-group inline" id="email-brevity">
+        <label class="radio-option selected" onclick="selectRadio('email-brevity', this, '2-4 sentences for routine replies; up to 8 for substantive responses')">
+          <input type="radio" name="brevity" checked>
+          <div class="radio-dot"></div>
+          <div><div class="radio-label">Short default (2–4 sentences)</div></div>
+        </label>
+        <label class="radio-option" onclick="selectRadio('email-brevity', this, 'up to 8 sentences; match the depth of the question')">
+          <input type="radio" name="brevity">
+          <div class="radio-dot"></div>
+          <div><div class="radio-label">Adaptive (up to 8)</div></div>
+        </label>
+        <label class="radio-option" onclick="selectRadio('email-brevity', this, '1-2 sentences only')">
+          <input type="radio" name="brevity">
+          <div class="radio-dot"></div>
+          <div><div class="radio-label">Always brief (1–2 sentences)</div></div>
+        </label>
+      </div>
+    </div>
+
+    <div class="field-row">
+      <div class="field">
+        <label>Preferred signoff</label>
+        <input type="text" id="email-signoff" placeholder="Best," oninput="update()">
+      </div>
+      <div class="field">
+        <label>Default greeting</label>
+        <input type="text" id="email-greeting" placeholder="Hi [first_name]," oninput="update()">
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Things to never include in drafts</label>
+      <div class="chip-group" id="never-chips">
+        <div class="chip selected" onclick="this.classList.toggle('selected'); update()">Apologies for late reply</div>
+        <div class="chip selected" onclick="this.classList.toggle('selected'); update()">Hope you're well / doing great</div>
+        <div class="chip selected" onclick="this.classList.toggle('selected'); update()">Looking forward to hearing from you</div>
+        <div class="chip" onclick="this.classList.toggle('selected'); update()">Thanks for reaching out</div>
+        <div class="chip" onclick="this.classList.toggle('selected'); update()">Just following up</div>
+        <div class="chip selected" onclick="this.classList.toggle('selected'); update()">Vague deal terms without co-founder sign-off</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Section 7: Active Deals -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-num">7</div>
+      <div>
+        <div class="section-title">Active deals &amp; classification keywords</div>
+        <div class="section-sub">The primary classification engine — update this every time you start a new deal or engage a new recruiter</div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Active deal names and target companies</label>
+      <div class="hint">Any email mentioning these is automatically routed to your Deal Pipeline doc. Include both the project name and the company name.</div>
+      <div class="tag-input-wrap" onclick="this.querySelector('input').focus()">
+        <div id="deal-tags"></div>
+        <input class="tag-input" id="deal-input" placeholder="Type deal name, press Enter" onkeydown="addTag(event, 'deal')">
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Recruiting firms watching you</label>
+      <div class="hint">Emails from these firms route to your Recruiting doc.</div>
+      <div class="tag-input-wrap" onclick="this.querySelector('input').focus()">
+        <div id="recruit-tags"></div>
+        <input class="tag-input" id="recruit-input" placeholder="Piper Maddox, One Search…" onkeydown="addTag(event, 'recruit')">
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Key people — always flag in action items</label>
+      <div class="hint">Any call or email mentioning these people triggers a flagged action item. Format: Name | Context</div>
+      <div class="tag-input-wrap" onclick="this.querySelector('input').focus()">
+        <div id="keypeople-tags"></div>
+        <input class="tag-input" id="keypeople-input" placeholder="David Lorch | DoD — press Enter" onkeydown="addTag(event, 'keypeople')">
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Generated Output ── -->
+  <div class="output-section">
+    <h2>Your generated config</h2>
+    <p>Copy each block and paste it into the corresponding file. These update as you fill in the form above.</p>
+
+    <div class="output-tabs">
+      <button class="output-tab active" onclick="switchTab('claude-md')">~/.claude/CLAUDE.md</button>
+      <button class="output-tab" onclick="switchTab('firm-context')">firm_context.yaml additions</button>
+      <button class="output-tab" onclick="switchTab('firm-config')">firm_config.json updates</button>
+    </div>
+
+    <div class="output-pane active" id="tab-claude-md">
+      <div class="output-toolbar">
+        <span class="output-filename">~/.claude/CLAUDE.md</span>
+        <button class="copy-output-btn" onclick="copyOutput('claude-md-output', this)">Copy</button>
+      </div>
+      <div class="output-code" id="claude-md-output"></div>
+    </div>
+
+    <div class="output-pane" id="tab-firm-context">
+      <div class="output-toolbar">
+        <span class="output-filename">firm_context.yaml — paste these sections in</span>
+        <button class="copy-output-btn" onclick="copyOutput('firm-context-output', this)">Copy</button>
+      </div>
+      <div class="output-code" id="firm-context-output"></div>
+    </div>
+
+    <div class="output-pane" id="tab-firm-config">
+      <div class="output-toolbar">
+        <span class="output-filename">firm_config.json — replace these arrays</span>
+        <button class="copy-output-btn" onclick="copyOutput('firm-config-output', this)">Copy</button>
+      </div>
+      <div class="output-code" id="firm-config-output"></div>
+    </div>
+
+    <div class="tip" style="margin-top: 16px;">
+      <strong>CLAUDE.md placement:</strong> Save to <code style="background:#d1fae5;padding:1px 4px;border-radius:3px;font-family:monospace;font-size:12px;">~/.claude/CLAUDE.md</code> — this is Claude's global instruction file, applied to every session on your machine automatically. It does not live in the pipeline repo.
+    </div>
+  </div>
+
+  <div class="footer">
+    <a href="onboard-new-firm.html">← Back to setup guide</a>
+    &nbsp;·&nbsp;
+    <a href="HOW_IT_ALL_WORKS.html">How it all works →</a>
+  </div>
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+const state = {
+  investorFrame: 'principal investor',
+  jobSearch: 'true',
+  memoFormat: 'sixsection',
+  primaryQuestion: 'investment',
+  specificity: 'strict',
+  emailTone: 'professional, direct, principal-investor frame — no fluff',
+  emailBrevity: '2-4 sentences for routine replies; up to 8 for substantive responses',
+  focusItems: [],   // {label, value} in priority order
+  peerTags: [],
+  dealTags: [],
+  recruitTags: [],
+  keypeopleEntries: [],
+  teamMembers: [],
+};
+
+// ── Radio helpers ──────────────────────────────────────────────────────────
+function selectRadio(groupId, el, value) {
+  document.querySelectorAll(`#${groupId} .radio-option`).forEach(o => o.classList.remove('selected'));
+  el.classList.add('selected');
+  state[groupId.replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = value;
+  // Special cases for differently-named state keys
+  if (groupId === 'investor-frame') state.investorFrame = value;
+  if (groupId === 'job-search') state.jobSearch = value;
+  if (groupId === 'memo-format') state.memoFormat = value;
+  if (groupId === 'primary-question') state.primaryQuestion = value;
+  if (groupId === 'email-tone') state.emailTone = value;
+  if (groupId === 'email-brevity') state.emailBrevity = value;
+  update();
+}
+
+// ── Focus chips ────────────────────────────────────────────────────────────
+function toggleFocus(el, value) {
+  const label = el.textContent.replace(/^\d+/, '').trim();
+  const idx = state.focusItems.findIndex(i => i.value === value);
+  if (idx !== -1) {
+    state.focusItems.splice(idx, 1);
+    el.classList.remove('selected');
+  } else {
+    state.focusItems.push({ label, value });
+    el.classList.add('selected');
+  }
+  // Renumber orders
+  document.querySelectorAll('#focus-chips .chip').forEach(c => {
+    const v = c.getAttribute('onclick').match(/'([^']+)'/)?.[1] || '';
+    const i = state.focusItems.findIndex(f => f.value === v);
+    const orderEl = c.querySelector('.chip-order');
+    if (i !== -1) { orderEl.textContent = i + 1; c.classList.add('selected'); }
+    else { c.classList.remove('selected'); }
+  });
+  update();
+}
+
+// ── Tag inputs ─────────────────────────────────────────────────────────────
+function addTag(e, type) {
+  if (e.key !== 'Enter' && e.key !== ',') return;
+  e.preventDefault();
+  const input = document.getElementById(`${type}-input`);
+  const val = input.value.trim().replace(/,$/, '');
+  if (!val) return;
+  const arr = type === 'peer' ? state.peerTags
+            : type === 'deal' ? state.dealTags
+            : type === 'recruit' ? state.recruitTags
+            : state.keypeopleEntries;
+  if (!arr.includes(val)) { arr.push(val); }
+  input.value = '';
+  renderTags(type);
+  update();
+}
+
+function removeTag(type, val) {
+  const arr = type === 'peer' ? state.peerTags
+            : type === 'deal' ? state.dealTags
+            : type === 'recruit' ? state.recruitTags
+            : state.keypeopleEntries;
+  const i = arr.indexOf(val);
+  if (i !== -1) arr.splice(i, 1);
+  renderTags(type);
+  update();
+}
+
+function renderTags(type) {
+  const containerId = `${type}-tags`;
+  const arr = type === 'peer' ? state.peerTags
+            : type === 'deal' ? state.dealTags
+            : type === 'recruit' ? state.recruitTags
+            : state.keypeopleEntries;
+  const el = document.getElementById(containerId);
+  el.innerHTML = arr.map(v =>
+    `<span class="tag">${v}<span class="tag-remove" onclick="removeTag('${type}', '${v.replace(/'/g,"\\'")}')">×</span></span>`
+  ).join('');
+}
+
+// ── Team members ───────────────────────────────────────────────────────────
+let teamIdx = 0;
+
+function addTeamMember() {
+  const id = teamIdx++;
+  state.teamMembers.push({ id, name: '', role: '', behavior: 'drives the agenda — deal-status, strategy, pipeline updates' });
+  renderTeamMembers();
+}
+
+function renderTeamMembers() {
+  const list = document.getElementById('team-list');
+  list.innerHTML = state.teamMembers.map((m, i) => `
+    <div class="team-member">
+      <div class="team-member-fields">
+        <div class="field-row" style="gap:10px;margin-bottom:0;">
+          <div class="field" style="margin-bottom:0;">
+            <label style="font-size:12px;">Name</label>
+            <input type="text" value="${m.name}" placeholder="Mark Saxe"
+              oninput="state.teamMembers[${i}].name=this.value;update()" style="font-size:13px;padding:7px 10px;">
+          </div>
+          <div class="field" style="margin-bottom:0;">
+            <label style="font-size:12px;">Role</label>
+            <input type="text" value="${m.role}" placeholder="co-founder, deal lead"
+              oninput="state.teamMembers[${i}].role=this.value;update()" style="font-size:13px;padding:7px 10px;">
+          </div>
+        </div>
+        <div class="field" style="margin-bottom:0;">
+          <label style="font-size:12px;">Call behavior — what do they do on internal calls?</label>
+          <select onchange="state.teamMembers[${i}].behavior=this.value;update()" style="font-size:13px;padding:7px 10px;">
+            <option value="drives the agenda — deal-status, strategy, pipeline updates" ${m.behavior.startsWith('drives') ? 'selected' : ''}>Drives the agenda — deal status, strategy, pipeline</option>
+            <option value="listens and validates — provides market context and external perspective" ${m.behavior.startsWith('listens') ? 'selected' : ''}>Listens and validates — provides market context</option>
+            <option value="manages LP relationships and fundraising updates" ${m.behavior.startsWith('manages') ? 'selected' : ''}>LP / fundraising lead</option>
+            <option value="tracks operations and financial reporting" ${m.behavior.startsWith('tracks') ? 'selected' : ''}>CFO / finance</option>
+            <option value="takes notes and tracks follow-ups" ${m.behavior.startsWith('takes notes') ? 'selected' : ''}>Note-taker / analyst</option>
+          </select>
+        </div>
+      </div>
+      <button class="team-remove" onclick="state.teamMembers.splice(${i},1);renderTeamMembers();update()">Remove</button>
+    </div>
+  `).join('');
+}
+
+// ── Tab switching ──────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.output-tab').forEach((t, i) => {
+    t.classList.toggle('active', ['claude-md','firm-context','firm-config'][i] === name);
+  });
+  document.querySelectorAll('.output-pane').forEach(p => p.classList.remove('active'));
+  document.getElementById(`tab-${name}`).classList.add('active');
+}
+
+// ── Copy output ────────────────────────────────────────────────────────────
+function copyOutput(elId, btn) {
+  const text = document.getElementById(elId).textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+const v = id => (document.getElementById(id)?.value || '').trim();
+const neverItems = () =>
+  [...document.querySelectorAll('#never-chips .chip.selected')].map(c => c.textContent.trim());
+
+// ── Generators ────────────────────────────────────────────────────────────
+function genClaudeMd() {
+  const name    = v('p-name')     || 'YOUR NAME';
+  const bg      = v('p-background') || 'YOUR BACKGROUND';
+  const prior   = v('p-prior')    || '';
+  const firm    = v('firm-name')  || 'YOUR FIRM';
+  const short   = v('firm-short') || 'FIRM';
+  const frame   = state.investorFrame;
+  const supp    = v('focus-supplement');
+  const signoff = v('email-signoff') || 'Best,';
+  const greeting= v('email-greeting') || 'Hi [first_name],';
+  const focus   = state.focusItems.map((f, i) => `${i+1}. ${f.value}`).join('\n');
+  const peers   = state.peerTags.join(', ');
+  const never   = neverItems().map(n => `    - "${n}"`).join('\n');
+  const kp      = state.keypeopleEntries.map(e => {
+    const [nm, ctx] = e.split('|').map(s => s.trim());
+    return `- ${nm}${ctx ? ': ' + ctx : ''}`;
+  }).join('\n');
+  const priorLine = prior ? `\nPrior firm(s): ${prior}.` : '';
+
+  const memoFmt = state.memoFormat === 'brief'
+    ? 'Brief summary: 3–4 paragraph narrative. Core argument, key issues, next step.'
+    : state.memoFormat === 'comprehensive'
+    ? 'Comprehensive six-section memo with extended depth per section.'
+    : 'Six-section investor memo: THE CORE ARGUMENT · POINTS OF CONSENSUS · POINTS OF DISAGREEMENT OR TENSION · OPEN QUESTIONS AND UNRESOLVED ISSUES · WHAT YOU WOULD NEED TO FORM A VIEW · KEY NAMES AND FIRMS';
+
+  const primQ = state.primaryQuestion === 'risk'
+    ? 'What are the key risks? Lead with downside. What could kill the thesis? What is not being said?'
+    : state.primaryQuestion === 'relationship'
+    ? 'What is the relationship implication? Who to call, when, and what to say.'
+    : 'Is there an investment here? What would I need to form a view? Who else is looking at this and why?';
+
+  const spec = state.specificity === 'mixed'
+    ? 'Lead with named assets and firms. Thematic summary acceptable when specifics are unavailable.'
+    : 'Never generalize when specifics exist. If a source contains named assets (MW capacities, deal sizes, contract terms, ownership structures), use them. Vague thematic summaries are useless.';
+
+  const teamLines = state.teamMembers.map(m =>
+    m.name ? `- ${m.name} (${m.role || 'team member'})` : ''
+  ).filter(Boolean).join('\n');
+
+  const suppSection = supp
+    ? `\n### Sector watch items\n\nAlways flag in memos and action items:\n${supp}\n`
+    : '';
+
+  const peersSection = peers
+    ? `\n### Peer / competitor firms\n\nFlag any mention of these in intelligence output: ${peers}.\n`
+    : '';
+
+  const kpSection = kp
+    ? `\n### Key people — always flag\n\n${kp}\n`
+    : '';
+
+  const neverSection = neverItems().length
+    ? `  never_include:\n${neverItems().map(n => `    - "${n}"`).join('\n')}`
+    : '';
+
+  return `# ${name} — Personal Context
+<!-- Generated by COS Pipeline configuration wizard -->
+<!-- Source of truth for all Claude interactions on this machine -->
+
+## WHO I AM
+
+${bg}.${priorLine}
+Co-founding ${firm} (${short || 'FIRM'}).
+
+I think like a ${frame} — not an analyst. All output should reflect that frame: so-what first, specifics not generalities, named assets and firms not themes, investment implications not just descriptions.
+
+---
+
+## ANALYTICAL DEFAULTS
+
+### The investor frame
+
+Every piece of analysis should answer these questions implicitly:
+
+1. ${primQ}
+
+### Specificity rule
+
+${spec}
+
+### Memo and summary structure
+
+When writing analytical memos, investment summaries, or call summaries, use this format:
+
+${memoFmt}
+
+Always append a structured ACTION ITEMS block at the end of any output that contains follow-up items. Every action needs: owner, parties, date or "No deadline", verb-first statement.${suppSection}${peersSection}${kpSection}
+---
+
+## INVESTMENT FOCUS (priority order)
+
+${focus || '1. [Fill in your sectors in priority order]'}
+
+---
+
+## YOUR FIRM
+
+${firm} (${short || 'SHORT'}) — infrastructure-focused investment platform.${teamLines ? '\n\nTeam:\n' + teamLines : ''}
+
+---
+
+## EMAIL DRAFT VOICE
+
+- Tone: ${state.emailTone}
+- Length: ${state.emailBrevity}
+- Greeting: ${greeting}
+- Signoff: ${signoff}\\n${name.split(' ')[0] || '[First name]'}
+${neverSection ? '\n' + neverSection : ''}
+  always_include:
+    - "If sender asked a specific question, answer it directly in the first sentence"
+    - "If declining or pushing out a meeting, propose at least one alternative"
+    - "If a deal is mentioned, name the asset or firm specifically — never use generic terms"
+
+---
+
+## WHAT NOT TO DO
+
+- Do not produce thematic summaries when named assets or deals exist in the source
+- Do not omit the ACTION ITEMS block from outputs that contain follow-up items
+- Do not write vague actions — every action needs owner, parties, date, and verb-first statement
+- Do not ask for context that is already in this file`;
+}
+
+function genFirmContextYaml() {
+  const name    = v('p-name')     || 'YOUR NAME';
+  const bg      = v('p-background') || '';
+  const prior   = v('p-prior')    || '';
+  const frame   = state.investorFrame;
+  const firm    = v('firm-name')  || 'YOUR FIRM NAME';
+  const short   = v('firm-short') || 'SHORT';
+  const supp    = v('focus-supplement');
+  const signoff = v('email-signoff') || 'Best,';
+  const greeting= v('email-greeting') || 'Hi [first_name],';
+  const focus   = state.focusItems.map(f => `    - "${f.value}"`).join('\n');
+  const peers   = state.peerTags.map(p => `  - "${p}"`).join('\n');
+
+  const teamYaml = state.teamMembers.filter(m => m.name).map(m => `  - name: "${m.name}"
+    role: "${m.role || ''}"
+    background: "${prior || ''}"
+    internal_call_role: >
+      ${m.behavior}`).join('\n');
+
+  const kpYaml = state.keypeopleEntries.map(e => {
+    const [nm, ctx] = e.split('|').map(s => s.trim());
+    return `  - name: "${nm}"\n    context: "${ctx || ''}"\n    flag_in_actions: true`;
+  }).join('\n');
+
+  const neverYaml = neverItems().map(n => `    - "${n}"`).join('\n');
+
+  const owners = [name.split(' ')[0], ...state.teamMembers.filter(m=>m.name).map(m=>m.name.split(' ')[0])]
+    .filter(Boolean).map(n => `  - "${n}"`).join('\n');
+
+  return `# ── WHO YOU ARE ──────────────────────────────────────────────────
+principal:
+  name: "${name}"
+  role: "${frame}"
+  background: "${bg}"
+  prior_firm: "${prior}"
+  investor_frame: "${frame}"
+  job_search_active: ${state.jobSearch}
+  investment_focus:
+${focus || '    - "fill in your sectors"'}
+
+# ── YOUR FIRM ─────────────────────────────────────────────────────
+firm:
+  name: "${firm}"
+  short_name: "${short}"
+
+# ── YOUR TEAM ─────────────────────────────────────────────────────
+team:
+${teamYaml || '  # Add team members in the configuration wizard'}
+
+# ── OWNER WHITELIST ───────────────────────────────────────────────
+owner_whitelist:
+${owners || '  - "' + name.split(' ')[0] + '"'}
+
+# ── KEY PEOPLE TO FLAG ────────────────────────────────────────────
+key_people:
+${kpYaml || '  # Add key people in the configuration wizard'}
+
+# ── PEER / CO-INVESTOR FIRMS ──────────────────────────────────────
+peer_firms:
+${peers || '  # Add peer firms in the configuration wizard'}
+
+# ── DRAFT VOICE ───────────────────────────────────────────────────
+draft_voice:
+  tone: "${state.emailTone}"
+  preferred_signoff: "${signoff}\\n${name.split(' ')[0] || '[Name]'}"
+  default_greeting: "${greeting}"
+  brevity: "${state.emailBrevity}"
+  always_include:
+    - "If sender asked a specific question, answer it directly in the first sentence"
+    - "If declining or pushing out a meeting, propose at least one alternative"
+    - "If a deal is mentioned, name the asset or firm specifically"
+  never_include:
+${neverYaml || '    # Add from configuration wizard'}
+
+# ── ANALYTICAL DEFAULTS ────────────────────────────────────────────
+prompt_overrides:
+  memo_focus_supplement: "${supp.replace(/\n/g, ' ')}"`;
+}
+
+function genFirmConfigJson() {
+  const deals   = state.dealTags;
+  const recruits= state.recruitTags;
+  const dealArr = [
+    ...deals.map(d => d.toLowerCase()),
+    '"term sheet"', '"loi"', '"nda"', '"diligence"', '"ic memo"', '"bid"', '"proposal"'
+  ];
+  const recArr  = [
+    ...recruits.map(r => `"${r.toLowerCase()}"`),
+    '"interview"', '"role"', '"opportunity"', '"resume"', '"cv"',
+    '"offer"', '"comp"', '"compensation"', '"headhunter"', '"recruiter"'
+  ];
+
+  return `{
+  "deal_keywords": [
+    ${deals.map(d => `"${d.toLowerCase()}"`).concat(['"term sheet"','"loi"','"nda"','"diligence"','"ic memo"','"bid"','"proposal"']).join(',\n    ')}
+  ],
+
+  "recruit_keywords": [
+    ${recruits.map(r => `"${r.toLowerCase()}"`).concat(['"interview"','"role"','"opportunity"','"resume"','"cv"','"offer"','"comp"','"compensation"','"headhunter"','"recruiter"']).join(',\n    ')}
+  ]
+}`;
+}
+
+// ── Main update ────────────────────────────────────────────────────────────
+function update() {
+  document.getElementById('claude-md-output').textContent     = genClaudeMd();
+  document.getElementById('firm-context-output').textContent  = genFirmContextYaml();
+  document.getElementById('firm-config-output').textContent   = genFirmConfigJson();
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+update();
+</script>
+</body>
+</html>
