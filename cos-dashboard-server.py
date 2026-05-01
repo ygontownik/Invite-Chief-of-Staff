@@ -3242,7 +3242,14 @@ class Handler(BaseHTTPRequestHandler):
                 # Read SKILL.md content to pass as the prompt (--print mode doesn't
                 # resolve /skill-name slash commands the same way the scheduler does)
                 try:
-                    skill_prompt = SKILL_MD_PATH.read_text()
+                    raw = SKILL_MD_PATH.read_text()
+                    # Strip YAML frontmatter (---\n...\n---) so the leading ---
+                    # isn't parsed as a CLI flag by claude --print
+                    if raw.startswith('---'):
+                        end = raw.find('\n---', 3)
+                        skill_prompt = raw[end + 4:].lstrip('\n') if end != -1 else raw
+                    else:
+                        skill_prompt = raw
                 except Exception as e:
                     print(f'[pipeline] cannot read SKILL.md: {e}', flush=True)
                     return

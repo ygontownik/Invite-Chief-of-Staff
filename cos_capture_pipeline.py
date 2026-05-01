@@ -53,6 +53,7 @@ import os
 import subprocess
 import sys
 import urllib.request
+import urllib.error
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
@@ -289,7 +290,6 @@ def call_claude(system_prompt: str, user_payload: str) -> dict:
         headers={
             "x-api-key": ANTHROPIC_API_KEY,
             "anthropic-version": "2023-06-01",
-            "anthropic-beta": "prompt-caching-1",
             "content-type": "application/json",
         },
         method="POST",
@@ -557,6 +557,14 @@ def main() -> int:
     log.info(f"Calling Claude (system={len(system_prompt)} chars, user={len(user_payload)} chars)...")
     try:
         result = call_claude(system_prompt, user_payload)
+    except urllib.error.HTTPError as e:
+        body = ""
+        try:
+            body = e.read().decode("utf-8", errors="replace")[:2000]
+        except Exception:
+            pass
+        log.error(f"Claude call failed: HTTP {e.code} {e.reason} | body: {body}")
+        return 1
     except Exception as e:
         log.error(f"Claude call failed: {e}")
         return 1
