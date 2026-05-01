@@ -18,7 +18,7 @@ The Google API fetch (slow, 3-5 sec) only runs:
 
 Kept alive by LaunchAgent: com.yoni.cosdashboard.plist
 """
-import base64, glob, gzip, json, os, plistlib, queue, re, secrets, string, subprocess, sys, threading, time
+import base64, glob, gzip, json, os, plistlib, queue, re, secrets, socket, string, subprocess, sys, threading, time
 from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -30,6 +30,7 @@ from pathlib import Path
 # logged and all auth attempts will fail closed (401).
 OWNER_PASSWORD   = os.environ.get('OWNER_PASSWORD', '').strip()
 PARTNER_PASSWORD = os.environ.get('PARTNER_PASSWORD', '').strip()
+NOTIFY_EMAIL     = os.environ.get('NOTIFY_EMAIL', '').strip()
 
 # ── Session management ──────────────────────────────────────────────────────
 # Cookie-based sessions so browsers don't re-prompt on every restart.
@@ -375,6 +376,25 @@ def _save_order(data):
         except Exception:
             pass
 
+_RECRUIT_CONFIG_PATH = Path(__file__).parent.parent / 'config' / 'recruit-config.yaml'
+
+def _load_recruit_config() -> dict:
+    """Load config/recruit-config.yaml and return as a plain dict for JSON injection."""
+    try:
+        import yaml as _yaml
+        raw = _yaml.safe_load(_RECRUIT_CONFIG_PATH.read_text()) or {}
+        return {
+            'priorityTargets': {
+                'inDiscussion':  raw.get('priorityTargets', {}).get('inDiscussion', []),
+                'waitingToHear': raw.get('priorityTargets', {}).get('waitingToHear', []),
+                'doIChase':      raw.get('priorityTargets', {}).get('doIChase', []),
+            },
+            'recruiters': raw.get('recruiters', []),
+        }
+    except Exception as e:
+        print(f'[recruit-config] load failed: {e}', flush=True)
+        return {'priorityTargets': {'inDiscussion': [], 'waitingToHear': [], 'doIChase': []}, 'recruiters': []}
+
 # ── Fundraising user-state ──────────────────────────────────────────────
 # Buckets schema (2026-04-28): direct_lps / gp_stakes / placement_agents /
 # strategic. Lives at data/user-state/fundraising.json — never overwritten by
@@ -589,7 +609,7 @@ If you have any trouble, reply to this email.
 
         msg = MIMEMultipart('alternative')
         msg['To']      = email
-        msg['From']    = 'ygontownik@gmail.com'
+        msg['From']    = NOTIFY_EMAIL
         msg['Subject'] = 'Dashboard access'
         msg.attach(MIMEText(plain, 'plain', 'utf-8'))
         msg.attach(MIMEText(html,  'html',  'utf-8'))
@@ -647,7 +667,7 @@ GMAIL_SCOPES        = ['https://www.googleapis.com/auth/gmail.send']
 # (GCAL_SCOPES / GDOCS_SCOPES / FOLLOWUPS_DOC_ID / BRIEFING_LOG_DOC_ID /
 #  GDRIVE_PICKLE retired 2026-04-27 with the /calendar/today.json,
 #  /followups/latest.json, and /calls/recent.json briefing endpoints.)
-DASHBOARD_HOST      = 'yonis-mac-mini'
+DASHBOARD_HOST      = os.environ.get('DASHBOARD_HOST', socket.gethostname())
 DEAL_REFRESH_SCRIPT  = str(_HERE / 'deal-dashboard-refresh.py')
 COMPILE_SCRIPT       = str(_ROOT / 'routines' / 'compile' / 'deal-system-compile.py')
 OTTER_SCRIPT         = str(_ROOT / 'routines' / 'process' / 'cos_otter_backfill.py')
@@ -659,7 +679,42 @@ WARMUP_INTERVAL_MIN  = 10   # auto-fetch every N minutes in background
 _DS_LINK = '<link rel="stylesheet" href="/static/design-system.css">'
 _TOPNAV_CACHE = {'mtime': 0, 'template': ''}
 _STRINGS_CACHE = {'mtime': 0, 'flat': {}}
-_STRINGS_PATH  = Path(__file__).parent.parent / 'config' / 'strings.yaml'
+_STRINGS_PATH       = Path(__file__).parent.parent / 'config' / 'strings.yaml'
+_BUCKETS_PATH       = Path(__file__).parent.parent / 'config' / 'deal_buckets.json'
+_bucket_cfg_cache   = {'mtime': 0, 'cfg': None}
+
+def _load_bucket_cfg() -> dict:
+    try:
+        mtime = _BUCKETS_PATH.stat().st_mtime
+        if mtime != _bucket_cfg_cache['mtime'] or _bucket_cfg_cache['cfg'] is None:
+            _bucket_cfg_cache['cfg']   = json.loads(_BUCKETS_PATH.read_text())
+            _bucket_cfg_cache['mtime'] = mtime
+    except Exception:
+        pass
+    return _bucket_cfg_cache['cfg'] or {
+        'rules': [], 'default_bucket': 'General / Other',
+        'default_owner': 'Yoni', 'owner_prefixes': [],
+    }
+
+def _infer_bucket(fu: dict) -> str:
+    cfg = _load_bucket_cfg()
+    who = fu.get('who', '')
+    what = fu.get('what', '')
+    txt = (who + ' ' + what).lower()
+    workstream = fu.get('workstream', '')
+    for rule in cfg.get('rules', []):
+        if (any(kw in txt for kw in rule.get('keywords', []))
+                or (rule.get('workstream') and workstream == rule['workstream'])):
+            return rule['bucket']
+    return cfg.get('default_bucket', 'General / Other')
+
+def _infer_owner(who_raw: str, what: str) -> str:
+    cfg = _load_bucket_cfg()
+    what_lc = (what or '').lower()
+    for op in cfg.get('owner_prefixes', []):
+        if who_raw.lower().startswith(op['prefix']) or op.get('tag', '') in what_lc:
+            return op['owner']
+    return cfg.get('default_owner', 'Yoni')
 
 def _flatten_strings(obj, prefix=''):
     """Flatten nested dict to {dot.path: str} for {{STR:...}} substitution."""
@@ -823,6 +878,10 @@ def _deletions_script() -> str:
         personal_items_initial = _load_personal_items()
     except Exception:
         personal_items_initial = []
+    try:
+        recruit_config = _load_recruit_config()
+    except Exception:
+        recruit_config = {'priorityTargets': {'inDiscussion': [], 'waitingToHear': [], 'doIChase': []}, 'recruiters': []}
     return (
         '<script>'
         '(function(){'
@@ -830,6 +889,7 @@ def _deletions_script() -> str:
         'window.__ORDER_INITIAL__ = ' + json.dumps(order_initial) + ';'
         'window.__BUILD_BACKLOG_INITIAL__ = ' + json.dumps(build_backlog_initial) + ';'
         'window.__PERSONAL_ITEMS_INITIAL__ = ' + json.dumps(personal_items_initial) + ';'
+        'window.__RECRUIT_CONFIG__ = ' + json.dumps(recruit_config) + ';'
         'window.__DELETIONS__ = new Set(' + json.dumps(ids) + ');'
         'window.__itemId = function(source, content){'
         '  var s = String(source||"") + "|" + String(content||"").slice(0,60).trim();'
@@ -3603,38 +3663,13 @@ class Handler(BaseHTTPRequestHandler):
         for k, fu in prop_fu.items():
             if k not in live_fu:
                 # Infer deal bucket from 'who' or 'what' text
-                who  = fu.get('who','')
-                what = fu.get('what','')
-                txt  = (who + ' ' + what).lower()
-                if 'black bayou' in txt or 'bayou' in txt or 'gcm' in txt or 'grosvenor' in txt or 'gonzaga' in txt:
-                    bucket = 'Black Bayou Energy Hub'
-                elif 'pngts' in txt or 'portland' in txt or 'mitchell' in txt or 'nova scotia' in txt:
-                    bucket = 'PNGTS'
-                elif 'pacific fleet' in txt or 'pfs' in txt or 'austin riley' in txt:
-                    bucket = 'Pacific Fleet Solutions'
-                elif 'wafra' in txt or 'ansel' in txt:
-                    bucket = 'Fundraising — Wafra'
-                elif 'manulife' in txt or 'john hancock' in txt or 'eddie dunn' in txt:
-                    bucket = 'Fundraising — Manulife'
-                elif 'shorebridge' in txt or 'hamilton lane' in txt or 'lp outreach' in txt or 'fundrais' in txt:
-                    bucket = 'Fundraising — LP Outreach'
-                elif 'nik' in txt or 'att ftth' in txt or 'ttc' in txt:
-                    bucket = 'ATT FTTH / Nik'
-                elif 'job' == fu.get('workstream','') or 'recruit' in txt:
-                    bucket = 'Job Search'
-                else:
-                    bucket = 'General / Other'
+                bucket = _infer_bucket(fu)
                 new_fu_by_bucket.setdefault(bucket, []).append(fu)
 
         for bucket, fus in sorted(new_fu_by_bucket.items()):
             for fu in fus:
                 who_raw = fu.get('who','')
-                # Extract owner from Who field (Mark / Yoni / Nik prefix detection)
-                owner = 'Yoni'
-                if who_raw.lower().startswith('mark') or '[mark]' in (fu.get('what','') or '').lower():
-                    owner = 'Mark'
-                elif who_raw.lower().startswith('nik') or '[nik]' in (fu.get('what','') or '').lower():
-                    owner = 'Nik'
+                owner   = _infer_owner(who_raw, fu.get('what',''))
                 changes.append({
                     'tab': 'Status', 'subtab': f'Follow-ups — {bucket}',
                     'action': 'ADD',
