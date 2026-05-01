@@ -1780,7 +1780,13 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_response(404); self.end_headers()
         elif self.path == '/dashboard-data.json':
             if DEAL_SYSTEM_DATA.exists():
-                self._serve_file(DEAL_SYSTEM_DATA, 'application/json')
+                data = DEAL_SYSTEM_DATA.read_bytes()
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(data)))
+                self.send_header('Cache-Control', 'no-store')
+                self.end_headers()
+                self.wfile.write(data)
             else:
                 self.send_json(404, {'error': 'deal-system-data.json not yet generated'})
         else:

@@ -69,6 +69,41 @@ python3 cos_gmail_mini_v2.py --list --backfill 2h   # Gmail OAuth
 python3 cos_otter_backfill.py --list                  # Drive/Docs OAuth
 ```
 
+### 6. Install scheduled LaunchAgents
+
+The pipelines need to run on a schedule. Install the 3 essential LaunchAgents (dashboard server, daily capture pipeline, every-2h email triage):
+
+```bash
+./setup_launchagents.sh
+```
+
+This generates and loads:
+- `com.cos-pipeline.dashboard-server` — always-on HTTP server (port 7777)
+- `com.cos-pipeline.capture-pipeline` — daily 7:22am Mon–Fri
+- `com.cos-pipeline.gmail-mini` — every 2h on the :05 minute mark, Mon–Fri 8am–8pm
+
+Verify they're loaded:
+```bash
+launchctl list | grep cos-pipeline
+```
+
+To uninstall them (e.g., when migrating machines):
+```bash
+./setup_launchagents.sh --uninstall
+```
+
+### 7. Open the dashboard
+
+```bash
+open http://localhost:7777
+```
+
+You should see all tiles. Day-1 tiles will be empty until pipelines run; populated by the next 7:22am capture run or whenever you trigger one manually:
+
+```bash
+python3 cos_capture_pipeline.py --since 24h
+```
+
 ---
 
 ## File Map — What Goes Where
