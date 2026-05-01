@@ -4,50 +4,114 @@ _firm_context.py — Firm identity loader and prompt-preamble builder.
 
 All COS pipeline scripts import this module to eliminate hardcoded
 principal/firm/team references. Reads firm_context.yaml from the
-tomac-cove-pipeline directory; falls back to firm_context.json if
-PyYAML is not installed.
+config directory; falls back to firm_context.json if PyYAML is not
+installed.
+
+── Config search order ───────────────────────────────────────────────
+1. $COS_CONFIG_DIR/firm_context.yaml   (env var — team config repo)
+2. ~/cos-pipeline-config/firm_context.yaml  (default team config location)
+3. <pipeline_dir>/firm_context.yaml    (legacy: config in code dir)
+4. <pipeline_dir>/firm_context.json    (JSON fallback, stdlib only)
+
+For a team sharing one dashboard, put firm_context.yaml in a private
+GitHub repo (e.g. github.com/yourfirm/cos-config) and clone it to
+~/cos-pipeline-config/. Each team member pulls that repo to stay in
+sync. The code repo (this file) stays universal and public.
 
 Usage in a pipeline script:
-    from pathlib import Path
-    import sys
-    _PIPELINE_DIR = Path.home() / "tomac-cove-pipeline"
-    if str(_PIPELINE_DIR) not in sys.path:
-        sys.path.insert(0, str(_PIPELINE_DIR))
     import _firm_context as _fc
     _CTX = _fc.load_firm_context()
 
-    MEMO_PREAMBLE    = _fc.build_memo_header(_CTX) + MEMO_BODY
+    MEMO_PREAMBLE     = _fc.build_memo_header(_CTX) + _fc.build_memo_body(_CTX)
     BACKFILL_PREAMBLE = _fc.build_backfill_header(_CTX) + BACKFILL_BODY
 """
+import os
 from pathlib import Path
 import json
 
+# Current schema version — bump when adding required fields to the template.
+# firm_context.yaml should carry a matching schema_version field.
+# setup.py --check warns when the file's version is behind this constant.
+SCHEMA_VERSION = 2
+
 _PIPELINE_DIR = Path(__file__).parent
-_CONTEXT_YAML = _PIPELINE_DIR / "firm_context.yaml"
-_CONTEXT_JSON = _PIPELINE_DIR / "firm_context.json"
+
+# ── Config search path ────────────────────────────────────────────────────────
+
+def _find_config_dir() -> Path:
+    """Return the directory that contains firm_context.yaml.
+
+    Search order:
+      1. $COS_CONFIG_DIR env var (explicit override — set in ~/.zshrc)
+      2. ~/cos-pipeline-config/   (default team config repo location)
+      3. <pipeline_dir>/          (legacy: config living alongside code)
+    """
+    env = os.environ.get("COS_CONFIG_DIR")
+    if env:
+        p = Path(env).expanduser()
+        if p.is_dir():
+            return p
+
+    default_team = Path.home() / "cos-pipeline-config"
+    if default_team.is_dir() and (default_team / "firm_context.yaml").exists():
+        return default_team
+
+    return _PIPELINE_DIR  # legacy fallback
 
 
 # ── Loader ────────────────────────────────────────────────────────────────────
 
 def load_firm_context() -> dict:
-    """Load firm_context.yaml. Falls back to firm_context.json if PyYAML not installed."""
+    """Load firm_context.yaml from the config directory.
+
+    Falls back to firm_context.json if PyYAML is not installed.
+    Emits a warning (does not crash) if schema_version is behind SCHEMA_VERSION.
+    """
+    config_dir = _find_config_dir()
+    ctx_yaml = config_dir / "firm_context.yaml"
+    ctx_json = config_dir / "firm_context.json"
+
+    ctx = None
+
     # Try YAML first (preferred: human-readable, supports comments)
     try:
         import yaml  # pip install pyyaml
-        if _CONTEXT_YAML.exists():
-            with open(_CONTEXT_YAML) as f:
-                return yaml.safe_load(f) or {}
+        if ctx_yaml.exists():
+            with open(ctx_yaml) as f:
+                ctx = yaml.safe_load(f) or {}
     except ImportError:
         pass
+
     # JSON fallback — works with stdlib only
-    if _CONTEXT_JSON.exists():
-        with open(_CONTEXT_JSON) as f:
-            return json.load(f)
-    raise FileNotFoundError(
-        f"No firm context file found. Expected one of:\n"
-        f"  {_CONTEXT_YAML}\n  {_CONTEXT_JSON}\n"
-        "Copy firm_context.yaml from the repository and fill in your firm's details."
-    )
+    if ctx is None:
+        if ctx_json.exists():
+            with open(ctx_json) as f:
+                ctx = json.load(f)
+
+    if ctx is None:
+        raise FileNotFoundError(
+            f"No firm context file found. Searched:\n"
+            f"  {ctx_yaml}\n  {ctx_json}\n\n"
+            f"Options:\n"
+            f"  1. Set COS_CONFIG_DIR in ~/.zshrc to point to your config directory.\n"
+            f"  2. Clone your firm config repo to ~/cos-pipeline-config/\n"
+            f"  3. Copy firm_context.template.yaml → {_PIPELINE_DIR}/firm_context.yaml "
+            f"and fill in your firm's details."
+        )
+
+    # Schema version check — warn but don't crash so pipelines keep running
+    file_version = ctx.get("schema_version", 1)
+    if file_version < SCHEMA_VERSION:
+        import sys
+        print(
+            f"[firm_context] WARNING: your firm_context.yaml is schema version "
+            f"{file_version}, current is {SCHEMA_VERSION}. "
+            f"Run `python3 setup.py --check` to see what's new. "
+            f"Pipelines will continue with defaults for any missing fields.",
+            file=sys.stderr,
+        )
+
+    return ctx
 
 
 def load_drive_docs(drive_docs_path=None) -> dict:
@@ -56,13 +120,23 @@ def load_drive_docs(drive_docs_path=None) -> dict:
     Keys from docs section map to doc_id; keys from folders section map to folder_id.
     Falls back gracefully — returns {} if the file is missing or unparseable.
 
+    Search order (when drive_docs_path is not explicitly provided):
+      1. $COS_CONFIG_DIR/drive-docs.yaml
+      2. ~/cos-pipeline-config/drive-docs.yaml
+      3. ~/dashboards/config/drive-docs.yaml  (legacy)
+
     Usage in scripts:
         _DOCS = _fc.load_drive_docs()
         FOLLOW_UPS_DOC = _DOCS.get("followups", "")
         TOMAC_DOC      = _DOCS.get("tomac_pipeline", "")
     """
     if drive_docs_path is None:
-        drive_docs_path = Path.home() / "dashboards/config/drive-docs.yaml"
+        config_dir = _find_config_dir()
+        candidate = config_dir / "drive-docs.yaml"
+        if candidate.exists():
+            drive_docs_path = candidate
+        else:
+            drive_docs_path = Path.home() / "dashboards/config/drive-docs.yaml"
     drive_docs_path = Path(drive_docs_path)
     result = {}
     if not drive_docs_path.exists():

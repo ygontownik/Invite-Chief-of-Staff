@@ -1,4 +1,8 @@
 # firm_context.template.yaml — Copy this to firm_context.yaml and fill in your firm's details.
+#
+# schema_version: do not change this number. It lets setup.py --check warn you
+# when a newer version of the template has fields your file doesn't have yet.
+schema_version: 2
 # ─────────────────────────────────────────────────────────────────────────────
 # This file controls every place the pipeline refers to a person, firm, or
 # investment focus. No Python script should need to be edited for a new firm.

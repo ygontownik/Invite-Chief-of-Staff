@@ -193,11 +193,81 @@ def populate_demo_data():
     print("  and firm_config.json and run setup.sh again.")
 
 
+def _check_schema():
+    """Check firm_context.yaml schema version against the current template."""
+    section("--check  Schema version audit")
+    try:
+        import yaml
+    except ImportError:
+        print(f"  {FAIL}  PyYAML not installed — run: pip3 install pyyaml")
+        return
+
+    # Find config dir (respects COS_CONFIG_DIR and ~/cos-pipeline-config/)
+    import os
+    config_dir = None
+    env = os.environ.get("COS_CONFIG_DIR")
+    if env and Path(env).expanduser().is_dir():
+        config_dir = Path(env).expanduser()
+    elif (Path.home() / "cos-pipeline-config" / "firm_context.yaml").exists():
+        config_dir = Path.home() / "cos-pipeline-config"
+    else:
+        config_dir = _HERE
+
+    ctx_path = config_dir / "firm_context.yaml"
+    tmpl_path = _HERE / "firm_context.template.yaml"
+
+    if not ctx_path.exists():
+        print(f"  {FAIL}  firm_context.yaml not found at {ctx_path}")
+        return
+
+    with open(ctx_path) as f:
+        ctx = yaml.safe_load(f) or {}
+    with open(tmpl_path) as f:
+        tmpl = yaml.safe_load(f) or {}
+
+    file_ver = ctx.get("schema_version", 1)
+    tmpl_ver = tmpl.get("schema_version", 1)
+
+    print(f"\n  Config location : {ctx_path}")
+    print(f"  Your version    : {file_ver}")
+    print(f"  Current version : {tmpl_ver}")
+
+    if file_ver >= tmpl_ver:
+        print(f"\n  {PASS}  Your firm_context.yaml is up to date.")
+        return
+
+    print(f"\n  {WARN}  Your file is {tmpl_ver - file_ver} version(s) behind.")
+    print(f"\n  New top-level keys in the current template not in your file:")
+
+    missing = []
+    for key in tmpl:
+        if key == "schema_version":
+            continue
+        if key not in ctx:
+            missing.append(key)
+
+    if missing:
+        for k in missing:
+            print(f"    {INFO}  {k}")
+        print()
+        print(f"  To add them: open {ctx_path} and copy the relevant")
+        print(f"  sections from {tmpl_path}.")
+        print(f"  Then update schema_version to {tmpl_ver} in your file.")
+    else:
+        print(f"    (all top-level keys present — sub-field additions only)")
+        print(f"  Open {tmpl_path} to review new optional sub-fields.")
+        print(f"  Update schema_version to {tmpl_ver} in your file when done.")
+
+    print()
+    print(f"  Pipelines continue running with defaults for any missing fields.")
+
+
 # Parse args before doing any validation
 _parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 _parser.add_argument("--fix",          action="store_true", help="Copy missing config files from templates")
 _parser.add_argument("--create-docs",  action="store_true", help="Auto-create required Google Docs and populate IDs into firm_config.json")
 _parser.add_argument("--demo",         action="store_true", help="Populate dashboard with synthetic data (no OAuth required)")
+_parser.add_argument("--check",        action="store_true", help="Check firm_context.yaml schema version and list new fields since last update")
 _args = _parser.parse_args()
 
 if _args.fix:
@@ -210,6 +280,10 @@ if _args.create_docs:
 
 if _args.demo:
     populate_demo_data()
+    sys.exit(0)
+
+if _args.check:
+    _check_schema()
     sys.exit(0)
 
 
