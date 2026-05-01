@@ -37,12 +37,48 @@ working with no config changes.
 """
 from __future__ import annotations
 
+import io
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+
+
+# ── PDF text extraction ───────────────────────────────────────────────────────
+
+def _extract_pdf_text(pdf_bytes: bytes, filename: str = "") -> str:
+    """Extract plain text from PDF bytes using pypdf (preferred) or PyPDF2 fallback.
+
+    Requires at least one of: pip install pypdf  OR  pip install PyPDF2
+    If neither is installed, raises ImportError with installation instructions.
+    Returns extracted text joined by newlines; empty pages are skipped.
+    """
+    try:
+        import pypdf  # preferred (actively maintained)
+        reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+        pages = [reader.pages[i].extract_text() or "" for i in range(len(reader.pages))]
+    except ImportError:
+        try:
+            import PyPDF2  # fallback (legacy name)
+            reader = PyPDF2.PdfReader(io.BytesIO(pdf_bytes))
+            pages = [reader.pages[i].extract_text() or "" for i in range(len(reader.pages))]
+        except ImportError:
+            raise ImportError(
+                f"PDF extraction requires pypdf: pip install pypdf\n"
+                f"  (failed to extract text from '{filename}')"
+            )
+
+    text = "\n\n".join(p.strip() for p in pages if p.strip())
+    if not text.strip():
+        import sys
+        print(
+            f"  ⚠️   PDF text extraction returned empty for '{filename}' — "
+            f"may be a scanned/image-only PDF. Consider OCR.",
+            file=sys.stderr,
+        )
+    return text
 
 
 # ── Data model ────────────────────────────────────────────────────────────────
@@ -118,7 +154,7 @@ class GoogleDriveFolderSource(TranscriptSource):
     """
 
     AUDIO_EXTENSIONS = {".m4a", ".mp3", ".wav", ".ogg", ".aac", ".opus"}
-    SUPPORTED_EXTENSIONS = {".txt", ".md", ".rtf", ".vtt", ".srt"}
+    SUPPORTED_EXTENSIONS = {".txt", ".md", ".rtf", ".vtt", ".srt", ".pdf"}
 
     def __init__(self, cfg: dict):
         """cfg is one entry from firm_context.yaml transcript_sources list."""
@@ -204,7 +240,9 @@ class GoogleDriveFolderSource(TranscriptSource):
                 ext = Path(fname).suffix.lower()
                 if ext in self.AUDIO_EXTENSIONS or "audio" in mime:
                     continue  # skip audio files
+                is_pdf = mime == "application/pdf" or ext == ".pdf"
                 if (mime
+                    and not is_pdf
                     and "google-apps.document" not in mime
                     and "text" not in mime
                     and "plain" not in mime
@@ -230,24 +268,41 @@ class GoogleDriveFolderSource(TranscriptSource):
         return results
 
     def download_text(self, tf: TranscriptFile, drive_token: Optional[str]) -> str:
-        """Download transcript text from Drive (Google Doc export or raw text file)."""
+        """Download transcript text from Drive (Google Doc export, text, or PDF).
+
+        Supports:
+          - Google Docs: exported as plain text via Drive export API
+          - PDF files: downloaded and text extracted via pypdf (if installed)
+          - All other text formats: downloaded as raw bytes and decoded
+        """
         import urllib.request, urllib.parse, json
 
         mime = tf.mime_type
         fid = tf.id
+        ext = Path(tf.name).suffix.lower()
 
         if "google-apps.document" in mime:
             # Export as plain text
             url = f"https://www.googleapis.com/drive/v3/files/{fid}/export?mimeType=text%2Fplain"
-        else:
-            # Download raw file content
-            url = f"https://www.googleapis.com/drive/v3/files/{fid}?alt=media"
+            req = urllib.request.Request(url, headers={"Authorization": f"Bearer {drive_token}"})
+            with urllib.request.urlopen(req, timeout=30) as r:
+                content = r.read()
+            try:
+                return content.decode("utf-8")
+            except UnicodeDecodeError:
+                return content.decode("latin-1", errors="replace")
 
+        # Download raw bytes (PDF or text file)
+        url = f"https://www.googleapis.com/drive/v3/files/{fid}?alt=media"
         req = urllib.request.Request(url, headers={"Authorization": f"Bearer {drive_token}"})
-        with urllib.request.urlopen(req, timeout=30) as r:
+        with urllib.request.urlopen(req, timeout=60) as r:
             content = r.read()
 
-        # Decode — try UTF-8, fall back to latin-1
+        # PDF: extract text with pypdf
+        if mime == "application/pdf" or ext == ".pdf":
+            return _extract_pdf_text(content, tf.name)
+
+        # Plain text / other decodable formats
         try:
             return content.decode("utf-8")
         except UnicodeDecodeError:
@@ -282,13 +337,13 @@ class GoogleDriveFolderSource(TranscriptSource):
 # ── Local folder source ────────────────────────────────────────────────────────
 
 class LocalFolderSource(TranscriptSource):
-    """Scans a local directory for transcript text files.
+    """Scans a local directory for transcript text files and PDFs.
 
     Covers: desktop recorder output, manually saved transcripts,
-    any recording workflow that produces local files.
+    research PDFs, any recording workflow that produces local files.
     """
 
-    SUPPORTED_EXTENSIONS = {".txt", ".md", ".vtt", ".srt", ".rtf"}
+    SUPPORTED_EXTENSIONS = {".txt", ".md", ".vtt", ".srt", ".rtf", ".pdf"}
 
     def __init__(self, cfg: dict):
         self._name = cfg.get("name", "Local Recordings")
@@ -355,6 +410,8 @@ class LocalFolderSource(TranscriptSource):
 
     def download_text(self, tf: TranscriptFile, drive_token: Optional[str]) -> str:
         path = tf.local_path or Path(tf.id)
+        if path.suffix.lower() == ".pdf":
+            return _extract_pdf_text(path.read_bytes(), path.name)
         try:
             return path.read_text(encoding="utf-8")
         except UnicodeDecodeError:

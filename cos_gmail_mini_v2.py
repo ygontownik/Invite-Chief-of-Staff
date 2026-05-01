@@ -157,14 +157,24 @@ def save_state(state):
         json.dump(state, f, indent=2)
 
 
+def _parse_backfill_hours(value: str) -> int:
+    """Parse backfill window string to hours. Accepts '4h', '2d', '30d', etc."""
+    v = value.strip().lower()
+    if v.endswith("d"):
+        return int(v[:-1]) * 24
+    if v.endswith("h"):
+        return int(v[:-1])
+    return int(v)  # bare number → treat as hours
+
+
 def get_fetch_since(state, config, args):
     """Return UTC datetime to fetch emails after."""
     if args.force:
-        hours = int(args.backfill.rstrip("h")) if args.backfill else 2
+        hours = _parse_backfill_hours(args.backfill) if args.backfill else 2
         return datetime.now(timezone.utc) - timedelta(hours=hours)
 
     if args.backfill:
-        hours = int(args.backfill.rstrip("h"))
+        hours = _parse_backfill_hours(args.backfill)
         return datetime.now(timezone.utc) - timedelta(hours=hours)
 
     if state.get("last_processed_ts"):

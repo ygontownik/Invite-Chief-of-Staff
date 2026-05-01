@@ -339,7 +339,7 @@ def onboard():
     _run(
         "Email triage (last {days} days)".format(days=days),
         [sys.executable, str(pipeline_dir / "cos_gmail_mini_v2.py"),
-         "--backfill", f"{days}d"],
+         "--backfill", f"{days}d"],   # gmail mini now accepts Nd and Nh
     )
 
     # Step 2 — Transcript backfill

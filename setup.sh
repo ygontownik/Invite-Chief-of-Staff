@@ -94,18 +94,19 @@ ok "Python $PY_VERSION"
 # ── Step 2: Dependencies ────────────────────────────────────────────────────
 step "[2/7] Python dependencies"
 
-DEPS="pyyaml google-auth google-auth-oauthlib google-api-python-client anthropic"
+DEPS="pyyaml google-auth google-auth-oauthlib google-api-python-client anthropic pypdf"
 echo "    Required: $DEPS"
 echo ""
 
 MISSING=""
-for pkg in pyyaml google.auth googleapiclient anthropic; do
+for pkg in pyyaml google.auth googleapiclient anthropic pypdf; do
   if ! python3 -c "import $pkg" 2>/dev/null; then
     case "$pkg" in
       pyyaml)        MISSING+=" pyyaml" ;;
       google.auth)   MISSING+=" google-auth google-auth-oauthlib" ;;
       googleapiclient) MISSING+=" google-api-python-client" ;;
       anthropic)     MISSING+=" anthropic" ;;
+      pypdf)         MISSING+=" pypdf" ;;
     esac
   fi
 done
