@@ -202,6 +202,41 @@
     overflow-x: auto;
   }
 
+  /* ── URL blocks ── */
+  .url-block {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    background: var(--blue-bg);
+    border: 1px solid #bfdbfe;
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin: 12px 0;
+  }
+  .url-block a {
+    font-family: "SFMono-Regular", "Menlo", monospace;
+    font-size: 13px;
+    color: var(--blue);
+    text-decoration: none;
+    word-break: break-all;
+  }
+  .url-block a:hover { text-decoration: underline; }
+  .url-copy-btn {
+    font-size: 11px; font-weight: 600;
+    color: var(--blue);
+    background: none;
+    border: 1px solid #93c5fd;
+    border-radius: 4px;
+    padding: 2px 8px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all .15s;
+    flex-shrink: 0;
+  }
+  .url-copy-btn:hover { background: var(--blue); color: white; border-color: var(--blue); }
+  .url-copy-btn.copied { color: var(--green); border-color: var(--green); }
+
   /* ── callouts ── */
   .note {
     background: var(--amber-bg); border: 1px solid #fcd34d;
@@ -329,9 +364,13 @@
           <code>python3 --version
 git --version</code>
         </div>
-        <p>If Python is missing or below 3.11: <a href="https://www.python.org/downloads/" target="_blank">python.org/downloads</a> or <code class="inline">brew install python@3.12</code></p>
+        <p>If Python is missing or below 3.11:</p>
+        <div class="url-block">
+          <a href="https://www.python.org/downloads/" target="_blank">https://www.python.org/downloads/</a>
+          <button class="url-copy-btn" onclick="copyUrl(this)">Copy URL</button>
+        </div>
         <p>If Git is missing: run <code class="inline">xcode-select --install</code> in Terminal.</p>
-        <div class="tip">Homebrew (<a href="https://brew.sh" target="_blank">brew.sh</a>) makes both installs easier if you don't have it yet.</div>
+        <div class="tip">Homebrew (<a href="https://brew.sh" target="_blank">brew.sh</a>) makes macOS package installs easier if you don't have it yet: <strong>brew.sh</strong></div>
       </div>
     </div>
 
@@ -349,7 +388,12 @@ git --version</code>
         <div class="substeps">
           <div class="substep">
             <div class="substep-num">a</div>
-            <div class="substep-body">Go to <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a> → sign up → add a credit card (pay-per-use, no monthly fee until you use it)</div>
+            <div class="substep-body">Sign up and add a credit card (pay-per-use, no monthly fee until you use it):
+              <div class="url-block" style="margin-top: 8px;">
+                <a href="https://console.anthropic.com" target="_blank">https://console.anthropic.com</a>
+                <button class="url-copy-btn" onclick="copyUrl(this)">Copy URL</button>
+              </div>
+            </div>
           </div>
           <div class="substep">
             <div class="substep-num">b</div>
@@ -378,7 +422,12 @@ git --version</code>
         <div class="substeps">
           <div class="substep">
             <div class="substep-num">1</div>
-            <div class="substep-body">Go to <a href="https://console.cloud.google.com" target="_blank">console.cloud.google.com</a> → create a new project → name it <strong>cos-pipeline</strong></div>
+            <div class="substep-body">Create a new project and name it <strong>cos-pipeline</strong>:
+              <div class="url-block" style="margin-top: 8px;">
+                <a href="https://console.cloud.google.com" target="_blank">https://console.cloud.google.com</a>
+                <button class="url-copy-btn" onclick="copyUrl(this)">Copy URL</button>
+              </div>
+            </div>
           </div>
           <div class="substep">
             <div class="substep-num">2</div>
@@ -654,6 +703,14 @@ function copyCode(btn) {
     btn.textContent = 'Copied!';
     btn.classList.add('copied');
     setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+function copyUrl(btn) {
+  const url = btn.closest('.url-block').querySelector('a').href;
+  navigator.clipboard.writeText(url).then(() => {
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy URL'; btn.classList.remove('copied'); }, 2000);
   });
 }
 </script>

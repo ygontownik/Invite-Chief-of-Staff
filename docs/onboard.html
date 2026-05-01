@@ -161,6 +161,41 @@
     overflow-x: auto;
   }
 
+  /* ── URL blocks ── */
+  .url-block {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    background: var(--blue-bg);
+    border: 1px solid #bfdbfe;
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin: 12px 0;
+  }
+  .url-block a {
+    font-family: "SFMono-Regular", "Menlo", monospace;
+    font-size: 13px;
+    color: var(--blue);
+    text-decoration: none;
+    word-break: break-all;
+  }
+  .url-block a:hover { text-decoration: underline; }
+  .url-copy-btn {
+    font-size: 11px; font-weight: 600;
+    color: var(--blue);
+    background: none;
+    border: 1px solid #93c5fd;
+    border-radius: 4px;
+    padding: 2px 8px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all .15s;
+    flex-shrink: 0;
+  }
+  .url-copy-btn:hover { background: var(--blue); color: white; border-color: var(--blue); }
+  .url-copy-btn.copied { color: var(--green); border-color: var(--green); }
+
   /* ── Note / callout ── */
   .note {
     background: var(--amber-bg);
@@ -296,8 +331,11 @@
       </div>
       <div class="step-body">
         <p>The TCIP config repo is private. You need a token to download it. This is a one-time step — you can revoke it later if you want.</p>
+        <div class="url-block">
+          <a href="https://github.com/settings/tokens/new" target="_blank">https://github.com/settings/tokens/new</a>
+          <button class="url-copy-btn" onclick="copyUrl(this)">Copy URL</button>
+        </div>
         <ol>
-          <li>Go to <a href="https://github.com/settings/tokens/new" target="_blank">github.com/settings/tokens/new</a></li>
           <li>Note: <code>TCIP pipeline</code></li>
           <li>Expiration: 1 year</li>
           <li>Scopes: check <strong>repo</strong> (the top checkbox under that heading)</li>
@@ -498,6 +536,14 @@ function copyCode(btn) {
     btn.textContent = 'Copied!';
     btn.classList.add('copied');
     setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+function copyUrl(btn) {
+  const url = btn.closest('.url-block').querySelector('a').href;
+  navigator.clipboard.writeText(url).then(() => {
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy URL'; btn.classList.remove('copied'); }, 2000);
   });
 }
 </script>
