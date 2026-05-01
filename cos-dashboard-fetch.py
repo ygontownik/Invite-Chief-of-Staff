@@ -707,13 +707,16 @@ def _has_strong_fundraising_signal(item):
 _CP_ALIASES = (
     # (substring needle in lowercased raw cp, canonical display name)
     ('cholla', 'Cholla'),
+    ('chola', 'Cholla'),
     ('chisholm', 'Cholla'),
     ('big south dallas', 'Cholla'),
     ('black bayou', 'Black Bayou'),
     ('pacific fleet', 'Pacific Fleet'),
+    ('pfs', 'Pacific Fleet'),
     ('pngts', 'PNGTS'),
     ('att ftth', 'ATT FTTH'),
     ('at&t ftth', 'ATT FTTH'),
+    ('thunderhead', 'Thunderhead'),
 )
 
 def _normalize_cp(name):
