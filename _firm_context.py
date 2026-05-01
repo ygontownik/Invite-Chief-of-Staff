@@ -158,20 +158,43 @@ def load_drive_docs(drive_docs_path=None) -> dict:
     return result
 
 
+def find_firm_config() -> Path:
+    """Return the path to firm_config.json, respecting COS_CONFIG_DIR.
+
+    Search order:
+      1. $COS_CONFIG_DIR/firm_config.json
+      2. ~/cos-pipeline-config/firm_config.json
+      3. <pipeline_dir>/firm_config.json  (legacy)
+    """
+    config_dir = _find_config_dir()
+    candidate = config_dir / "firm_config.json"
+    if candidate.exists():
+        return candidate
+    return _PIPELINE_DIR / "firm_config.json"
+
+
+def load_firm_config(firm_config_path=None) -> dict:
+    """Load and return the full firm_config.json as a dict.
+
+    Falls back to {} if the file is missing or unparseable.
+    """
+    path = Path(firm_config_path) if firm_config_path else find_firm_config()
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
 def load_active_packages(firm_config_path=None) -> list:
     """Return the list of active package names from firm_config.json.
 
     Returns ["market_intelligence", "operations"] by default (both active).
     A firm that only deploys Package B would set: "packages": ["operations"]
+    Respects COS_CONFIG_DIR — looks in the team config repo first.
     """
-    if firm_config_path is None:
-        firm_config_path = _PIPELINE_DIR / "firm_config.json"
-    try:
-        with open(firm_config_path) as f:
-            cfg = json.load(f)
-        return cfg.get("packages", ["market_intelligence", "operations"])
-    except (FileNotFoundError, json.JSONDecodeError):
-        return ["market_intelligence", "operations"]
+    cfg = load_firm_config(firm_config_path)
+    return cfg.get("packages", ["market_intelligence", "operations"])
 
 
 # ── Internal accessors ────────────────────────────────────────────────────────

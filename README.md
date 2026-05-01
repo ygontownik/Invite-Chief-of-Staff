@@ -202,6 +202,87 @@ The dashboard always shows all tiles. Tiles whose `requires_package` is not in t
 
 ---
 
+## Team Setup — Shared Dashboard
+
+Multiple people at the same firm can share one dashboard. The pipeline runs on one machine; others access it via the network. Firm config is shared via a private GitHub repo so any update (new team member, updated peer firms, draft voice change) propagates to everyone on `git pull`.
+
+### Two-repo model
+
+```
+Public repo (this one)              Private config repo (you create)
+github.com/ygontownik/Dashboard     github.com/yourfirm/your-firm-config
+────────────────────────────        ───────────────────────────────────
+Universal code — anyone can use     Firm identity — your team only
+
+_firm_context.py                    firm_context.yaml
+cos_otter_backfill.py               firm_config.json
+cos-dashboard-server.py             drive-docs.yaml
+setup.sh, costs.py, etc.
+```
+
+### Setup steps
+
+**1. Create the private config repo** (one-time, done by whoever runs the pipeline machine):
+
+```bash
+# On GitHub: New repository → private → e.g. "tcip-config"
+mkdir ~/cos-pipeline-config
+cp ~/cos-pipeline/firm_context.yaml ~/cos-pipeline-config/
+cp ~/cos-pipeline/firm_config.json  ~/cos-pipeline-config/
+cp ~/dashboards/config/drive-docs.yaml ~/cos-pipeline-config/
+
+cd ~/cos-pipeline-config
+git init && git add . && git commit -m "Initial firm config"
+git remote add origin https://github.com/yourfirm/your-firm-config.git
+git push -u origin main
+```
+
+Add team members as collaborators: `github.com/yourfirm/your-firm-config → Settings → Collaborators`
+
+**2. Point the pipeline at the config repo** (on every machine):
+
+```bash
+# Add to ~/.zshrc:
+export COS_CONFIG_DIR="$HOME/cos-pipeline-config"
+source ~/.zshrc
+```
+
+**3. Each team member's setup:**
+
+```bash
+git clone https://github.com/yourfirm/your-firm-config ~/cos-pipeline-config
+git clone https://github.com/ygontownik/Dashboard ~/cos-pipeline
+echo 'export COS_CONFIG_DIR="$HOME/cos-pipeline-config"' >> ~/.zshrc
+source ~/.zshrc
+cd ~/cos-pipeline && ./setup.sh   # OAuth + LaunchAgents on their machine
+```
+
+**4. Dashboard access for remote team members** — the dashboard binds to your local network IP. For remote access, install [Tailscale](https://tailscale.com) (free for small teams) on each machine. Your Mac Mini gets a stable Tailscale IP accessible from anywhere.
+
+### Updating shared config
+
+When you change `firm_context.yaml` (new hire, new peer firm, updated draft voice):
+
+```bash
+cd ~/cos-pipeline-config
+git add firm_context.yaml
+git commit -m "Add Sarah to team"
+git push
+```
+
+Each team member picks it up with:
+```bash
+cd ~/cos-pipeline-config && git pull
+```
+
+The pipeline reads fresh config on the next run — no restart needed.
+
+### Multiple firms
+
+Each firm gets its own private config repo. They share the same public code repo but have zero visibility into each other's config, credentials, or dashboard data.
+
+---
+
 ## Cost Profile (approximate, prompt caching enabled)
 
 | Pipeline | Model | Cost/run |

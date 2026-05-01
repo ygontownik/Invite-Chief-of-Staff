@@ -45,14 +45,33 @@ def section(title: str):
 # Mode dispatch — --fix and --create-docs run before validation
 # ─────────────────────────────────────────────────────────────
 
+def _config_target_dir() -> Path:
+    """Return the directory where firm config files should live.
+
+    Respects COS_CONFIG_DIR and ~/cos-pipeline-config/ so --fix and
+    --create-docs write to the team config repo, not the code directory.
+    """
+    env = os.environ.get("COS_CONFIG_DIR")
+    if env:
+        p = Path(env).expanduser()
+        if p.is_dir():
+            return p
+    team_cfg = Path.home() / "cos-pipeline-config"
+    if team_cfg.is_dir():
+        return team_cfg
+    return _HERE  # legacy: config alongside code
+
+
 def fix_missing_configs():
-    """Copy missing config files from templates."""
+    """Copy missing config files from templates into the config directory."""
     section("--fix  Copying missing configs from templates")
+    cfg_dir = _config_target_dir()
+    print(f"  Config target: {cfg_dir}")
     pairs = [
-        (_HERE / "firm_context.template.yaml", _HERE / "firm_context.yaml"),
-        (_HERE / "firm_config.template.json",  _HERE / "firm_config.json"),
+        (_HERE / "firm_context.template.yaml", cfg_dir / "firm_context.yaml"),
+        (_HERE / "firm_config.template.json",  cfg_dir / "firm_config.json"),
         (_HERE / "config" / "drive-docs.template.yaml",
-         _DASHBOARDS_CONFIG / "drive-docs.yaml"),
+         cfg_dir / "drive-docs.yaml"),
     ]
     import shutil
     for src, dst in pairs:
@@ -79,7 +98,7 @@ def create_drive_docs():
 
     creds_path = _CREDS / "gdrive_credentials.json"
     token_path = _CREDS / "gdrive_token.pickle"
-    cfg_path   = _HERE / "firm_config.json"
+    cfg_path   = _config_target_dir() / "firm_config.json"
 
     if not creds_path.exists():
         print(f"  {FAIL}  Missing {creds_path}")
@@ -296,11 +315,15 @@ warnings = []
 # ─────────────────────────────────────────────────────────────
 section("1 / 5  firm_context.yaml — Firm identity")
 
-FC_PATH = _HERE / "firm_context.yaml"
+_CFG_DIR = _config_target_dir()
+FC_PATH = _CFG_DIR / "firm_context.yaml"
+CFG_PATH = _CFG_DIR / "firm_config.json"   # used in section 2 below
+
+print(f"  Config directory: {_CFG_DIR}")
 
 if not FC_PATH.exists():
     print(f"  {FAIL}  firm_context.yaml not found")
-    print(f"  {INFO}  Run: cp firm_context.template.yaml firm_context.yaml")
+    print(f"  {INFO}  Run: python3 setup.py --fix")
     errors.append("firm_context.yaml missing")
 else:
     try:
@@ -337,8 +360,7 @@ else:
 # 2. firm_config.json
 # ─────────────────────────────────────────────────────────────
 section("2 / 5  firm_config.json — Email and Doc IDs")
-
-CFG_PATH = _HERE / "firm_config.json"
+# CFG_PATH already set above from _config_target_dir()
 
 if not CFG_PATH.exists():
     print(f"  {FAIL}  firm_config.json not found")
