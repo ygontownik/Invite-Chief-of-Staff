@@ -320,27 +320,42 @@ _STALE_EVENT_PATTERNS = _re_src.compile(
     r'attend|attending|attendance|sign[\s-]?up|enroll|'
     r'propose\s+times?|send\s+(calendar|cal)\s+inv|calendar\s+inv|'
     r'schedule\s+(a\s+)?(call|meeting|time|intro)|'
-    r'reschedule|book\s+(a\s+)?(slot|time|meeting|call))\b',
+    r'reschedule|book\s+(a\s+)?(slot|time|meeting|call)|'
+    r'confirm\s+(call\s+time|meeting\s+time|in.person|the\s+meeting)|'
+    r'in.person\s+meeting|ranch\s+visit|site\s+visit|'
+    r'text\s+\w+\s+schedule|schedule\s+for\s+next\s+week|'
+    r'send\s+(calendar|cal)\s+inv|hold\s+(calendar|cal)\s+inv|'
+    r'zoom\s+(calendar|cal)\s+inv|calendar\s+invite\s+for\s+\w+\s+\w+\s+\d)\b',
     _re_src.IGNORECASE,
 )
 
 def _auto_expire_stale_events(items):
-    """Drop one-time-event items whose due date has passed.
+    """Drop stale/resolved awaitingExternal items.
 
-    Matches content against scheduling/registration/conference patterns and
-    suppresses items where `due` (or `addedDate` if no due) is more than
-    7 days in the past. Items with no date are left alone.
+    Two classes are removed:
+    1. [RESOLVED] items — action was completed; should not appear in awaiting list.
+    2. One-time-event items (conference, RSVP, scheduling, site/ranch visit, etc.)
+       whose due/addedDate is more than 7 days in the past. Items with no date are kept.
     """
     from datetime import date as _date
     today = _date.today()
-    cutoff_str = (today.replace(year=today.year - 1)).isoformat()  # never cut items over 1y old in future
     kept = []
     for item in items:
         content = (item.get('content') or '') + ' ' + (item.get('what') or '')
+
+        # Class 1: completed items — never show in awaiting list
+        if content.lstrip().startswith('[RESOLVED]'):
+            print(
+                f'cos-dashboard-fetch: dropping [RESOLVED] awaiting item: '
+                f'{content[:80].strip()!r}',
+                file=sys.stderr,
+            )
+            continue
+
+        # Class 2: one-time-event patterns with a past date
         if not _STALE_EVENT_PATTERNS.search(content):
             kept.append(item)
             continue
-        # Resolve the best date signal
         due_raw = item.get('due') or item.get('addedDate') or ''
         if not due_raw or len(due_raw) < 10:
             kept.append(item)
@@ -657,13 +672,22 @@ def _overlay_freshest_signal(deals, followups, envelope_items, today_str):
             # then *higher* fundraising weight (negate), then earliest due.
             return (added == '', tuple(-ord(c) for c in added), -weight, due)
 
-        actions = [f for f in matched_fus if f.get('what')]
-        aw      = [e for e in matched_env if e.get('content_type') == 'awaiting_external']
+        # [RESOLVED] prefix means the action was completed — never surface as nextStep
+        actions = [f for f in matched_fus
+                   if f.get('what') and not (f.get('what') or '').startswith('[RESOLVED]')]
+        aw_all  = [e for e in matched_env if e.get('content_type') == 'awaiting_external'
+                   and not (e.get('content') or '').startswith('[RESOLVED]')]
+        # Prefer open (future-due or undated) awaiting items; fall back to overdue if nothing open
+        aw_open = [e for e in aw_all if not e.get('due') or e.get('due') >= today_str]
+        aw      = aw_open if aw_open else aw_all
         best_action = sorted(actions, key=_sort_key_action)[0] if actions else None
         best_await  = min(aw, key=lambda e: (e.get('due') or '9999-12-31')) if aw else None
 
-        # Preserve original
-        deal['nextStepDoc'] = deal.get('nextStep', '')
+        # Preserve original doc-parsed nextStep; clear if already resolved
+        raw_ns = deal.get('nextStep', '') or ''
+        deal['nextStepDoc'] = raw_ns
+        if raw_ns.startswith('[RESOLVED]'):
+            deal['nextStep'] = ''
 
         # Build "Latest: …" one-liner from best available signal
         latest_txt  = ''
