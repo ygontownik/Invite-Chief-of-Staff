@@ -6,15 +6,50 @@
 <meta name="robots" content="noindex, nofollow">
 <title>COS Pipeline — How It All Works</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --cream:   #faf8f4;
+    --paper:   #f4f1ea;
+    --border:  #ddd8cc;
+    --ink:     #1a1714;
+    --muted:   #6b6460;
+    --blue:    #2563eb;
+    --blue-bg: #eff6ff;
+    --green:   #15803d;
+    --green-bg:#f0fdf4;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    background: #f5f4f0;
-    color: #1a1a1a;
-    padding: 40px 32px;
+    background: var(--cream);
+    color: var(--ink);
     font-size: 13px;
   }
+
+  /* ── Nav ── */
+  .site-nav {
+    background: var(--ink);
+    display: flex; align-items: center;
+    padding: 0 28px; height: 48px;
+    position: sticky; top: 0; z-index: 200; gap: 4px;
+  }
+  .nav-brand {
+    color: white; font-weight: 700; font-size: 14px;
+    text-decoration: none; margin-right: 20px; letter-spacing: .01em; flex-shrink: 0;
+  }
+  .nav-link {
+    color: rgba(255,255,255,.55); text-decoration: none;
+    font-size: 13px; font-weight: 500;
+    padding: 0 14px; height: 48px;
+    display: flex; align-items: center;
+    border-bottom: 2px solid transparent; transition: all .15s; white-space: nowrap;
+  }
+  .nav-link:hover { color: white; }
+  .nav-link.active { color: white; border-bottom-color: white; }
+
+  /* ── Page wrapper ── */
+  .hw-page { max-width: 1120px; margin: 0 auto; padding: 40px 32px; }
 
   h1 {
     font-size: 22px;
@@ -259,6 +294,16 @@
 </style>
 </head>
 <body>
+
+<nav class="site-nav">
+  <a href="index.html" class="nav-brand">COS Pipeline</a>
+  <a href="index.html" class="nav-link">Home</a>
+  <a href="HOW_IT_ALL_WORKS.html" class="nav-link active">How It Works</a>
+  <a href="onboard.html" class="nav-link">Get Started</a>
+  <a href="configure.html" class="nav-link">Configure</a>
+</nav>
+
+<div class="hw-page">
 
 <h1>COS Pipeline — How It All Works</h1>
 <p class="subtitle">Plain-English guide to every flow: setup, daily operations, code updates, and what's personal vs. shared.</p>
@@ -1218,6 +1263,8 @@
 <footer>
   github.com/ygontownik/Dashboard &nbsp;·&nbsp; docs/HOW_IT_ALL_WORKS.html &nbsp;·&nbsp; Plain-English guide to every flow
 </footer>
+
+</div><!-- /.hw-page -->
 
 </body>
 </html>

@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>COS Pipeline</title>
+<style>
+  :root {
+    --cream:   #faf8f4;
+    --paper:   #f4f1ea;
+    --border:  #ddd8cc;
+    --ink:     #1a1714;
+    --muted:   #6b6460;
+    --blue:    #2563eb;
+    --blue-bg: #eff6ff;
+    --green:   #15803d;
+    --green-bg:#f0fdf4;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--cream);
+    color: var(--ink);
+    font-size: 15px;
+    line-height: 1.6;
+  }
+
+  /* ── Nav ── */
+  .site-nav {
+    background: var(--ink);
+    display: flex; align-items: center;
+    padding: 0 28px; height: 48px;
+    position: sticky; top: 0; z-index: 200; gap: 4px;
+  }
+  .nav-brand {
+    color: white; font-weight: 700; font-size: 14px;
+    text-decoration: none; margin-right: 20px; letter-spacing: .01em; flex-shrink: 0;
+  }
+  .nav-link {
+    color: rgba(255,255,255,.55); text-decoration: none;
+    font-size: 13px; font-weight: 500;
+    padding: 0 14px; height: 48px;
+    display: flex; align-items: center;
+    border-bottom: 2px solid transparent; transition: all .15s; white-space: nowrap;
+  }
+  .nav-link:hover { color: white; }
+  .nav-link.active { color: white; border-bottom-color: white; }
+
+  /* ── Hero ── */
+  .hero {
+    background: var(--ink);
+    color: white;
+    text-align: center;
+    padding: 72px 24px 64px;
+  }
+  .hero-label {
+    font-size: 11px; font-weight: 700; letter-spacing: .12em;
+    text-transform: uppercase; color: rgba(255,255,255,.45);
+    margin-bottom: 18px;
+  }
+  .hero h1 {
+    font-size: 38px; font-weight: 800; letter-spacing: -.5px;
+    line-height: 1.15; margin-bottom: 18px;
+  }
+  .hero h1 em { font-style: normal; color: #a3b8ff; }
+  .hero p {
+    font-size: 17px; color: rgba(255,255,255,.65);
+    max-width: 540px; margin: 0 auto 36px;
+  }
+  .hero-ctas { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .btn-primary {
+    background: white; color: var(--ink);
+    border: none; border-radius: 10px;
+    padding: 13px 28px; font-size: 14px; font-weight: 700;
+    cursor: pointer; text-decoration: none; display: inline-block;
+    transition: all .15s;
+  }
+  .btn-primary:hover { background: #e8e3da; }
+  .btn-ghost {
+    background: rgba(255,255,255,.1); color: white;
+    border: 1px solid rgba(255,255,255,.25); border-radius: 10px;
+    padding: 13px 28px; font-size: 14px; font-weight: 600;
+    cursor: pointer; text-decoration: none; display: inline-block;
+    transition: all .15s;
+  }
+  .btn-ghost:hover { background: rgba(255,255,255,.18); }
+
+  /* ── What it does ── */
+  .what { max-width: 860px; margin: 0 auto; padding: 64px 24px; }
+  .what h2 { font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-bottom: 28px; }
+  .what-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 16px;
+  }
+  .what-card {
+    background: white; border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px;
+  }
+  .what-icon { font-size: 22px; margin-bottom: 10px; }
+  .what-title { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+  .what-desc  { font-size: 13px; color: var(--muted); line-height: 1.5; }
+
+  /* ── Path chooser ── */
+  .paths {
+    background: var(--paper);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    padding: 64px 24px;
+  }
+  .paths-inner { max-width: 860px; margin: 0 auto; }
+  .paths h2 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+  .paths > .paths-inner > p { font-size: 14px; color: var(--muted); margin-bottom: 32px; }
+
+  .path-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .path-card {
+    background: white; border: 1px solid var(--border);
+    border-radius: 14px; padding: 28px; text-decoration: none;
+    color: var(--ink); display: block;
+    transition: all .15s; position: relative; overflow: hidden;
+  }
+  .path-card:hover { border-color: var(--ink); box-shadow: 0 4px 20px rgba(0,0,0,.08); transform: translateY(-1px); }
+  .path-badge {
+    font-size: 10px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+    padding: 3px 8px; border-radius: 20px; margin-bottom: 14px; display: inline-block;
+  }
+  .path-badge.team { background: var(--blue-bg); color: var(--blue); }
+  .path-badge.firm { background: var(--green-bg); color: var(--green); }
+  .path-title { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+  .path-desc  { font-size: 13px; color: var(--muted); margin-bottom: 16px; line-height: 1.5; }
+  .path-list  { font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 5px; }
+  .path-list li { display: flex; gap: 8px; list-style: none; }
+  .path-list li::before { content: '✓'; color: var(--green); font-weight: 700; flex-shrink: 0; }
+  .path-arrow {
+    position: absolute; bottom: 22px; right: 22px;
+    font-size: 18px; color: var(--muted); transition: all .15s;
+  }
+  .path-card:hover .path-arrow { color: var(--ink); transform: translateX(3px); }
+
+  /* ── How it works teaser ── */
+  .works-teaser {
+    max-width: 860px; margin: 0 auto; padding: 64px 24px;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 40px; flex-wrap: wrap;
+  }
+  .works-teaser h2 { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+  .works-teaser p  { font-size: 14px; color: var(--muted); max-width: 440px; }
+  .btn-outline {
+    background: none; border: 1.5px solid var(--ink); border-radius: 10px;
+    padding: 12px 24px; font-size: 14px; font-weight: 600;
+    cursor: pointer; text-decoration: none; color: var(--ink);
+    display: inline-block; transition: all .15s; white-space: nowrap;
+  }
+  .btn-outline:hover { background: var(--ink); color: white; }
+
+  /* ── Footer ── */
+  .footer {
+    text-align: center; color: var(--muted); font-size: 12px;
+    padding: 28px 0; border-top: 1px solid var(--border);
+  }
+
+  @media (max-width: 620px) {
+    .hero h1 { font-size: 28px; }
+    .path-cards { grid-template-columns: 1fr; }
+    .works-teaser { flex-direction: column; gap: 20px; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="site-nav">
+  <a href="index.html" class="nav-brand">COS Pipeline</a>
+  <a href="index.html" class="nav-link active">Home</a>
+  <a href="HOW_IT_ALL_WORKS.html" class="nav-link">How It Works</a>
+  <a href="onboard.html" class="nav-link">Get Started</a>
+  <a href="configure.html" class="nav-link">Configure</a>
+</nav>
+
+<!-- Hero -->
+<div class="hero">
+  <div class="hero-label">Chief of Staff Pipeline</div>
+  <h1>Your intelligence system<br>runs <em>while you work</em></h1>
+  <p>Automatically turns emails, call transcripts, and research into structured memos, action items, and a live dashboard — tailored to your investment focus.</p>
+  <div class="hero-ctas">
+    <a href="onboard.html" class="btn-primary">Get Started →</a>
+    <a href="HOW_IT_ALL_WORKS.html" class="btn-ghost">See How It Works</a>
+  </div>
+</div>
+
+<!-- What it does -->
+<div class="what">
+  <h2>What runs automatically</h2>
+  <div class="what-grid">
+    <div class="what-card">
+      <div class="what-icon">✉️</div>
+      <div class="what-title">Email triage</div>
+      <div class="what-desc">Every email classified as deal, recruiting, or research and written to the right Google Doc.</div>
+    </div>
+    <div class="what-card">
+      <div class="what-icon">🎙️</div>
+      <div class="what-title">Call memos</div>
+      <div class="what-desc">Transcripts from Otter AI, Zoom, or any Drive folder turned into structured investor memos.</div>
+    </div>
+    <div class="what-card">
+      <div class="what-icon">✅</div>
+      <div class="what-title">Action items</div>
+      <div class="what-desc">Commitments and follow-ups extracted from every call and email, with named owners and deadlines.</div>
+    </div>
+    <div class="what-card">
+      <div class="what-icon">📊</div>
+      <div class="what-title">Live dashboard</div>
+      <div class="what-desc">Local web dashboard at localhost:7777 showing deal pipeline, recruiting, and intelligence tiles.</div>
+    </div>
+    <div class="what-card">
+      <div class="what-icon">🎧</div>
+      <div class="what-title">Podcast summaries</div>
+      <div class="what-desc">New episodes transcribed and summarised with investment implications, written to Google Docs.</div>
+    </div>
+    <div class="what-card">
+      <div class="what-icon">📋</div>
+      <div class="what-title">Daily briefing</div>
+      <div class="what-desc">Morning email with new intel, upcoming calls, and pending actions — tailored to your focus.</div>
+    </div>
+  </div>
+</div>
+
+<!-- Path chooser -->
+<div class="paths">
+  <div class="paths-inner">
+    <h2>Choose your path</h2>
+    <p>Two different setups depending on whether you're joining an existing team or starting fresh.</p>
+
+    <div class="path-cards">
+
+      <a href="onboard.html" class="path-card">
+        <div class="path-badge team">Joining a team</div>
+        <div class="path-title">Your firm is already set up</div>
+        <div class="path-desc">Someone at your firm has already configured the pipeline. You just need to get your own machine running and connected.</div>
+        <ul class="path-list">
+          <li>20 minutes total</li>
+          <li>No Google Cloud setup required</li>
+          <li>Config repo already exists</li>
+          <li>Shared Google Docs already created</li>
+        </ul>
+        <span class="path-arrow">→</span>
+      </a>
+
+      <a href="onboard-new-firm.html" class="path-card">
+        <div class="path-badge firm">New firm</div>
+        <div class="path-title">Starting from scratch</div>
+        <div class="path-desc">You're the first person at your firm to set this up. You'll create the accounts, config, and shared docs — then add teammates later.</div>
+        <ul class="path-list">
+          <li>~60 minutes total</li>
+          <li>Anthropic + Google Cloud setup</li>
+          <li>Creates your shared Google Docs</li>
+          <li>Adds teammates in minutes after</li>
+        </ul>
+        <span class="path-arrow">→</span>
+      </a>
+
+    </div>
+  </div>
+</div>
+
+<!-- How it works teaser -->
+<div class="works-teaser">
+  <div>
+    <h2>Understand the full picture</h2>
+    <p>A plain-English diagram of every data flow — what goes where, what's shared vs. private, and how the pipeline fits together end to end.</p>
+  </div>
+  <a href="HOW_IT_ALL_WORKS.html" class="btn-outline">View the diagram →</a>
+</div>
+
+<div class="footer">
+  Not indexed by search engines &nbsp;·&nbsp;
+  <a href="configure.html" style="color:var(--muted)">Configure your identity →</a>
+</div>
+
+</body>
+</html>

@@ -298,9 +298,38 @@
     .switcher { flex-direction: column; }
     .cost-grid { flex-direction: column; gap: 12px; }
   }
+
+  /* ── Nav ── */
+  .site-nav {
+    background: var(--ink);
+    display: flex; align-items: center;
+    padding: 0 28px; height: 48px;
+    position: sticky; top: 0; z-index: 200; gap: 4px;
+  }
+  .nav-brand {
+    color: white; font-weight: 700; font-size: 14px;
+    text-decoration: none; margin-right: 20px; letter-spacing: .01em; flex-shrink: 0;
+  }
+  .nav-link {
+    color: rgba(255,255,255,.55); text-decoration: none;
+    font-size: 13px; font-weight: 500;
+    padding: 0 14px; height: 48px;
+    display: flex; align-items: center;
+    border-bottom: 2px solid transparent; transition: all .15s; white-space: nowrap;
+  }
+  .nav-link:hover { color: white; }
+  .nav-link.active { color: white; border-bottom-color: white; }
 </style>
 </head>
 <body>
+
+<nav class="site-nav">
+  <a href="index.html" class="nav-brand">COS Pipeline</a>
+  <a href="index.html" class="nav-link">Home</a>
+  <a href="HOW_IT_ALL_WORKS.html" class="nav-link">How It Works</a>
+  <a href="onboard.html" class="nav-link active">Get Started</a>
+  <a href="configure.html" class="nav-link">Configure</a>
+</nav>
 
 <div class="header">
   <div class="label">COS Pipeline</div>
