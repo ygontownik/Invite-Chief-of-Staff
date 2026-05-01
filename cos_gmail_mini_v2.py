@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """
 cos_gmail_mini_v2.py — CoS Email Mini (Gmail + Outlook)
 Cost-optimized: delta reads + Haiku triage + Sonnet escalation only
@@ -710,7 +711,11 @@ def write_deal_update(email: dict, triage: dict, enriched: dict, config: dict, d
         return
 
     try:
+        if subject_already_in_doc(doc_id, email["subject"]):
+            log.info(f"DEAL already in doc (skipping duplicate): {email['subject'][:60]}")
+            return
         append_to_doc(doc_id, text)
+        _invalidate_doc_cache(doc_id, text)
         log.info(f"DEAL written to pipeline doc: {deal_name}")
     except Exception as e:
         log.error(f"Failed to write DEAL to doc {doc_id}: {e}")
@@ -749,7 +754,11 @@ def write_recruit_update(email: dict, triage: dict, enriched: dict, config: dict
         return
 
     try:
+        if subject_already_in_doc(doc_id, email["subject"]):
+            log.info(f"RECRUIT already in doc (skipping duplicate): {email['subject'][:60]}")
+            return
         append_to_doc(doc_id, text)
+        _invalidate_doc_cache(doc_id, text)
         log.info(f"RECRUIT written to recruiting doc: {firm} / {role}")
     except Exception as e:
         log.error(f"Failed to write RECRUIT to doc {doc_id}: {e}")
@@ -791,31 +800,71 @@ def write_action_item(email: dict, triage: dict, enriched: dict, config: dict, d
         return
 
     try:
+        if subject_already_in_doc(doc_id, email["subject"]):
+            log.info(f"ACTION already in doc (skipping duplicate): {email['subject'][:60]}")
+            return
         append_to_doc(doc_id, text)
+        _invalidate_doc_cache(doc_id, text)
         log.info(f"ACTION written to followups doc: {action_summary[:60]}")
     except Exception as e:
         log.error(f"Failed to write ACTION to doc {doc_id}: {e}")
 
 
+# ── Cross-user doc dedup ──────────────────────────────────────────────────────
+# Problem: if Yoni and Mark are both CC'd on an email, both pipelines will
+# process it and try to write to the shared Follow-ups / Pipeline / Recruiting
+# doc. Fix: cache each shared doc's full text once per run; before any write,
+# check if the email subject is already present. Since pipelines run on a
+# staggered 2h schedule, by the time machine B runs, machine A's write is
+# already in the doc and the cache catches it.
+#
+# The cache is per-process (module-level). Invalidated per run automatically
+# since each script invocation loads a fresh cache. After a write, the cache is
+# updated so in-run duplicates (rare, but possible) are also caught.
+
+_DOC_TEXT_CACHE: dict[str, str] = {}
+
+
+def _get_doc_text(doc_id: str) -> str:
+    """Return lowercased full text of a Google Doc, cached per process."""
+    if doc_id not in _DOC_TEXT_CACHE:
+        try:
+            docs = get_docs_service()
+            doc = docs.documents().get(documentId=doc_id).execute()
+            parts = []
+            for el in doc.get("body", {}).get("content", []):
+                para = el.get("paragraph")
+                if not para:
+                    continue
+                parts.append("".join(
+                    r.get("textRun", {}).get("content", "")
+                    for r in para.get("elements", [])
+                ))
+            _DOC_TEXT_CACHE[doc_id] = "\n".join(parts).lower()
+        except Exception as e:
+            log.warning(f"Could not cache doc text for {doc_id}: {e}")
+            _DOC_TEXT_CACHE[doc_id] = ""
+    return _DOC_TEXT_CACHE[doc_id]
+
+
+def _invalidate_doc_cache(doc_id: str, appended_text: str) -> None:
+    """After a write, append the new text to the cache so in-run dupes are caught."""
+    if doc_id in _DOC_TEXT_CACHE:
+        _DOC_TEXT_CACHE[doc_id] += appended_text.lower()
+
+
 def subject_already_in_doc(doc_id: str, subject: str) -> bool:
-    """Return True if the subject line already appears as text in the doc (dedup guard)."""
-    try:
-        docs = get_docs_service()
-        doc = docs.documents().get(documentId=doc_id).execute()
-        needle = subject.strip().lower()[:80]
-        for el in doc.get("body", {}).get("content", []):
-            para = el.get("paragraph")
-            if not para:
-                continue
-            text = "".join(
-                r.get("textRun", {}).get("content", "")
-                for r in para.get("elements", [])
-            ).strip().lower()[:80]
-            if text and needle and text == needle:
-                return True
-    except Exception as e:
-        log.warning(f"Dedup check failed for doc {doc_id}: {e}")
-    return False
+    """Return True if this email subject was already written to doc (dedup guard).
+
+    Searches the cached full doc text for the subject as a substring — catches
+    both 'Subject: Re: Cholla update' and bare title lines. Works across team
+    members: if machine A wrote an entry 2h ago, machine B's cache loads fresh
+    and finds the subject before writing a duplicate.
+    """
+    needle = subject.strip().lower()
+    if not needle:
+        return False
+    return needle in _get_doc_text(doc_id)
 
 
 def write_research(email: dict, triage: dict, doc_id: str, dry_run: bool = False):
@@ -841,6 +890,7 @@ def write_research(email: dict, triage: dict, doc_id: str, dry_run: bool = False
             log.info(f"RESEARCH already in doc (skipping duplicate): {email['subject'][:60]}")
             return
         append_to_doc(doc_id, text)
+        _invalidate_doc_cache(doc_id, text)
         log.info(f"RESEARCH written to source doc {doc_id}: {email['subject'][:60]}")
     except Exception as e:
         log.error(f"Failed to write RESEARCH to doc {doc_id}: {e}")

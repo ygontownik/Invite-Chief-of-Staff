@@ -1124,66 +1124,94 @@
 <!-- GITHUB IMPLICATIONS -->
 <!-- ══════════════════════════════════════════════════════════════ -->
 <div class="phase">
-  <div class="phase-title">⑩ What Doesn't Go to GitHub — and what that means for you and others</div>
+  <div class="phase-title">⑩ Where Does Everything Live? — Three buckets, nothing overlaps</div>
 
-  <div style="background:white;border-radius:10px;border:1px solid #e0ddd8;overflow:hidden;margin-bottom:12px;">
-    <div style="display:grid;grid-template-columns:200px 1fr 1fr;background:#2c2c2c;color:white;font-size:11px;font-weight:600;padding:10px 16px;gap:16px;">
-      <div>What stays off GitHub</div>
-      <div>Implication for you</div>
-      <div>Implication for other users (Firm 2, etc.)</div>
+  <!-- Three-bucket legend -->
+  <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
+    <div style="background:#e8f5e9;border:1px solid #a5d6a7;border-radius:8px;padding:10px 16px;font-size:12px;flex:1;min-width:180px;">
+      <div style="font-weight:700;color:#2e7d32;margin-bottom:4px;">🌐 Public GitHub</div>
+      <div style="color:#388e3c;">Universal code — Python scripts, templates, docs. No firm identity. Anyone can use it.</div>
+      <div style="font-size:11px;color:#888;margin-top:4px;">github.com/ygontownik/Dashboard</div>
     </div>
-
-    <div style="display:grid;grid-template-columns:200px 1fr 1fr;padding:12px 16px;gap:16px;border-top:1px solid #f0ede8;font-size:12px;align-items:start;">
-      <div><strong>firm_context.yaml</strong><div style="font-size:11px;color:#888;">Your identity, team, feeds, sections</div></div>
-      <div>Your name, firm, deal focus, team members, personal podcast feeds — completely private. You edit this to make the pipeline reflect your reality. It never goes anywhere.</div>
-      <div>They start from <code>firm_context.template.yaml</code> and fill in their own details. Your configuration gives them zero hints about your firm, your deals, or your people. They're starting from scratch.</div>
+    <div style="background:#fff3e0;border:1px solid #ffcc80;border-radius:8px;padding:10px 16px;font-size:12px;flex:1;min-width:180px;">
+      <div style="font-weight:700;color:#e65100;margin-bottom:4px;">🔒 Private team repo</div>
+      <div style="color:#ef6c00;">Firm identity — your YAML configs. Shared only with Mark and Nik. Firm 2 has its own separate private repo.</div>
+      <div style="font-size:11px;color:#888;margin-top:4px;">e.g. github.com/yourfirm/tcip-config (private)</div>
     </div>
-
-    <div style="display:grid;grid-template-columns:200px 1fr 1fr;padding:12px 16px;gap:16px;border-top:1px solid #f0ede8;font-size:12px;align-items:start;">
-      <div><strong>firm_config.json</strong><div style="font-size:11px;color:#888;">Your Google Doc IDs, deal keywords</div></div>
-      <div>Your actual document IDs — the specific Google Docs the pipeline reads and writes. Leak these and someone could read your Follow-ups Doc. They're safe on your machine.</div>
-      <div>They create their own 4 Google Docs via <code>--create-docs</code>. Their Doc IDs are different from yours. They can never accidentally write to your Docs or you to theirs.</div>
-    </div>
-
-    <div style="display:grid;grid-template-columns:200px 1fr 1fr;padding:12px 16px;gap:16px;border-top:1px solid #f0ede8;font-size:12px;align-items:start;">
-      <div><strong>OAuth tokens</strong><div style="font-size:11px;color:#888;">~/credentials/*.pickle</div></div>
-      <div>The keys that let the pipeline log into your Google account. These expire and refresh automatically. Losing them means running the OAuth sign-in flow again (5 min).</div>
-      <div>They create their own tokens by signing into their own Google account. Your tokens grant access to your Gmail and Drive. Theirs grant access to theirs. No crossover possible.</div>
-    </div>
-
-    <div style="display:grid;grid-template-columns:200px 1fr 1fr;padding:12px 16px;gap:16px;border-top:1px solid #f0ede8;font-size:12px;align-items:start;">
-      <div><strong>Processed file trackers</strong><div style="font-size:11px;color:#888;">processed_emails.json, processed_cos_transcripts.json</div></div>
-      <div>Tracks what your pipeline has already handled so nothing runs twice. Lives on your machine. If you delete it, the pipeline reprocesses everything (use <code>--backfill</code> deliberately instead).</div>
-      <div>They have their own trackers on their machines. <span style="color:#c62828;font-weight:600;">Known gap for same-firm teams:</span> if both you and Mark have the pipeline running and you're on the same email thread, both pipelines might process it and write duplicate entries to the shared Follow-ups Doc. Being addressed in a future update.</div>
-    </div>
-
-    <div style="display:grid;grid-template-columns:200px 1fr 1fr;padding:12px 16px;gap:16px;border-top:1px solid #f0ede8;font-size:12px;align-items:start;">
-      <div><strong>Personal block of firm_context.yaml</strong><div style="font-size:11px;color:#888;">Your podcasts, briefing preferences</div></div>
-      <div>The podcasts you follow and your briefing delivery time stay personal. You can update these anytime without affecting your team — just edit your local file.</div>
-      <div>They configure their own feeds and briefing preferences independently. Mark might follow different shows than you. That's the point — each person's morning briefing reflects their own interests.</div>
-    </div>
-
-    <div style="display:grid;grid-template-columns:200px 1fr 1fr;padding:12px 16px;gap:16px;border-top:1px solid #f0ede8;font-size:12px;align-items:start;">
-      <div><strong>Improvements to YOUR analytical defaults</strong><div style="font-size:11px;color:#888;">Changes to your prompt_overrides</div></div>
-      <div>If you add a custom memo section or a firm-specific focus supplement, that stays in your local firm_context.yaml. Only you see the effect.</div>
-      <div><span style="font-weight:600;">Other users get the defaults,</span> not your customizations. The default 6-section memo format ships in the code on GitHub — they get it automatically. But any tweaks you made to YOUR sections don't flow to them. They'd need to make the same change in their own YAML if they want it.</div>
-    </div>
-
-    <div style="display:grid;grid-template-columns:200px 1fr 1fr;padding:12px 16px;gap:16px;border-top:1px solid #f0ede8;font-size:12px;align-items:start;">
-      <div><strong>Code improvements you make</strong><div style="font-size:11px;color:#888;">Bug fixes, new features in .py files</div></div>
-      <div>If you fix a bug on your machine but don't push to GitHub, only you benefit. The fix lives on your machine. Other users continue hitting the same bug until you push.</div>
-      <div><span style="font-weight:600;">They don't get it until you push.</span> This is the only case where your inaction has a direct cost to others. The expectation (per CONTRIBUTING.md): universal improvements get pushed to GitHub so everyone benefits.</div>
-    </div>
-
-    <div style="display:grid;grid-template-columns:200px 1fr 1fr;padding:12px 16px;gap:16px;border-top:1px solid #f0ede8;font-size:12px;align-items:start;background:#fafafa;">
-      <div><strong>Your Google Drive data</strong><div style="font-size:11px;color:#888;">Docs, transcripts, deal files</div></div>
-      <div>Entirely private to your firm. Only accounts with explicit OAuth permission (yours and your team's) can access these Docs.</div>
-      <div>Firm 2 creates their own completely separate Google Docs. There is no shared database, no shared Drive folder, no shared server. Their data is physically in different files on different Google accounts.</div>
+    <div style="background:#f3f0eb;border:1px solid #d5cfc6;border-radius:8px;padding:10px 16px;font-size:12px;flex:1;min-width:180px;">
+      <div style="font-weight:700;color:#555;margin-bottom:4px;">💻 Machine only</div>
+      <div style="color:#666;">OAuth tokens, processed file trackers, personal podcast feeds. Never committed anywhere.</div>
+      <div style="font-size:11px;color:#888;margin-top:4px;">~/credentials/ &nbsp;·&nbsp; firm_context.yaml (personal block)</div>
     </div>
   </div>
 
-  <div class="note" style="border-left-color:#c62828;">
-    <strong>The one gap worth knowing:</strong> If two people at the same firm both run the email pipeline and both receive a shared email thread, both pipelines could write duplicate action items to the shared Follow-ups Doc. This is a known limitation for same-firm multi-user setups. The workaround today: designate one person's machine to run the email pipeline, while others run only the transcript pipeline for their own calls. A coordination layer (shared write queue) is on the roadmap.
+  <div style="background:white;border-radius:10px;border:1px solid #e0ddd8;overflow:hidden;margin-bottom:12px;">
+    <div style="display:grid;grid-template-columns:190px 90px 1fr 1fr;background:#2c2c2c;color:white;font-size:11px;font-weight:600;padding:10px 16px;gap:16px;">
+      <div>File / Data</div>
+      <div>Lives where?</div>
+      <div>What it means for your team (Mark, Nik)</div>
+      <div>What it means for Firm 2</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:190px 90px 1fr 1fr;padding:12px 16px;gap:16px;border-top:1px solid #f0ede8;font-size:12px;align-items:start;">
+      <div><strong>firm_context.yaml</strong><div style="font-size:11px;color:#888;">Identity, team, investment focus</div></div>
+      <div><span style="background:#fff3e0;color:#e65100;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600;">🔒 Team repo</span></div>
+      <div>Push here so Mark and Nik always have your latest team config — new hire, new peer firm, updated draft voice — on their next <code>git pull</code>. No Slack message needed.</div>
+      <div>They have their own private team repo with their own YAML. Your config gives them zero information about your firm, deals, or people.</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:190px 90px 1fr 1fr;padding:12px 16px;gap:16px;border-top:1px solid #f0ede8;font-size:12px;align-items:start;">
+      <div><strong>firm_config.json</strong><div style="font-size:11px;color:#888;">Google Doc IDs, email keywords</div></div>
+      <div><span style="background:#fff3e0;color:#e65100;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600;">🔒 Team repo</span></div>
+      <div>The Doc IDs for your shared Follow-ups, Pipeline, and Recruiting docs live here. All team members need the same IDs so they write to the same docs.</div>
+      <div>They create their own 4 Google Docs via <code>--create-docs</code>. Their Doc IDs are physically different. Cross-write is impossible.</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:190px 90px 1fr 1fr;padding:12px 16px;gap:16px;border-top:1px solid #f0ede8;font-size:12px;align-items:start;">
+      <div><strong>drive-docs.yaml</strong><div style="font-size:11px;color:#888;">Drive folder IDs, doc registry</div></div>
+      <div><span style="background:#fff3e0;color:#e65100;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600;">🔒 Team repo</span></div>
+      <div>Maps pipeline keys to Drive folder IDs — Otter AI root, transcript folders, etc. Shared so all team members' pipelines scan the same folders.</div>
+      <div>Their own Drive folders on their own Google accounts. No shared folders, no shared Drive space between firms.</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:190px 90px 1fr 1fr;padding:12px 16px;gap:16px;border-top:1px solid #f0ede8;font-size:12px;align-items:start;">
+      <div><strong>OAuth tokens</strong><div style="font-size:11px;color:#888;">~/credentials/*.pickle</div></div>
+      <div><span style="background:#f3f0eb;color:#555;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600;">💻 Machine</span></div>
+      <div>Each person authenticates with their own Google account. Tokens expire and refresh automatically. Losing them = 5-min re-auth.</div>
+      <div>Their tokens grant access only to their accounts. No crossover possible by design.</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:190px 90px 1fr 1fr;padding:12px 16px;gap:16px;border-top:1px solid #f0ede8;font-size:12px;align-items:start;">
+      <div><strong>Processed file trackers</strong><div style="font-size:11px;color:#888;">processed_emails.json, processed_cos_transcripts.json</div></div>
+      <div><span style="background:#f3f0eb;color:#555;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600;">💻 Machine</span></div>
+      <div>Each machine tracks what it's processed locally. <span style="color:#2e7d32;font-weight:600;">Email duplicates now caught at the doc level:</span> before writing to any shared doc, the pipeline checks whether the email subject is already there — so even if two pipelines both process the same CC'd thread, only one entry lands in the doc.</div>
+      <div>They have their own trackers. Same doc-level dedup applies — their writes to your shared docs (which they can't access) and your writes to theirs (same) can't happen anyway. Firm 2's docs are entirely separate.</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:190px 90px 1fr 1fr;padding:12px 16px;gap:16px;border-top:1px solid #f0ede8;font-size:12px;align-items:start;">
+      <div><strong>Personal block of firm_context.yaml</strong><div style="font-size:11px;color:#888;">Your podcasts, briefing preferences</div></div>
+      <div><span style="background:#f3f0eb;color:#555;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600;">💻 Machine</span></div>
+      <div>Your podcast feeds and briefing time stay on your machine. Don't push the personal block to the team repo — it would overwrite Mark's feeds with yours.</div>
+      <div>Each person at Firm 2 sets their own feeds. No shared briefing content between firms.</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:190px 90px 1fr 1fr;padding:12px 16px;gap:16px;border-top:1px solid #f0ede8;font-size:12px;align-items:start;">
+      <div><strong>Code improvements</strong><div style="font-size:11px;color:#888;">Bug fixes, new features in .py files</div></div>
+      <div><span style="background:#e8f5e9;color:#2e7d32;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600;">🌐 Public</span></div>
+      <div>Bug fixes you push flow to your team on their next <code>git pull</code>. Fixes you don't push stay on your machine only.</div>
+      <div><strong>They get it on push.</strong> Universal improvements (per CONTRIBUTING.md) go public so all firms benefit. Firm-specific tweaks stay in their private team repo.</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:190px 90px 1fr 1fr;padding:12px 16px;gap:16px;border-top:1px solid #f0ede8;font-size:12px;align-items:start;background:#fafafa;">
+      <div><strong>Your Google Drive data</strong><div style="font-size:11px;color:#888;">Docs, transcripts, deal files</div></div>
+      <div><span style="background:#f3f0eb;color:#555;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600;">💻 Drive only</span></div>
+      <div>Lives in Google Drive, accessible only to accounts you've explicitly authorized. Not on GitHub in any form.</div>
+      <div>Firm 2's Drive is on different Google accounts. No shared database, no shared folder, no shared server between firms.</div>
+    </div>
+  </div>
+
+  <div class="note" style="border-left-color:#2e7d32;background:#f1f8f1;">
+    <strong>✅ Email duplicate gap — fixed.</strong> The pipeline now caches each shared doc's content at run start and checks whether an email's subject is already present before writing. If Yoni and Mark are both CC'd on a deal thread and both pipelines run, only the first write lands — the second pipeline finds the subject in the doc and skips. Transcripts were already protected by the <code>PROCESSED:</code> header written server-side in each Drive doc.
   </div>
 </div>
 
