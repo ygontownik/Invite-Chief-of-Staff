@@ -377,6 +377,7 @@ def _save_order(data):
             pass
 
 _RECRUIT_CONFIG_PATH = Path(__file__).parent.parent / 'config' / 'recruit-config.yaml'
+_TOMAC_CONFIG_PATH   = Path(__file__).parent.parent / 'config' / 'tomac-config.yaml'
 
 def _load_recruit_config() -> dict:
     """Load config/recruit-config.yaml and return as a plain dict for JSON injection."""
@@ -394,6 +395,21 @@ def _load_recruit_config() -> dict:
     except Exception as e:
         print(f'[recruit-config] load failed: {e}', flush=True)
         return {'priorityTargets': {'inDiscussion': [], 'waitingToHear': [], 'doIChase': []}, 'recruiters': []}
+
+def _load_tomac_config() -> dict:
+    """Load config/tomac-config.yaml and return as a plain dict for JSON injection."""
+    try:
+        import yaml as _yaml
+        raw = _yaml.safe_load(_TOMAC_CONFIG_PATH.read_text()) or {}
+        return {
+            'liveDeals':             raw.get('liveDeals', []),
+            'dealOrigination':       raw.get('dealOrigination', []),
+            'capitalRaisingAdvisors':raw.get('capitalRaisingAdvisors', []),
+            'prospectiveInvestors':  raw.get('prospectiveInvestors', []),
+        }
+    except Exception as e:
+        print(f'[tomac-config] load failed: {e}', flush=True)
+        return {'liveDeals': [], 'dealOrigination': [], 'capitalRaisingAdvisors': [], 'prospectiveInvestors': []}
 
 # ── Fundraising user-state ──────────────────────────────────────────────
 # Buckets schema (2026-04-28): direct_lps / gp_stakes / placement_agents /
@@ -882,6 +898,10 @@ def _deletions_script() -> str:
         recruit_config = _load_recruit_config()
     except Exception:
         recruit_config = {'priorityTargets': {'inDiscussion': [], 'waitingToHear': [], 'doIChase': []}, 'recruiters': []}
+    try:
+        tomac_config = _load_tomac_config()
+    except Exception:
+        tomac_config = {'liveDeals': [], 'dealOrigination': [], 'capitalRaisingAdvisors': [], 'prospectiveInvestors': []}
     return (
         '<script>'
         '(function(){'
@@ -890,6 +910,7 @@ def _deletions_script() -> str:
         'window.__BUILD_BACKLOG_INITIAL__ = ' + json.dumps(build_backlog_initial) + ';'
         'window.__PERSONAL_ITEMS_INITIAL__ = ' + json.dumps(personal_items_initial) + ';'
         'window.__RECRUIT_CONFIG__ = ' + json.dumps(recruit_config) + ';'
+        'window.__TOMAC_CONFIG__ = ' + json.dumps(tomac_config) + ';'
         'window.__DELETIONS__ = new Set(' + json.dumps(ids) + ');'
         'window.__itemId = function(source, content){'
         '  var s = String(source||"") + "|" + String(content||"").slice(0,60).trim();'
