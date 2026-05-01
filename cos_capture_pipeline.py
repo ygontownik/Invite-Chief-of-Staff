@@ -76,6 +76,10 @@ log = logging.getLogger("cos_capture")
 sys.path.insert(0, str(_HERE))
 
 import _firm_context as _fc  # noqa: E402
+try:
+    from _usage import log_usage
+except Exception:
+    def log_usage(*_a, **_kw): return
 from _email_provider import (  # noqa: E402
     DraftHandle,
     EmailMessage,
@@ -270,7 +274,13 @@ def call_claude(system_prompt: str, user_payload: str) -> dict:
     body = {
         "model": MODEL,
         "max_tokens": MAX_TOKENS,
-        "system": system_prompt,
+        "system": [
+            {
+                "type": "text",
+                "text": system_prompt,
+                "cache_control": {"type": "ephemeral"},
+            }
+        ],
         "messages": [{"role": "user", "content": user_payload}],
     }
     req = urllib.request.Request(
@@ -279,12 +289,14 @@ def call_claude(system_prompt: str, user_payload: str) -> dict:
         headers={
             "x-api-key": ANTHROPIC_API_KEY,
             "anthropic-version": "2023-06-01",
+            "anthropic-beta": "prompt-caching-1",
             "content-type": "application/json",
         },
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=120) as r:
         resp = json.loads(r.read())
+    log_usage("cos_capture_pipeline", MODEL, resp)
 
     text = resp["content"][0]["text"].strip()
     # Strip optional code-fence

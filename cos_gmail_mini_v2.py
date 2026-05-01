@@ -46,6 +46,13 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from email.utils import parsedate_to_datetime
 
+_HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(_HERE))
+try:
+    from _usage import log_usage
+except Exception:
+    def log_usage(*_a, **_kw): return
+
 # ────────────────────────────────────────────────────────────────────
 # PATHS & CONFIG
 # ────────────────────────────────────────────────────────────────────
@@ -159,7 +166,7 @@ def get_fetch_since(state, config, args):
         hours = int(args.backfill.rstrip("h"))
         return datetime.now(timezone.utc) - timedelta(hours=hours)
 
-    if state["last_processed_ts"]:
+    if state.get("last_processed_ts"):
         return datetime.fromisoformat(state["last_processed_ts"])
 
     # First run: default lookback
@@ -495,6 +502,14 @@ def haiku_triage(email: dict) -> dict:
             system=TRIAGE_SYSTEM,
             messages=[{"role": "user", "content": prompt}],
         )
+        log_usage("cos_gmail_mini_haiku", "claude-haiku-4-5-20251001", {
+            "usage": {
+                "input_tokens":                getattr(response.usage, "input_tokens", 0),
+                "output_tokens":               getattr(response.usage, "output_tokens", 0),
+                "cache_read_input_tokens":     getattr(response.usage, "cache_read_input_tokens", 0),
+                "cache_creation_input_tokens": getattr(response.usage, "cache_creation_input_tokens", 0),
+            }
+        })
         result = _parse_json_response(response.content[0].text)
         result["category"] = result.get("category", "IGNORE").upper()
         result["confidence"] = float(result.get("confidence", 0.5))
@@ -583,6 +598,14 @@ def sonnet_enrich(email: dict, category: str) -> dict:
             system=system,
             messages=[{"role": "user", "content": prompt}],
         )
+        log_usage("cos_gmail_mini_sonnet", "claude-sonnet-4-6", {
+            "usage": {
+                "input_tokens":                getattr(response.usage, "input_tokens", 0),
+                "output_tokens":               getattr(response.usage, "output_tokens", 0),
+                "cache_read_input_tokens":     getattr(response.usage, "cache_read_input_tokens", 0),
+                "cache_creation_input_tokens": getattr(response.usage, "cache_creation_input_tokens", 0),
+            }
+        })
         return _parse_json_response(response.content[0].text)
     except Exception as e:
         log.error(f"Sonnet enrichment failed for {email['id']}: {e}")
