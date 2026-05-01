@@ -312,6 +312,59 @@
     .radio-group.inline { flex-direction: column; }
     .progress-step { font-size: 9px; padding: 8px 4px; }
   }
+
+  /* ── LinkedIn import panel ── */
+  .import-panel {
+    background: #f0f4ff;
+    border: 1px solid #c7d7fe;
+    border-radius: 12px;
+    margin-bottom: 24px;
+    overflow: hidden;
+  }
+  .import-header {
+    display: flex; align-items: center; gap: 14px;
+    padding: 16px 20px; cursor: pointer;
+  }
+  .import-icon {
+    width: 32px; height: 32px; border-radius: 6px;
+    background: #0077b5; color: white;
+    font-size: 13px; font-weight: 900;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; font-family: Georgia, serif;
+  }
+  .import-title { font-size: 15px; font-weight: 700; color: var(--ink); }
+  .import-sub   { font-size: 12px; color: var(--muted); }
+  .import-toggle {
+    margin-left: auto; font-size: 12px; font-weight: 600;
+    background: none; border: 1px solid #c7d7fe;
+    border-radius: 6px; padding: 4px 10px;
+    cursor: pointer; color: #2563eb; white-space: nowrap;
+    transition: all .15s;
+  }
+  .import-toggle:hover { background: #2563eb; color: white; border-color: #2563eb; }
+  .import-body { padding: 0 20px 20px; border-top: 1px solid #c7d7fe; }
+  .import-body .field { margin-top: 16px; margin-bottom: 0; }
+  .import-body .field label { color: var(--ink); }
+  .import-btn {
+    background: #0077b5; color: white; border: none;
+    border-radius: 8px; padding: 9px 20px;
+    font-size: 13px; font-weight: 700; cursor: pointer;
+    transition: all .15s;
+  }
+  .import-btn:hover { background: #005a8e; }
+  .import-btn:disabled { background: #9ca3af; cursor: not-allowed; }
+  .import-note {
+    margin-top: 12px; font-size: 12px; color: var(--muted);
+    background: white; border: 1px solid #c7d7fe;
+    border-radius: 6px; padding: 8px 12px;
+  }
+  .import-flash {
+    animation: flash-green .8s ease-out;
+  }
+  @keyframes flash-green {
+    0%   { background: #d1fae5; }
+    100% { background: inherit; }
+  }
 </style>
 </head>
 <body>
@@ -323,6 +376,59 @@
 </div>
 
 <div class="page">
+
+  <!-- LinkedIn import panel -->
+  <div class="import-panel" id="import-panel">
+    <div class="import-header">
+      <div class="import-icon">in</div>
+      <div>
+        <div class="import-title">Import from LinkedIn</div>
+        <div class="import-sub">Paste your profile to auto-fill the form below. Takes 30 seconds.</div>
+      </div>
+      <button class="import-toggle" onclick="toggleImport()">Show ▾</button>
+    </div>
+
+    <div class="import-body" id="import-body" style="display:none">
+
+      <!-- LinkedIn URL -->
+      <div class="field">
+        <label>Your LinkedIn URL <span style="font-weight:400;color:var(--muted)">(included in your CLAUDE.md as reference context)</span></label>
+        <input type="text" id="linkedin-url" placeholder="https://www.linkedin.com/in/yourname" oninput="update()">
+      </div>
+
+      <!-- Paste area -->
+      <div class="field">
+        <label>Paste your LinkedIn profile text</label>
+        <div class="hint">On LinkedIn: open your profile → right-click the page → "Select All" then copy. Or copy just the About section + each work experience entry. The more you paste, the better the fill.</div>
+        <textarea id="linkedin-text" rows="8" placeholder="Paste your LinkedIn About section and work experience here..."></textarea>
+      </div>
+
+      <!-- API key for AI enhancement -->
+      <details style="margin-bottom:16px;">
+        <summary style="cursor:pointer;font-size:13px;font-weight:600;color:var(--muted);padding:4px 0;">
+          ▸ Enhance with AI (optional — uses your Anthropic key for one call)
+        </summary>
+        <div style="margin-top:12px;">
+          <div class="field" style="margin-bottom:0;">
+            <label style="font-size:12px;">Anthropic API key</label>
+            <div class="hint">Used once for this call only. Never stored, never sent anywhere except Anthropic's API.</div>
+            <input type="password" id="import-api-key" placeholder="sk-ant-api03-…">
+          </div>
+        </div>
+      </details>
+
+      <!-- Action buttons -->
+      <div style="display:flex;gap:10px;align-items:center;">
+        <button class="import-btn" onclick="runImport()">Auto-fill form</button>
+        <span id="import-status" style="font-size:13px;color:var(--muted);"></span>
+      </div>
+
+      <div class="import-note">
+        Fields that can't be confidently extracted are left blank for you to fill in manually.
+        All auto-filled values are editable — review before copying the output.
+      </div>
+    </div>
+  </div>
 
   <!-- Section 1: You -->
   <div class="section">
@@ -913,6 +1019,8 @@ function genClaudeMd() {
   const prior   = v('p-prior')    || '';
   const firm    = v('firm-name')  || 'YOUR FIRM';
   const short   = v('firm-short') || 'FIRM';
+  const linkedinUrl = v('linkedin-url');
+  const linkedinLine = linkedinUrl ? `\nLinkedIn: ${linkedinUrl}` : '';
   const frame   = state.investorFrame;
   const supp    = v('focus-supplement');
   const signoff = v('email-signoff') || 'Best,';
@@ -968,7 +1076,7 @@ function genClaudeMd() {
 
 ## WHO I AM
 
-${bg}.${priorLine}
+${bg}.${priorLine}${linkedinLine}
 Co-founding ${firm} (${short || 'FIRM'}).
 
 I think like a ${frame} — not an analyst. All output should reflect that frame: so-what first, specifics not generalities, named assets and firms not themes, investment implications not just descriptions.
@@ -1131,6 +1239,279 @@ function genFirmConfigJson() {
     ${recruits.map(r => `"${r.toLowerCase()}"`).concat(['"interview"','"role"','"opportunity"','"resume"','"cv"','"offer"','"comp"','"compensation"','"headhunter"','"recruiter"']).join(',\n    ')}
   ]
 }`;
+}
+
+// ── LinkedIn import ────────────────────────────────────────────────────────
+
+function toggleImport() {
+  const body = document.getElementById('import-body');
+  const btn  = document.querySelector('.import-toggle');
+  const open = body.style.display === 'block';
+  body.style.display = open ? 'none' : 'block';
+  btn.textContent = open ? 'Show ▾' : 'Hide ▴';
+}
+
+// Heuristic parser — runs instantly, no API needed
+function heuristicParse(text) {
+  const result = {};
+
+  // Name: first line that looks like a name (2-4 words, no special chars)
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  for (const line of lines.slice(0, 10)) {
+    if (/^[A-Z][a-z]+ [A-Z][a-z]+( [A-Z][a-z]+)?$/.test(line)) {
+      result.name = line; break;
+    }
+  }
+
+  // LinkedIn URL pattern in pasted text
+  const urlM = text.match(/linkedin\.com\/in\/([\w-]+)/i);
+  if (urlM && !document.getElementById('linkedin-url').value) {
+    result.linkedinUrl = 'https://www.linkedin.com/in/' + urlM[1];
+  }
+
+  // Years of experience — sum year spans from work history
+  const yearRanges = [...text.matchAll(/(\d{4})\s*[–\-–]\s*(Present|\d{4})/gi)];
+  if (yearRanges.length) {
+    const currentYear = new Date().getFullYear();
+    let totalYears = 0;
+    for (const m of yearRanges) {
+      const start = parseInt(m[1]);
+      const end = m[2].toLowerCase() === 'present' ? currentYear : parseInt(m[2]);
+      totalYears = Math.max(totalYears, currentYear - start); // career span
+    }
+    if (totalYears > 0) result.yearsExperience = `~${totalYears} years`;
+  }
+
+  // Current firm: look for headline-style "Title at Firm" or first "at X" near top
+  const atFirm = text.match(/(?:at|@)\s+([A-Z][A-Za-z &,\.]+?)(?:\n|$|·|\|)/m);
+  if (atFirm) result.currentFirm = atFirm[1].trim();
+
+  // Prior firms: look for company names in experience section
+  // Pattern: lines that appear after a date range and look like company names
+  const firmCandidates = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (/\d{4}/.test(lines[i]) && i > 0) {
+      const candidate = lines[i-1];
+      if (candidate.length > 2 && candidate.length < 60 && !/^\d/.test(candidate) && candidate !== result.currentFirm) {
+        firmCandidates.push(candidate);
+      }
+    }
+  }
+  if (firmCandidates.length > 1) {
+    result.priorFirms = [...new Set(firmCandidates.slice(1, 5))].join(', ');
+  }
+
+  // Investor frame
+  const lower = text.toLowerCase();
+  if (/\b(managing director|managing partner|gp|general partner|co-founder|partner)\b/.test(lower)) {
+    result.investorFrame = 'principal investor';
+  } else if (/\b(lp|limited partner|pension|endowment|sovereign|allocat)\b/.test(lower)) {
+    result.investorFrame = 'LP / allocator';
+  } else if (/\b(analyst|associate|vp|vice president)\b/.test(lower)) {
+    result.investorFrame = 'analyst';
+  } else if (/\b(corporate dev|corp dev|m&a|business development)\b/.test(lower)) {
+    result.investorFrame = 'corporate development';
+  }
+
+  // Focus sectors — keyword matching
+  const sectorMap = [
+    { key: 'power & utilities (generation, transmission)', words: ['power', 'utility', 'utilities', 'generation', 'transmission', 'ercot', 'pjm', 'miso', 'wecc', 'electric', 'grid'] },
+    { key: 'digital infrastructure (data centers, fiber, towers)', words: ['data center', 'fiber', 'tower', 'cell tower', 'digital infrastructure', 'telecommunications', 'telecom'] },
+    { key: 'midstream / LNG (pipelines, processing, export)', words: ['midstream', 'lng', 'pipeline', 'gas processing', 'natural gas', 'liquefied'] },
+    { key: 'energy transition (storage, nuclear, geothermal, solar)', words: ['energy transition', 'battery storage', 'nuclear', 'geothermal', 'clean energy', 'decarbonization'] },
+    { key: 'transportation (airports, ports, rail, roads)', words: ['airport', 'port', 'rail', 'toll road', 'highway', 'transit', 'transportation'] },
+    { key: 'water & environmental infrastructure', words: ['water', 'wastewater', 'environmental', 'waste'] },
+    { key: 'renewables (utility-scale solar, wind)', words: ['solar', 'wind', 'renewable', 'photovoltaic', 'offshore wind'] },
+    { key: 'social infrastructure (healthcare, education, government)', words: ['healthcare', 'hospital', 'education', 'school', 'government', 'public-private', 'ppp', 'p3'] },
+  ];
+  result.focusSectors = [];
+  for (const sector of sectorMap) {
+    if (sector.words.some(w => lower.includes(w))) {
+      result.focusSectors.push(sector.key);
+    }
+  }
+
+  // Capital deployed / AUM
+  const aum = text.match(/\$[\d\.]+[BMT]\+?\s*(?:AUM|deployed|managed|invested|assets)/i)
+           || text.match(/(?:deployed|managed|invested)\s+\$[\d\.]+[BMT]\+?/i);
+  if (aum) result.aum = aum[0].trim();
+
+  // Background sentence
+  const bgParts = [];
+  if (result.yearsExperience) bgParts.push(result.yearsExperience + ' infrastructure PE');
+  if (result.aum) bgParts.push(result.aum);
+  if (bgParts.length) result.backgroundHint = bgParts.join(', ');
+
+  return result;
+}
+
+// Apply parsed result to form
+function applyParsed(parsed) {
+  if (parsed.name && !document.getElementById('p-name').value) {
+    document.getElementById('p-name').value = parsed.name;
+    flashField('p-name');
+  }
+  if (parsed.linkedinUrl) {
+    document.getElementById('linkedin-url').value = parsed.linkedinUrl;
+  }
+  if (parsed.backgroundHint && !document.getElementById('p-background').value) {
+    document.getElementById('p-background').value = parsed.backgroundHint;
+    flashField('p-background');
+  }
+  if (parsed.priorFirms && !document.getElementById('p-prior').value) {
+    document.getElementById('p-prior').value = parsed.priorFirms;
+    flashField('p-prior');
+  }
+  if (parsed.currentFirm && !document.getElementById('firm-name').value) {
+    document.getElementById('firm-name').value = parsed.currentFirm;
+    flashField('firm-name');
+    // Auto-generate short name from initials
+    const initials = parsed.currentFirm.split(/\s+/).filter(w => /^[A-Z]/.test(w)).map(w => w[0]).join('');
+    if (initials.length >= 2 && !document.getElementById('firm-short').value) {
+      document.getElementById('firm-short').value = initials;
+      flashField('firm-short');
+    }
+  }
+  if (parsed.investorFrame) {
+    const frameOpts = document.querySelectorAll('#investor-frame .radio-option');
+    frameOpts.forEach(o => {
+      const val = o.querySelector('input').value;
+      if (val === parsed.investorFrame) {
+        o.click();
+      }
+    });
+  }
+  if (parsed.focusSectors && parsed.focusSectors.length) {
+    // Select chips in priority order
+    const chips = document.querySelectorAll('#focus-chips .chip');
+    parsed.focusSectors.forEach(sector => {
+      chips.forEach(chip => {
+        const chipVal = chip.getAttribute('onclick').match(/'([^']+)'/)?.[1] || '';
+        if (chipVal === sector && !chip.classList.contains('selected')) {
+          chip.click();
+        }
+      });
+    });
+  }
+  if (parsed.portfolioCompanies && parsed.portfolioCompanies.length) {
+    parsed.portfolioCompanies.forEach(co => {
+      if (!state.dealTags.includes(co)) {
+        state.dealTags.push(co);
+      }
+    });
+    renderTags('deal');
+  }
+  update();
+}
+
+function flashField(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.remove('import-flash');
+  void el.offsetWidth; // reflow
+  el.classList.add('import-flash');
+}
+
+async function runImport() {
+  const text   = document.getElementById('linkedin-text').value.trim();
+  const apiKey = document.getElementById('import-api-key').value.trim();
+  const status = document.getElementById('import-status');
+  const btn    = document.querySelector('.import-btn');
+
+  if (!text) { status.textContent = 'Paste your LinkedIn profile text first.'; return; }
+
+  btn.disabled = true;
+
+  // Always run heuristics immediately
+  status.textContent = 'Parsing…';
+  const heuristic = heuristicParse(text);
+  applyParsed(heuristic);
+
+  // If API key provided, enhance with Claude
+  if (apiKey) {
+    status.textContent = 'Enhancing with AI…';
+    try {
+      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 1024,
+          messages: [{
+            role: 'user',
+            content: `Extract professional profile data from this LinkedIn text. Return ONLY valid JSON, no explanation, no markdown.
+
+Return exactly this structure (use null for fields you cannot determine):
+{
+  "name": "full name or null",
+  "currentFirm": "current employer name or null",
+  "firmShort": "2-4 letter abbreviation or null",
+  "currentRole": "current job title or null",
+  "background": "single sentence: X years infrastructure PE/finance, $Xbn deployed/managed, known for Y — be specific if numbers present",
+  "priorFirms": "comma-separated list of prior employers, most recent first, or null",
+  "investorFrame": "one of: principal investor | LP / allocator | corporate development | analyst",
+  "yearsExperience": "~X years or null",
+  "focusSectors": ["array of matched sectors from: power & utilities (generation, transmission) | digital infrastructure (data centers, fiber, towers) | midstream / LNG (pipelines, processing, export) | energy transition (storage, nuclear, geothermal, solar) | transportation (airports, ports, rail, roads) | water & environmental infrastructure | renewables (utility-scale solar, wind) | social infrastructure (healthcare, education, government)"],
+  "portfolioCompanies": ["array of specific portfolio companies, assets, or deals mentioned — names only"],
+  "education": "School, Degree, Year or null"
+}
+
+LinkedIn profile text:
+${text.slice(0, 4000)}`
+          }]
+        })
+      });
+
+      if (!resp.ok) throw new Error(`API ${resp.status}`);
+      const data = await resp.json();
+      const raw = data.content[0].text.trim();
+      // Strip markdown code fences if present
+      const cleaned = raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
+      const parsed = JSON.parse(cleaned);
+
+      // Apply AI results (override heuristics where AI is more confident)
+      if (parsed.name) { document.getElementById('p-name').value = parsed.name; flashField('p-name'); }
+      if (parsed.background) { document.getElementById('p-background').value = parsed.background; flashField('p-background'); }
+      if (parsed.priorFirms) { document.getElementById('p-prior').value = parsed.priorFirms; flashField('p-prior'); }
+      if (parsed.currentFirm) { document.getElementById('firm-name').value = parsed.currentFirm; flashField('firm-name'); }
+      if (parsed.firmShort)   { document.getElementById('firm-short').value = parsed.firmShort;   flashField('firm-short'); }
+      if (parsed.investorFrame) {
+        document.querySelectorAll('#investor-frame .radio-option').forEach(o => {
+          if (o.querySelector('input').value === parsed.investorFrame) o.click();
+        });
+      }
+      if (parsed.focusSectors && parsed.focusSectors.length) {
+        // Reset and reselect chips
+        document.querySelectorAll('#focus-chips .chip.selected').forEach(c => c.click());
+        state.focusItems = [];
+        parsed.focusSectors.forEach(sector => {
+          document.querySelectorAll('#focus-chips .chip').forEach(chip => {
+            const chipVal = chip.getAttribute('onclick').match(/'([^']+)'/)?.[1] || '';
+            if (chipVal === sector) chip.click();
+          });
+        });
+      }
+      if (parsed.portfolioCompanies && parsed.portfolioCompanies.length) {
+        parsed.portfolioCompanies.forEach(co => {
+          if (co && !state.dealTags.includes(co)) { state.dealTags.push(co); }
+        });
+        renderTags('deal');
+      }
+      status.textContent = `✓ AI enhanced — ${Object.values(parsed).filter(v => v && (Array.isArray(v) ? v.length : true)).length} fields extracted`;
+      update();
+    } catch (err) {
+      status.textContent = `✓ Basic fill done (AI parse failed: ${err.message})`;
+    }
+  } else {
+    const count = Object.values(heuristic).filter(v => v && (Array.isArray(v) ? v.length : true)).length;
+    status.textContent = `✓ ${count} fields extracted — add API key above for better results`;
+  }
+
+  btn.disabled = false;
 }
 
 // ── Main update ────────────────────────────────────────────────────────────
