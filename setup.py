@@ -166,10 +166,38 @@ def create_drive_docs():
     print(f"\n  Now run: python3 setup.py")
 
 
+def populate_demo_data():
+    """Copy demo-data.json into the dashboard cache so the dashboard renders
+    with synthetic data immediately. No OAuth, no API calls — just a file copy."""
+    section("--demo  Populating dashboard with synthetic Cascade Capital data")
+    src = _HERE / "demo-data.json"
+    dst_dir = _HOME / "dashboards" / "data" / "compiled"
+    dst = dst_dir / "dashboard-data.json"
+    if not src.exists():
+        print(f"  {FAIL}  Missing demo-data.json at {src}")
+        sys.exit(1)
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    if dst.exists():
+        backup = dst.with_suffix(".json.pre-demo-backup")
+        import shutil
+        shutil.copy(dst, backup)
+        print(f"  {INFO}  Backed up existing dashboard cache to {backup.name}")
+    import shutil
+    shutil.copy(src, dst)
+    print(f"  {PASS}  Wrote synthetic data to {dst}")
+    print()
+    print("  Demo dashboard is ready. Open: http://localhost:7777")
+    print()
+    print("  All names (Sarah Mitchell, Cascade Capital, Argo Solar, etc.) are")
+    print("  fabricated. To switch to real data, delete the firm_context.yaml")
+    print("  and firm_config.json and run setup.sh again.")
+
+
 # Parse args before doing any validation
 _parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 _parser.add_argument("--fix",          action="store_true", help="Copy missing config files from templates")
 _parser.add_argument("--create-docs",  action="store_true", help="Auto-create required Google Docs and populate IDs into firm_config.json")
+_parser.add_argument("--demo",         action="store_true", help="Populate dashboard with synthetic data (no OAuth required)")
 _args = _parser.parse_args()
 
 if _args.fix:
@@ -178,6 +206,10 @@ if _args.fix:
 
 if _args.create_docs:
     create_drive_docs()
+    sys.exit(0)
+
+if _args.demo:
+    populate_demo_data()
     sys.exit(0)
 
 

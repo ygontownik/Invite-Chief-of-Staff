@@ -181,3 +181,177 @@ The current pipeline drafts email replies on your behalf. The natural next layer
 | "Schedule call with X" | Find mutually free slot, draft calendar invite | Pre-filled calendar event |
 
 Architecturally this is a tool-use loop on top of `cos_capture_pipeline.py` — the foundation (provider abstraction, firm-context-driven prompts, JSON spec → batch writes) is already there. Ship as Plan C in a future iteration when there's a specific action type that's high-value enough to automate.
+
+---
+
+## Troubleshooting
+
+Common failures and fixes. Most issues fall into one of these patterns.
+
+### Setup fails
+
+**`./setup.sh: Permission denied`**
+```bash
+chmod +x ./setup.sh ./setup_keychain.sh ./setup_launchagents.sh
+```
+
+**`No firm context file found. Expected one of: firm_context.yaml, firm_context.json`**
+You haven't filled in the templates yet. Run:
+```bash
+python3 setup.py --fix    # copies templates → real configs
+# then edit firm_context.yaml + firm_config.json with your data
+```
+
+**`Missing dependency: No module named 'yaml'` (or 'google', 'anthropic')**
+```bash
+pip3 install pyyaml google-auth google-auth-oauthlib google-api-python-client anthropic
+```
+
+### OAuth fails
+
+**Browser opens but page says "redirect_uri_mismatch" or "invalid_request"**
+Your `gdrive_credentials.json` was created as a Web app, not Desktop. Re-download from Google Cloud Console:
+- APIs & Services → Credentials → + CREATE CREDENTIALS → OAuth client ID
+- **Application type: Desktop application** (this matters)
+- Download JSON → save as `~/credentials/gdrive_credentials.json`
+
+**`No OAuth client at ~/credentials/gdrive_credentials.json`**
+You haven't downloaded the OAuth client config yet. See above. Free; takes 2 minutes.
+
+**Browser hangs or "localhost refused to connect" after Google sign-in**
+The script's local OAuth server died (usually a stale Python process). Kill any lingering Python processes and retry:
+```bash
+pkill -f cos_otter_backfill || pkill -f setup.py
+python3 setup.py --create-docs
+```
+
+**`AuthError: invalid_grant`**
+Your refresh token expired (typical after 6 months idle, or after Google password change). Delete and re-auth:
+```bash
+rm ~/credentials/gmail_mini_token.pickle
+python3 cos_gmail_mini_v2.py --list --backfill 1h    # triggers fresh OAuth
+```
+
+### Pipelines silently doing nothing
+
+**`cos-gmail-mini` runs but no follow-ups appear**
+Check the log:
+```bash
+tail -50 ~/dashboards/logs/claude-tasks/cos-gmail-mini.stdout.log
+```
+Most common causes:
+- `ANTHROPIC_API_KEY not set` — Keychain not loaded; run `./setup_keychain.sh` and ensure the LaunchAgent script sources it
+- All emails got classified `IGNORE` — your `deal_keywords` and `recruit_keywords` in `firm_config.json` are too narrow
+- `processed_emails.json` got corrupted — `rm ~/credentials/processed_emails.json` and re-run
+
+**Dashboard shows "package inactive" badges everywhere**
+Your `firm_config.json` is missing the `packages` field or has it set wrong. Should be:
+```json
+"packages": ["operations", "market_intelligence"]
+```
+
+**Dashboard data is stale (everything looks like yesterday)**
+The auto-warmup is on a 10-min cycle. Force a refresh:
+```bash
+curl -s -X POST http://localhost:7777/warmup
+```
+If that doesn't help, the fetcher is failing — check:
+```bash
+python3 ~/cos-pipeline/cos-dashboard-fetch.py 2>&1 | tail -20
+```
+
+### LaunchAgent issues
+
+**LaunchAgent installed but never fires**
+Check it's loaded:
+```bash
+launchctl list | grep cos-pipeline
+```
+Check its logs:
+```bash
+tail -50 ~/dashboards/logs/claude-tasks/<task-name>.stderr.log
+```
+Common: the script path in the plist points to a moved file. Re-run `./setup_launchagents.sh` to regenerate plists with current paths.
+
+**`launchctl: Bootstrap failed: 5: Input/output error`**
+The LaunchAgent service is in a bad state. Force-reload:
+```bash
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.cos-pipeline.<name>.plist 2>/dev/null
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.cos-pipeline.<name>.plist
+```
+
+### Drafts not appearing
+
+**`cos_capture_pipeline` runs successfully but no drafts in Gmail/Outlook**
+Two possibilities:
+1. Claude decided no email needed a reply. Check the log for `drafts: 0` in the summary.
+2. The provider's `create_draft` failed. Search the log for "Draft failed":
+   ```bash
+   grep "Draft failed\|create_draft" ~/tomac-cove-pipeline/logs/capture_pipeline.log | tail -10
+   ```
+
+**Drafts created but with wrong tone or content**
+Edit `firm_context.yaml` → `draft_voice` block. Add or remove rules in `always_include` / `never_include`. Next run picks up the change automatically.
+
+### Outlook-specific
+
+**`Device code expired`**
+You waited too long to enter the code in the browser. Re-run; the new code is valid for 15 minutes.
+
+**`AADSTS50020: User account from identity provider does not exist in tenant`**
+Your `tenant_id` in `~/credentials/ms_oauth_client.json` doesn't match your account type:
+- Personal Outlook (outlook.com, hotmail.com) → use `"tenant_id": "consumers"`
+- Work Microsoft 365 → use your org tenant ID OR `"tenant_id": "common"`
+
+**Don't have an Azure subscription / can't register an app**
+You don't need a paid Azure subscription. Either:
+- Skip the registration entirely — the system falls back to Microsoft's public Azure-CLI client_id, OR
+- Go directly to https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade (this URL bypasses the subscription paywall and goes straight to App registrations under Microsoft Entra ID, which is free)
+
+### Cost concerns
+
+**API spend higher than expected**
+Run `python3 costs.py --by-script` to see which script is the cost driver. Tactics:
+- Reduce `max_emails_per_run` in `firm_config.json` (default 50 → try 25)
+- Disable Package A if you don't use it: `"packages": ["operations"]`
+- The Pass-2 Opus call in `cos_otter_backfill.py` is expensive — only fires for deal/LP transcripts. If you're not running infra deals, Opus might be overkill; edit the model routing in that script.
+
+**`projected_monthly_usd` is alarming**
+Set a daily threshold in `firm_config.json`:
+```json
+"cost_alert_threshold_daily_usd": 5.00
+```
+The Health tile will surface a warning when daily spend exceeds the threshold.
+
+### Dashboard / port conflicts
+
+**`OSError: [Errno 48] Address already in use` on port 7777**
+Another process is on 7777. Find and stop it:
+```bash
+lsof -i :7777
+launchctl unload ~/Library/LaunchAgents/com.cos-pipeline.dashboard-server.plist
+# wait 5 seconds
+launchctl load ~/Library/LaunchAgents/com.cos-pipeline.dashboard-server.plist
+```
+
+**Dashboard says "401 Unauthorized" in browser**
+You forgot the HTTP Basic Auth credentials. Username + password are what you set during `./setup_keychain.sh`. To reset:
+```bash
+./setup_keychain.sh    # re-prompts for DASHBOARD_USERNAME and DASHBOARD_PASSWORD
+launchctl unload ~/Library/LaunchAgents/com.cos-pipeline.dashboard-server.plist
+launchctl load ~/Library/LaunchAgents/com.cos-pipeline.dashboard-server.plist
+```
+
+### Still stuck?
+
+1. Run `python3 setup.py` — the validator surfaces most config issues.
+2. Tail all logs at once: `tail -f ~/dashboards/logs/claude-tasks/*.stderr.log`
+3. Run a pipeline manually with `--dry-run` to see what it intends without writes:
+   ```bash
+   python3 cos_capture_pipeline.py --dry-run --since 24h
+   ```
+4. Open an issue at https://github.com/ygontownik/Dashboard/issues with:
+   - The error message
+   - Last 30 lines of the relevant log
+   - Your `python3 --version` and `pip3 list | grep -E 'google|anthropic|yaml'` output
+   - Don't include API keys, OAuth tokens, or PII

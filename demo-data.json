@@ -1,0 +1,211 @@
+{
+  "_demo_notice": "SYNTHETIC DEMO DATA — All names, deals, LPs, and emails are fabricated for the Cascade Capital Partners demo firm. None of this represents real entities or transactions.",
+  "fetchedAt": "2026-05-01T12:00:00Z",
+  "today": "2026-05-01",
+  "threeDays": ["2026-05-01", "2026-05-02", "2026-05-03"],
+
+  "followUps": [
+    {
+      "_manual": false, "addedDate": "2026-05-01", "due": "2026-05-02",
+      "who": "Linda Park / CalPERS", "what": "Reply to Linda re: Tuesday coffee — DRAFT READY",
+      "source": "Gmail", "sourceUrl": "https://mail.google.com/mail/u/0/#all/demo-thread-001",
+      "linkedTo": "https://mail.google.com/mail/u/0/#drafts",
+      "workstream": "Cascade Deals", "urgent": false
+    },
+    {
+      "_manual": false, "addedDate": "2026-05-01", "due": "2026-05-03",
+      "who": "Marcus Webb / Ørsted", "what": "Review Argo Solar term sheet redlines by Friday — DRAFT READY",
+      "source": "Gmail", "sourceUrl": "https://mail.google.com/mail/u/0/#all/demo-thread-002",
+      "linkedTo": "https://mail.google.com/mail/u/0/#drafts",
+      "workstream": "Cascade Deals", "urgent": true
+    },
+    {
+      "_manual": false, "addedDate": "2026-04-30", "due": "2026-05-05",
+      "who": "Janet Liu / FERC", "what": "Send transmission queue brief ahead of policy lunch",
+      "source": "Calendar", "sourceUrl": "",
+      "linkedTo": "", "workstream": "Cascade Deals", "urgent": false
+    },
+    {
+      "_manual": false, "addedDate": "2026-04-30", "due": "2026-05-04",
+      "who": "David Park", "what": "Confirm Q3 strategy memo outline — internal weekly sync",
+      "source": "Otter", "sourceUrl": "https://drive.google.com/drive/folders/demo-otter-folder",
+      "linkedTo": "", "workstream": "Cascade Deals", "urgent": false
+    },
+    {
+      "_manual": true, "addedDate": "2026-04-29", "due": "2026-05-06",
+      "who": "Spencer Stuart", "what": "Follow up on MD search status — recruiter check-in",
+      "source": "Manual", "sourceUrl": "",
+      "linkedTo": "", "workstream": "Recruiting", "urgent": false
+    },
+    {
+      "_manual": false, "addedDate": "2026-04-28", "due": "2026-04-30",
+      "who": "Pension Fund X / Tom Reynolds", "what": "Send revised Fund I deck after term-sheet feedback",
+      "source": "Otter", "sourceUrl": "",
+      "linkedTo": "", "workstream": "Cascade Deals", "urgent": true
+    },
+    {
+      "_manual": false, "addedDate": "2026-04-28", "due": "2026-05-08",
+      "who": "Eastlink Transmission", "what": "Pull MISO interconnection queue position before Tuesday IC",
+      "source": "Calendar", "sourceUrl": "",
+      "linkedTo": "", "workstream": "Cascade Deals", "urgent": false
+    },
+    {
+      "_manual": false, "addedDate": "2026-04-27", "due": "2026-05-02",
+      "who": "Blackline Battery / Counsel", "what": "Sign updated NDA — DocuSign pending",
+      "source": "Gmail", "sourceUrl": "https://mail.google.com/mail/u/0/#all/demo-thread-005",
+      "linkedTo": "https://app.docusign.com/home", "workstream": "Cascade Deals", "urgent": false
+    }
+  ],
+
+  "awaitingExternal": [
+    {
+      "id": "demo-aw-001", "content_type": "awaiting_external",
+      "owner": "external", "counterparty": "Ørsted — Marcus Webb",
+      "content": "Marcus to send updated FERC contingency language by EOD Wednesday",
+      "due": "2026-05-01", "context": "Argo Solar Portfolio term sheet",
+      "parent_id": "ARGO", "dashboard_path": "COS › Cascade Deals › Argo Solar Portfolio",
+      "source_ref": "demo-call-2026-04-29"
+    },
+    {
+      "id": "demo-aw-002", "content_type": "awaiting_external",
+      "owner": "external", "counterparty": "Pension Fund X — Tom Reynolds",
+      "content": "Tom to confirm allocation size for Fund I after IC review",
+      "due": "2026-05-06", "context": "Fund I LP commitment",
+      "parent_id": "fund-i", "dashboard_path": "COS › Cascade Fundraising › Pension Fund X",
+      "source_ref": "demo-email-thread-007"
+    },
+    {
+      "id": "demo-aw-003", "content_type": "awaiting_external",
+      "owner": "external", "counterparty": "FERC — Janet Liu",
+      "content": "Janet to share draft policy notice when published (no firm date)",
+      "due": "", "context": "Transmission policy update",
+      "parent_id": "", "dashboard_path": "COS › Follow-ups",
+      "source_ref": "demo-call-2026-04-25"
+    }
+  ],
+
+  "tomac": [
+    {
+      "name": "Argo Solar Portfolio",
+      "ticker": "ARGO", "stage": "Term Sheet", "size": "$420M",
+      "sector": "Renewables", "thesis": "1.2 GW operating solar across CAISO; Ørsted exit; rate-base contracted offtake",
+      "contacts": "Marcus Webb (Ørsted), Linda Park (CalPERS LP)",
+      "latestUpdate": "Term sheet received; David leading redlines",
+      "nextStep": "Review redlines with David by Friday",
+      "freshSignal": true, "signalCount": 4, "source": "Demo"
+    },
+    {
+      "name": "Eastlink Transmission",
+      "ticker": "ELT", "stage": "IC Prep", "size": "$680M",
+      "sector": "Transmission", "thesis": "MISO queue position 1A; merchant-to-regulated conversion play",
+      "contacts": "Internal — David lead",
+      "latestUpdate": "IC scheduled Tuesday; need queue data",
+      "nextStep": "Pull queue position data before IC",
+      "freshSignal": true, "signalCount": 2, "source": "Demo"
+    },
+    {
+      "name": "Blackline Battery",
+      "ticker": "BLK", "stage": "Diligence", "size": "$185M",
+      "sector": "Storage", "thesis": "200 MWh utility-scale storage; ERCOT capacity market arbitrage",
+      "contacts": "Counsel: Sullivan & Cromwell",
+      "latestUpdate": "NDA executed; data room access pending",
+      "nextStep": "Sign NDA via DocuSign",
+      "freshSignal": false, "signalCount": 1, "source": "Demo"
+    }
+  ],
+
+  "lpData": [
+    {
+      "name": "CalPERS Infrastructure", "status": "Active", "statusColor": "green",
+      "fit": "$50-100M for Fund I; renewables mandate", "approach": "Linda Park introduced via Brookfield contact",
+      "notes": "Met for coffee 2026-04-15; warm relationship", "source": "Demo"
+    },
+    {
+      "name": "Pension Fund X", "status": "Diligence", "statusColor": "yellow",
+      "fit": "$40M target; co-invest interest", "approach": "Tom Reynolds — formal IC review in progress",
+      "notes": "Awaiting IC sign-off before commitment letter", "source": "Demo"
+    },
+    {
+      "name": "Sovereign Wealth Y", "status": "Initial Outreach", "statusColor": "gray",
+      "fit": "$100M+ capacity; energy transition allocation", "approach": "Cold intro pending via Lazard advisor",
+      "notes": "First call scheduled next week", "source": "Demo"
+    }
+  ],
+
+  "fundraising": {
+    "fundName": "Cascade Renewable Infrastructure Fund I",
+    "targetSize": "$500M",
+    "softCircled": "$190M",
+    "hardCircled": "$50M",
+    "lastUpdate": "2026-04-30"
+  },
+
+  "recruiting": [
+    {
+      "firm": "Spencer Stuart", "role": "MD search advisory", "stage": "Active",
+      "lastTouch": "2026-04-22", "nextStep": "Status check call this week",
+      "notes": "Engaged for senior team build-out post Fund I close"
+    }
+  ],
+
+  "briefingSynopsis": {
+    "lastBriefingDate": "2026-05-01",
+    "lastBriefingSnippet": "Argo Solar term sheet received from Ørsted yesterday — David leading redlines. CalPERS coffee on Tuesday. Eastlink IC prep needs MISO queue data. 8 follow-ups added in last 24h.",
+    "captureSummary": "Captured 12 new follow-ups, drafted 2 reply emails (Linda Park, Marcus Webb), added 1 deal update to Argo Solar narrative, and removed 4 resolved items (Tuesday coffee scheduled, NDA chasing thread closed, etc.)"
+  },
+
+  "themesSynopsis": {
+    "lastUpdate": "2026-04-28",
+    "snippet": "Strong week for renewables with 3 new term-sheet conversations. Storage sector heating up around ERCOT capacity arbitrage."
+  },
+
+  "calendar": [
+    {
+      "title": "CalPERS — Linda Park coffee", "start": "2026-05-05T15:00:00",
+      "attendees": ["Linda Park", "Sarah Mitchell"]
+    },
+    {
+      "title": "Eastlink IC", "start": "2026-05-06T14:00:00",
+      "attendees": ["David Park", "Sarah Mitchell", "Tom Reynolds"]
+    },
+    {
+      "title": "Cascade Weekly Sync", "start": "2026-05-04T09:30:00",
+      "attendees": ["David Park", "Tom Reynolds", "Sarah Mitchell"]
+    }
+  ],
+
+  "upcomingCalls": [
+    {"title": "CalPERS coffee", "time": "2026-05-05T15:00:00", "attendee": "Linda Park"},
+    {"title": "Eastlink IC", "time": "2026-05-06T14:00:00", "attendee": "Internal"}
+  ],
+
+  "staleContacts": [
+    {"name": "Brookfield Renewable contact", "lastTouch": "2026-02-14", "context": "Co-invest discussion went silent"}
+  ],
+
+  "warmContacts": [
+    {"name": "Linda Park", "firm": "CalPERS", "lastTouch": "2026-04-15", "context": "Active LP relationship"}
+  ],
+
+  "lpNetwork": [],
+  "recentActivity": [],
+  "emailActivity": {"last24h": 47, "deal": 8, "recruiting": 2, "research": 12, "ignore": 25},
+  "gmailScanned": 47,
+  "emailQueue": [],
+  "unprocessedTranscripts": [],
+  "pipelineStatus": "healthy",
+  "pipelineRunHistory": [
+    {"name": "cos-capture-pipeline", "ts": "2026-05-01T07:22:00", "status": "ok", "duration_s": 38.4},
+    {"name": "cos-gmail-mini", "ts": "2026-05-01T10:05:00", "status": "ok", "duration_s": 12.1}
+  ],
+  "_stageOverrides": {},
+  "_docCache": {},
+  "marketCommentary": "(demo) Renewables tape was firm this week with two large CAISO solar transactions clearing at attractive multiples.",
+  "contentTracker": [],
+  "_dismissedFollowUps": [],
+  "_dismissedEmailIds": [],
+  "dealPortfolio": {
+    "deals": [],
+    "totals": {"capital_in_play_mid": 1285000000, "active_deal_count": 3, "total_open_actions": 12, "total_critical_open": 2}
+  }
+}

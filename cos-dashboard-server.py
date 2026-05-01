@@ -1753,6 +1753,16 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_response(404); self.end_headers()
         elif self.path.split('?')[0] in ('/tomac-cove', '/tomac-cove/'):
             self._serve_html_template(COS_DASHBOARD, user)
+        elif self.path.startswith('/api/costs') or self.path.startswith('/api/health'):
+            # Cost meter and health-check endpoints — owner-only.
+            user = self._authenticate()
+            if user is None:
+                self._send_401()
+                return
+            if self.path.startswith('/api/costs'):
+                self._serve_costs_json()
+            else:
+                self._serve_health_json()
         elif self.path.startswith('/static/'):
             # Serve shared design-system + assets first (app/static/), then
             # fall back to the React build's own /static/ bundles.
@@ -2480,6 +2490,83 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Set-Cookie', 'tc_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0')
         self.send_header('Content-Length', '0')
         self.end_headers()
+
+    def _serve_costs_json(self):
+        """JSON: aggregated Anthropic API spend over last 7 days. Read by Health/Costs tile."""
+        try:
+            import subprocess
+            here = Path(__file__).parent
+            costs_script = here / "costs.py"
+            if not costs_script.exists():
+                # If symlinked, follow to ~/cos-pipeline/
+                alt = Path.home() / "cos-pipeline" / "costs.py"
+                costs_script = alt if alt.exists() else costs_script
+            proc = subprocess.run(
+                ["python3", str(costs_script), "--json", "--days", "7"],
+                capture_output=True, timeout=15,
+            )
+            if proc.returncode != 0:
+                self.send_response(500)
+                self.end_headers()
+                self.wfile.write(b'{"error":"costs script failed"}')
+                return
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Cache-Control', 'no-store')
+            self.end_headers()
+            self.wfile.write(proc.stdout)
+        except Exception as e:
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": str(e)}).encode())
+
+    def _serve_health_json(self):
+        """JSON: status of each LaunchAgent + last-run times. Read by Health tile."""
+        import subprocess
+        try:
+            statuses = []
+            # Get all cos-related LaunchAgents
+            result = subprocess.run(
+                ["launchctl", "list"], capture_output=True, text=True, timeout=5
+            )
+            log_dir = Path.home() / "dashboards" / "logs" / "claude-tasks"
+            for line in result.stdout.splitlines()[1:]:
+                parts = line.split()
+                if len(parts) < 3:
+                    continue
+                pid_str, status_str, label = parts[0], parts[1], parts[2]
+                if 'cos-pipeline' not in label and 'claude-task.cos' not in label:
+                    continue
+                # Find the most recent log file for this label
+                short = label.split('.')[-1]
+                log_path = log_dir / f"{short}.stdout.log"
+                last_modified = None
+                if log_path.exists():
+                    last_modified = log_path.stat().st_mtime
+                statuses.append({
+                    "label": label,
+                    "short_name": short,
+                    "pid": int(pid_str) if pid_str != '-' else None,
+                    "exit_status": int(status_str) if status_str != '-' else None,
+                    "running": pid_str != '-',
+                    "last_log_ts": last_modified,
+                    "last_log_iso": (datetime.fromtimestamp(last_modified).isoformat()
+                                      if last_modified else None),
+                })
+            # Sort: failures first, then by last_log_ts desc
+            statuses.sort(key=lambda s: (s.get('exit_status') or 0, -(s.get('last_log_ts') or 0)))
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Cache-Control', 'no-store')
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "checked_at": datetime.now().isoformat(),
+                "tasks": statuses,
+            }).encode())
+        except Exception as e:
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": str(e)}).encode())
 
     def _serve_html(self, html: str, inject_chrome: bool = True, user: str = 'owner'):
         """Serve an HTML string; optionally inject shared design-system + topnav."""
