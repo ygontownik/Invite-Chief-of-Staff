@@ -25,6 +25,17 @@ LAUNCH_DIR="$HOME/Library/LaunchAgents"
 LOG_DIR="$HOME/dashboards/logs/claude-tasks"
 SECRETS_HELPER="$HOME/.cos-pipeline-load-secrets.sh"
 
+# Resolve keychain service prefix from firm_config.json (default: cos-pipeline)
+# This is what setup_keychain.sh writes secrets under and what the load-secrets
+# helper reads from. Firm 2 sets keychain_service_prefix in their firm_config.json.
+_KCS_CFG="${COS_CONFIG_DIR:-$REPO}/firm_config.json"
+[ ! -f "$_KCS_CFG" ] && _KCS_CFG="$REPO/firm_config.json"
+KCS_PREFIX="cos-pipeline"
+if [ -f "$_KCS_CFG" ]; then
+  _p=$(python3 -c "import json; d=json.load(open('$_KCS_CFG')); print(d.get('keychain_service_prefix','cos-pipeline'))" 2>/dev/null)
+  [ -n "$_p" ] && KCS_PREFIX="$_p"
+fi
+
 mkdir -p "$LAUNCH_DIR" "$LOG_DIR"
 
 # Helper — write a plist that runs a shell command

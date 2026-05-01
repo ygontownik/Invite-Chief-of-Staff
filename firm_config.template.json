@@ -50,6 +50,9 @@
   "max_emails_per_run": 50,
   "first_run_lookback_hours": 2,
 
+  "_comment_keychain": "Keychain service prefix for all stored secrets. All team members at the same firm use the same prefix (they each store the same key in their own Keychain). A second firm on its own machines should change this to something unique (e.g. 'stonepeak-pipeline'). This determines which Anthropic account is billed — one prefix = one Anthropic account.",
+  "keychain_service_prefix": "cos-pipeline",
+
   "_comment_packages": "Active pipeline packages. Remove a package to disable its pipelines and show empty states in the dashboard for its tiles. Options: 'market_intelligence' (research/briefing/deal-ideas), 'operations' (email/calls/transcripts/actions).",
   "packages": ["market_intelligence", "operations"],
 

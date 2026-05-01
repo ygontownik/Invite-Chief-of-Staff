@@ -201,16 +201,22 @@ step "[5/7] API keys & secrets (macOS Keychain)"
 if $DEMO_MODE; then
   info "Demo mode — skipping secrets setup"
 else
-  # Check what's already stored
-  HAVE_ANTHROPIC=$(security find-generic-password -s "cos-pipeline/ANTHROPIC_API_KEY" -a "$USER" -w 2>/dev/null || echo "")
-  HAVE_DASH_USER=$(security find-generic-password -s "cos-pipeline/DASHBOARD_USERNAME" -a "$USER" -w 2>/dev/null || echo "")
-  HAVE_DASH_PASS=$(security find-generic-password -s "cos-pipeline/DASHBOARD_PASSWORD" -a "$USER" -w 2>/dev/null || echo "")
+  # Read keychain_service_prefix from firm_config.json (default: cos-pipeline)
+  KCS_PREFIX="cos-pipeline"
+  if [ -f "$REPO/firm_config.json" ]; then
+    _prefix=$(python3 -c "import json,sys; d=json.load(open('$REPO/firm_config.json')); print(d.get('keychain_service_prefix','cos-pipeline'))" 2>/dev/null)
+    [ -n "$_prefix" ] && KCS_PREFIX="$_prefix"
+  fi
+
+  HAVE_ANTHROPIC=$(SERVICE_PREFIX="$KCS_PREFIX" security find-generic-password -s "$KCS_PREFIX/ANTHROPIC_API_KEY" -a "$USER" -w 2>/dev/null || echo "")
+  HAVE_DASH_USER=$(SERVICE_PREFIX="$KCS_PREFIX" security find-generic-password -s "$KCS_PREFIX/DASHBOARD_USERNAME" -a "$USER" -w 2>/dev/null || echo "")
+  HAVE_DASH_PASS=$(SERVICE_PREFIX="$KCS_PREFIX" security find-generic-password -s "$KCS_PREFIX/DASHBOARD_PASSWORD" -a "$USER" -w 2>/dev/null || echo "")
 
   if [ -n "$HAVE_ANTHROPIC" ] && [ -n "$HAVE_DASH_USER" ] && [ -n "$HAVE_DASH_PASS" ]; then
-    info "All required secrets already in Keychain (run setup_keychain.sh to update)"
+    info "All required secrets already in Keychain under '$KCS_PREFIX' (run setup_keychain.sh to update)"
   else
-    info "Calling setup_keychain.sh — interactive prompts follow"
-    ./setup_keychain.sh
+    info "Calling setup_keychain.sh (prefix: $KCS_PREFIX) — interactive prompts follow"
+    SERVICE_PREFIX="$KCS_PREFIX" ./setup_keychain.sh
   fi
 fi
 
