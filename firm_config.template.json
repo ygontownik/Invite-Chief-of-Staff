@@ -1,0 +1,64 @@
+{
+  "_comment": "Copy this file to firm_config.json and fill in your firm's details. Remove all _comment fields before running.",
+
+  "firm_name": "YOUR FIRM FULL NAME",
+  "email_provider": "gmail",
+
+  "_comment_docs": "Google Doc IDs for each output destination. Create blank Docs, open them, copy the ID from the URL (the long string between /d/ and /edit).",
+  "docs": {
+    "followups":  "GOOGLE_DOC_ID_FOR_FOLLOWUPS",
+    "pipeline":   "GOOGLE_DOC_ID_FOR_DEAL_PIPELINE",
+    "people":     "GOOGLE_DOC_ID_FOR_PEOPLE_CRM",
+    "recruiting": "GOOGLE_DOC_ID_FOR_RECRUITING"
+  },
+
+  "_comment_research": "Research sender domains → Google Doc IDs. Emails from these domains are auto-classified as RESEARCH without LLM triage. Map each domain to the Doc where their content should be appended.",
+  "research_senders": {
+    "research-firm-1.com": "GOOGLE_DOC_ID",
+    "research-firm-2.com": "GOOGLE_DOC_ID"
+  },
+
+  "_comment_keywords": "Keywords that trigger DEAL classification during email triage. Include active deal names, key counterparties, and transaction terms. Lowercase.",
+  "deal_keywords": [
+    "deal-name-1",
+    "deal-name-2",
+    "term sheet",
+    "loi",
+    "nda",
+    "diligence",
+    "ic memo",
+    "bid",
+    "proposal"
+  ],
+
+  "_comment_recruit": "Keywords that trigger RECRUITING classification. Include search firm names, recruiter firms, and role-related terms.",
+  "recruit_keywords": [
+    "search-firm-1",
+    "search-firm-2",
+    "interview",
+    "role",
+    "opportunity",
+    "resume",
+    "cv",
+    "offer",
+    "comp",
+    "compensation",
+    "headhunter",
+    "recruiter"
+  ],
+
+  "max_emails_per_run": 50,
+  "first_run_lookback_hours": 2,
+
+  "_comment_packages": "Active pipeline packages. Remove a package to disable its pipelines and show empty states in the dashboard for its tiles. Options: 'market_intelligence' (research/briefing/deal-ideas), 'operations' (email/calls/transcripts/actions).",
+  "packages": ["market_intelligence", "operations"],
+
+  "_comment_podcast_feeds": "Package A only. Map of show name → RSS URL. The pipeline transcribes every new episode from these feeds and writes summaries to per-show Google Docs. Add or remove shows freely.",
+  "podcast_feeds": {
+    "Show Name 1": "https://example.com/show-1.rss",
+    "Show Name 2": "https://example.com/show-2.rss"
+  },
+
+  "_comment_podcast_folder": "Google Drive folder ID where per-show summary Docs live. The pipeline auto-creates one Doc per show inside this folder.",
+  "podcast_summary_folder_id": "GOOGLE_DRIVE_FOLDER_ID"
+}

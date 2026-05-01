@@ -1,0 +1,55 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# .gitignore — COS Pipeline
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── FIRM IDENTITY (contains real names, doc IDs — use templates instead) ──────
+firm_context.yaml
+firm_config.json
+
+# ── DRIVE REGISTRY (contains your personal Google Drive IDs) ──────────────────
+# Commit config/drive-docs.template.yaml; populate drive-docs.yaml locally.
+drive-docs.yaml
+config/drive-docs.yaml
+
+# ── CREDENTIALS AND AUTH TOKENS — NEVER COMMIT ───────────────────────────────
+credentials/
+*.pickle
+token.json
+gcal_token.json
+gmail_mini_token.pickle
+gdrive_token.pickle
+*_credentials.json
+client_secret*.json
+service_account*.json
+
+# ── PERSONAL / FIRM-SPECIFIC DOCS ─────────────────────────────────────────────
+YONI_CONTEXT.md
+"Chief of Staff Dashboard.html"
+*.html
+
+# ── RUNTIME STATE ─────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+logs/
+data/compiled/
+*.jsonl
+
+# ── LAUNCHAGENT PLISTS (machine-specific paths) ───────────────────────────────
+*.plist
+launchd-plists/
+
+# ── LOCAL OVERRIDES ────────────────────────────────────────────────────────────
+.env
+*.local
+*.secret
+
+# ── NETLIFY (no longer in use) ────────────────────────────────────────────────
+.netlify
+dashboard/netlify.toml
+
+# ── DEAL PIPELINE WORKING OUTPUTS (too verbose for version control) ───────────
+output/pass1-log-*.txt
+output/pass2-log-*.txt
+output/weekly-scan-*.md

@@ -1,0 +1,92 @@
+# firm_context.template.yaml — Copy this to firm_context.yaml and fill in your firm's details.
+# ─────────────────────────────────────────────────────────────────────────────
+# This file controls every place the pipeline refers to a person, firm, or
+# investment focus. No Python script should need to be edited for a new firm.
+#
+# HOW TO USE:
+#   cp firm_context.template.yaml firm_context.yaml
+#   # Edit firm_context.yaml with your firm's details
+#   # Run: pip install pyyaml  (required to parse YAML at runtime)
+#
+# Fields marked [REQUIRED] must be filled in before running any pipeline.
+# Fields marked [OPTIONAL] fall back to sensible defaults if omitted.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── WHO YOU ARE ───────────────────────────────────────────────────────────────
+
+principal:
+  name: "YOUR NAME HERE"                             # [REQUIRED] e.g. "Jane Smith"
+  role: "YOUR ROLE HERE"                             # [REQUIRED] e.g. "managing director, infrastructure PE"
+  background: "YOUR BACKGROUND"                      # [OPTIONAL] e.g. "~12 years, $5B+ deployed"
+  prior_firm: "YOUR PRIOR FIRM"                      # [OPTIONAL] used in speaker-ID heuristics
+  investor_frame: "principal investor"               # [OPTIONAL] "principal investor" | "analyst" | "LP"
+  job_search_active: false                           # [OPTIONAL] true → pipeline flags recruiter calls as high-priority
+  investment_focus:                                  # [REQUIRED] list in priority order
+    - "SECTOR 1 (e.g. power & utilities — ERCOT/PJM/MISO)"
+    - "SECTOR 2 (e.g. digital infrastructure — data centers, fiber)"
+    - "SECTOR 3 (e.g. midstream / LNG)"
+    - "SECTOR 4 (e.g. energy transition)"
+
+# ── YOUR FIRM ─────────────────────────────────────────────────────────────────
+
+firm:
+  name: "YOUR FIRM FULL NAME"                        # [REQUIRED] e.g. "Meridian Infrastructure Partners"
+  short_name: "MIP"                                  # [OPTIONAL] abbreviation used in prompts and owner whitelist
+
+# ── YOUR TEAM ─────────────────────────────────────────────────────────────────
+# The first non-principal member with "deal" in their role is treated as the
+# deal lead for speaker-attribution rules on internal calls.
+# Add or remove members as needed.
+
+team:
+  - name: "CO-FOUNDER OR DEAL LEAD NAME"
+    role: "co-founder, deal lead"                    # [REQUIRED for deal attribution]
+    background: "ex-[Prior Firm]"                    # [OPTIONAL] e.g. "ex-KKR Infrastructure"
+    internal_call_role: >
+      drives the agenda — deal-status updates, bidding strategy, pipeline reviews
+  - name: "SECOND TEAM MEMBER"
+    role: "fundraising / LP lead"                    # [OPTIONAL] used in owner attribution
+    background: ""
+    internal_call_role: ""
+
+# ── OWNER WHITELIST ───────────────────────────────────────────────────────────
+# Exact strings accepted in the owner field of extracted action items.
+# Use first names or short forms — keep consistent with how speakers identify themselves.
+# "external" is always valid and need not be listed here.
+
+owner_whitelist:
+  - "YOUR_FIRST_NAME"                                # principal first name
+  - "DEAL_LEAD_SHORT_NAME"                           # deal lead first name or short form
+  - "THIRD_TEAM_MEMBER"                              # add/remove as needed
+
+# ── WORKSTREAM CATEGORIES ─────────────────────────────────────────────────────
+# Labels used in the category and workstream fields of extracted JSON.
+# Must match what you call things internally — if your ops team says "Portfolio"
+# not "Deal" for active investments, change deal: to "Portfolio".
+
+workstream_categories:
+  deal: "YOUR FIRM DEALS"                            # e.g. "Meridian" or "Portfolio" or "Firm Deals"
+  recruiting: "Recruiting"                           # keep as "Recruiting" unless your firm uses different terminology
+  other: "Other"
+
+# ── KEY PEOPLE TO FLAG ────────────────────────────────────────────────────────
+# Any call mentioning these people triggers a flagged action item in the output.
+
+key_people:
+  - name: "DEAL LEAD NAME"
+    context: "Firm co-founder, deal lead"
+    flag_in_actions: true
+  - name: "KEY EXTERNAL CONTACT 1"
+    context: "Brief description — e.g. LP relationship, government contact, strategic partner"
+    flag_in_actions: true
+  # Add more as needed
+
+# ── PEER / CO-INVESTOR FIRMS ──────────────────────────────────────────────────
+# Mentions of these firms in call transcripts trigger competitive intel flags.
+
+peer_firms:
+  - "Peer Firm 1"
+  - "Peer Firm 2"
+  - "Peer Firm 3"
+  - "Peer Firm 4"
+  # Add competitors / co-investors relevant to your strategy

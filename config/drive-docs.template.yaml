@@ -1,0 +1,118 @@
+# drive-docs.template.yaml — Copy to ~/dashboards/config/drive-docs.yaml and fill in your Drive IDs.
+# ─────────────────────────────────────────────────────────────────────────────
+# Source of truth for all Google Drive document and folder IDs.
+# Scripts load this via _firm_context.load_drive_docs() — no IDs hardcoded in Python.
+#
+# HOW TO FIND A DOC ID:
+#   Open the Google Doc in your browser. The URL looks like:
+#   https://docs.google.com/document/d/1ABC...XYZ/edit
+#   Copy the long string between /d/ and /edit.
+#
+# HOW TO FIND A FOLDER ID:
+#   Open the Drive folder. The URL looks like:
+#   https://drive.google.com/drive/folders/1ABC...XYZ
+#   Copy the string after /folders/.
+#
+# REQUIRED docs for Package B (Operations):
+#   followups, people_crm, recruiting, tomac_pipeline, briefing_log
+# ─────────────────────────────────────────────────────────────────────────────
+
+docs:
+
+  # ── Package B: Operations ──────────────────────────────────────────────────
+
+  followups:
+    doc_id: PASTE_GOOGLE_DOC_ID_HERE
+    name: "Follow-ups"
+    purpose: "CRM-lite action item table (stage, owner, workstream, deadline, note)"
+    writers: [cos-capture-pipeline, cos-otter-transcripts, cos-gmail-mini]
+    readers: [cos-personal-briefing, cos-dashboard-fetch]
+    package: operations
+
+  people_crm:
+    doc_id: PASTE_GOOGLE_DOC_ID_HERE
+    name: "People / CRM"
+    purpose: "Contact rollup — all named contacts from calls and emails"
+    writers: []
+    readers: [cos-personal-briefing]
+    package: operations
+
+  recruiting:
+    doc_id: PASTE_GOOGLE_DOC_ID_HERE
+    name: "Recruiting Pipeline"
+    purpose: "Job-search pipeline (firm outreach, interview stages)"
+    writers: [cos-capture-pipeline, cos-otter-transcripts]
+    readers: [cos-personal-briefing, cos-dashboard-fetch]
+    sensitivity: owner-only
+    package: operations
+
+  tomac_pipeline:
+    doc_id: PASTE_GOOGLE_DOC_ID_HERE
+    name: "Deal Pipeline"
+    purpose: "Pipeline prose — target rollup with IC memos appended"
+    writers: [tomac-cove-weekly-pipeline, cos-otter-transcripts]
+    readers: [cos-personal-briefing, cos-dashboard-fetch]
+    package: operations
+
+  briefing_log:
+    doc_id: PASTE_GOOGLE_DOC_ID_HERE
+    name: "Personal Briefing Log"
+    purpose: "Daily briefing history (append-only)"
+    writers: [cos-personal-briefing]
+    readers: [/briefing route]
+    package: operations
+
+  user_context:
+    doc_id: PASTE_GOOGLE_DOC_ID_HERE
+    name: "USER_CONTEXT"
+    purpose: "User profile + analytical defaults — Drive copy of CLAUDE.md"
+    writers: []
+    readers: []
+    package: operations
+
+  # ── Package A: Market Intelligence ─────────────────────────────────────────
+  # Fill in if using Package A. Leave doc_id blank or omit the block if not used.
+
+  daily_market_update:
+    doc_id: PASTE_GOOGLE_DOC_ID_HERE
+    name: "Daily Market Update"
+    purpose: "NotebookLM-generated briefing"
+    writers: [notebooklm-daily-briefing]
+    readers: [cos-personal-briefing]
+    package: market_intelligence
+
+  # Add additional research source docs here following the same pattern.
+  # Example:
+  # jefferies_general:
+  #   doc_id: PASTE_GOOGLE_DOC_ID_HERE
+  #   name: "Jefferies Research"
+  #   writers: [jefferies-pdf-processor]
+  #   package: market_intelligence
+
+folders:
+
+  # ── Otter AI transcript folders ─────────────────────────────────────────────
+  # These are the Drive folders where Otter.ai deposits transcripts.
+  # Create folders in Drive and paste their IDs here.
+
+  otter_ai:
+    folder_id: PASTE_FOLDER_ID_HERE
+    name: "Otter AI Transcripts (root)"
+
+  otter_deal:
+    folder_id: PASTE_FOLDER_ID_HERE
+    name: "Otter AI — Deal Calls"
+
+  otter_recruiting:
+    folder_id: PASTE_FOLDER_ID_HERE
+    name: "Otter AI — Recruiting"
+
+  otter_other:
+    folder_id: PASTE_FOLDER_ID_HERE
+    name: "Otter AI — Other"
+
+  call_transcripts:
+    folder_id: PASTE_FOLDER_ID_HERE
+    name: "Call Transcripts & Memos"
+    writers: [call_recorder stack]
+    readers: [cos-otter-transcripts]
