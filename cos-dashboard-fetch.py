@@ -710,6 +710,7 @@ _CP_ALIASES = (
     ('chola', 'Cholla'),
     ('chisholm', 'Cholla'),
     ('big south dallas', 'Cholla'),
+    ('gideon powell', 'Cholla'),
     ('black bayou', 'Black Bayou'),
     ('pacific fleet', 'Pacific Fleet'),
     ('pfs', 'Pacific Fleet'),
