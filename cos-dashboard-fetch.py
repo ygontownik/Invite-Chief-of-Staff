@@ -296,6 +296,25 @@ def _merge_awaiting(pipeline_items, doc_items):
     return out
 
 
+import re as _re_src
+_DASH_PAD = _re_src.compile(r'^─+\s*|\s*─+$')
+
+def _promote_source_ref(items):
+    """Promote source_ref fields to top-level source/addedDate so the UI can
+    display provenance without reading nested objects. Fills only if missing."""
+    for item in items:
+        ref = item.get('source_ref') or {}
+        if not item.get('addedDate') and ref.get('date'):
+            item['addedDate'] = ref['date']
+        if not item.get('source') and ref.get('title'):
+            clean = _DASH_PAD.sub('', ref['title']).strip()
+            clean = _re_src.sub(r'_[Oo]tter_[Aa]i', '', clean)
+            clean = _re_src.sub(r'\.(txt|docx?)$', '', clean, flags=_re_src.IGNORECASE).strip()
+            src_type = ref.get('type', 'call')
+            item['source'] = f'{src_type} — {clean}' if clean else src_type
+    return items
+
+
 def parse_followups(text):
     ws_map = {'Job Search': 'job', 'Tomac Cove': 'tomac', 'Personal': 'personal'}
     today = datetime.now().strftime('%Y-%m-%d')
@@ -2000,8 +2019,8 @@ def main(dry_run: bool = False):
         # Merge doc-authored [waiting] rows with pipeline-authored envelope items.
         # Dedupe by (counterparty, content[:60]) so a doc row and pipeline row
         # referencing the same commitment collapse.
-        'awaitingExternal':  _merge_awaiting(state.get('awaitingExternal', []),
-                                             awaiting_from_doc),
+        'awaitingExternal':  _promote_source_ref(_merge_awaiting(
+                                 state.get('awaitingExternal', []), awaiting_from_doc)),
         'dealIntel':         state.get('dealIntel',         []),
         'originationInbox':  state.get('originationInbox',  []),
         'themes':            state.get('themes',            []),

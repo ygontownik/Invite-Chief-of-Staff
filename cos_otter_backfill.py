@@ -1781,7 +1781,7 @@ def process_transcript(token, file_id, file_name, hint_category, source_label, s
     # Attach source_ref to every item
     src_ref = {
         "type":    "call",
-        "title":   file_name,
+        "title":   re.sub(r'^─+\s*|\s*─+$', '', file_name).strip(),
         "doc_url": doc_link,
         "date":    call_date,
     }
