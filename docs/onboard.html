@@ -46,6 +46,18 @@
   /* ── Layout ── */
   .container { max-width: 720px; margin: 0 auto; padding: 48px 24px; }
 
+  /* ── Switcher ── */
+  .switcher { display: flex; gap: 12px; margin-bottom: 36px; }
+  .switcher a {
+    flex: 1; text-align: center; padding: 12px 16px;
+    border-radius: 10px; border: 1px solid var(--border);
+    font-size: 13px; font-weight: 600;
+    text-decoration: none; color: var(--muted); background: white; transition: all .15s;
+  }
+  .switcher a:hover { border-color: #aaa; color: var(--ink); }
+  .switcher a.active { background: var(--ink); color: white; border-color: var(--ink); }
+  .switcher-label { font-size: 11px; font-weight: 400; display: block; margin-top: 2px; opacity: .7; }
+
   /* ── Prereq bar ── */
   .prereqs {
     background: var(--blue-bg);
@@ -238,6 +250,18 @@
 </div>
 
 <div class="container">
+
+  <!-- Switcher -->
+  <div class="switcher">
+    <a href="onboard.html" class="active">
+      Joining an existing team
+      <span class="switcher-label">Config repo already exists, your admin sends you a link</span>
+    </a>
+    <a href="onboard-new-firm.html">
+      Setting up for a new firm
+      <span class="switcher-label">First install, starting from scratch, you are the admin</span>
+    </a>
+  </div>
 
   <!-- Prerequisites bar -->
   <div class="prereqs">
