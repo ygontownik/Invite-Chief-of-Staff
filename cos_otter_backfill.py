@@ -870,7 +870,7 @@ def load_pipeline_context():
                 name  = item.get("name", "?")
                 stage = item.get("stage", "?")
                 contacts = item.get("contacts", "")
-                if name and "Update Log" not in name:
+                if name and "Update Log" not in name and stage != "Sourcing / Auto":
                     port_lines.append(f"  [{stage}] {name} | Key contacts: {contacts[:80]}")
                     active_deals.append((name, stage))
             if len(port_lines) > 1:
