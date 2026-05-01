@@ -1034,7 +1034,10 @@ EXTRACTION TASKS:
 
 7. call_date: Best estimate of when the call occurred. Format YYYY-MM-DD. Use document date, title clues, or content. Default to TODAY if unknown.
 
-8. envelope_items: Routing-v2 items for the dashboard. Emit IN ADDITION to (not instead of) fields 2-5 above. Follow the ENVELOPE ROUTING RULES section injected below (loaded from config/routing-rules.md — the single source of truth shared with all other pipelines). For direct-interaction calls like this one, all seven content_types are permitted; apply the "{_DEAL_WS} / LP / recruiting calls" or "Intel calls" ruleset as appropriate based on whether the principal is a participant or listener.
+8. envelope_items: Routing-v2 items for the dashboard. Emit IN ADDITION to (not instead of) fields 2-5 above.
+
+   STALENESS FILTER — do not emit awaiting_external items for past one-time events:
+   If the item is about a conference, summit, forum, registration, RSVP, or attendance at a specific event AND the event date has already passed as of TODAY, omit the awaiting_external item entirely. The opportunity is gone. Same applies to scheduling proposals (propose times, send calendar invite) where the proposed date has clearly passed. Follow the ENVELOPE ROUTING RULES section injected below (loaded from config/routing-rules.md — the single source of truth shared with all other pipelines). For direct-interaction calls like this one, all seven content_types are permitted; apply the "{_DEAL_WS} / LP / recruiting calls" or "Intel calls" ruleset as appropriate based on whether the principal is a participant or listener.
 
    STRICT RULES (enforced at write time — items failing these are rejected and counted in routingExceptions[], so missing them costs you data):
    • content_type="status_update" REQUIRES a non-empty parent_id (a short deal ticker, e.g. an uppercase abbreviation of the deal name, OR an LP slug). If you cannot identify the parent deal/LP, do NOT emit a status_update — emit it as a deal_takeaway instead (which only needs a parent_id when the parent is known).

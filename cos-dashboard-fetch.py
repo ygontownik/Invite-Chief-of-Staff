@@ -315,6 +315,54 @@ def _promote_source_ref(items):
     return items
 
 
+_STALE_EVENT_PATTERNS = _re_src.compile(
+    r'\b(conference|summit|forum|symposium|register|registration|rsvp|'
+    r'attend|attending|attendance|sign[\s-]?up|enroll|'
+    r'propose\s+times?|send\s+(calendar|cal)\s+inv|calendar\s+inv|'
+    r'schedule\s+(a\s+)?(call|meeting|time|intro)|'
+    r'reschedule|book\s+(a\s+)?(slot|time|meeting|call))\b',
+    _re_src.IGNORECASE,
+)
+
+def _auto_expire_stale_events(items):
+    """Drop one-time-event items whose due date has passed.
+
+    Matches content against scheduling/registration/conference patterns and
+    suppresses items where `due` (or `addedDate` if no due) is more than
+    7 days in the past. Items with no date are left alone.
+    """
+    from datetime import date as _date
+    today = _date.today()
+    cutoff_str = (today.replace(year=today.year - 1)).isoformat()  # never cut items over 1y old in future
+    kept = []
+    for item in items:
+        content = (item.get('content') or '') + ' ' + (item.get('what') or '')
+        if not _STALE_EVENT_PATTERNS.search(content):
+            kept.append(item)
+            continue
+        # Resolve the best date signal
+        due_raw = item.get('due') or item.get('addedDate') or ''
+        if not due_raw or len(due_raw) < 10:
+            kept.append(item)
+            continue
+        try:
+            item_date = _date.fromisoformat(due_raw[:10])
+        except ValueError:
+            kept.append(item)
+            continue
+        days_past = (today - item_date).days
+        if days_past > 7:
+            print(
+                f'cos-dashboard-fetch: auto-expired stale event item '
+                f'({due_raw[:10]}, {days_past}d ago): '
+                f'{content[:80].strip()!r}',
+                file=sys.stderr,
+            )
+            continue
+        kept.append(item)
+    return kept
+
+
 def parse_followups(text):
     ws_map = {'Job Search': 'job', 'Tomac Cove': 'tomac', 'Personal': 'personal'}
     today = datetime.now().strftime('%Y-%m-%d')
@@ -718,6 +766,8 @@ _CP_ALIASES = (
     ('att ftth', 'ATT FTTH'),
     ('at&t ftth', 'ATT FTTH'),
     ('thunderhead', 'Thunderhead'),
+    ('berkman farm', 'Bill Berkman'),
+    ('berkman', 'Bill Berkman'),
 )
 
 def _normalize_cp(name):
@@ -2023,8 +2073,8 @@ def main(dry_run: bool = False):
         # Merge doc-authored [waiting] rows with pipeline-authored envelope items.
         # Dedupe by (counterparty, content[:60]) so a doc row and pipeline row
         # referencing the same commitment collapse.
-        'awaitingExternal':  _promote_source_ref(_merge_awaiting(
-                                 state.get('awaitingExternal', []), awaiting_from_doc)),
+        'awaitingExternal':  _auto_expire_stale_events(_promote_source_ref(_merge_awaiting(
+                                 state.get('awaitingExternal', []), awaiting_from_doc))),
         'dealIntel':         state.get('dealIntel',         []),
         'originationInbox':  state.get('originationInbox',  []),
         'themes':            state.get('themes',            []),
