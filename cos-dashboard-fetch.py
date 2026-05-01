@@ -1912,6 +1912,7 @@ def main(dry_run: bool = False):
     pipeline_status = {
         'lastFullRunAt':   last_full_run,
         'lastMiniRunAt':   run_state.get('lastMiniRunAt'),
+        'lastFetchAt':     run_state.get('lastFetchAt'),   # stamped by this script on every run
         'lastRunSummary':  run_history[-1] if run_history else None,
         'draftsReady':     len(ready_drafts),
         'unprocessedTranscripts': len(unprocessed_transcripts),
@@ -2041,6 +2042,14 @@ def main(dry_run: bool = False):
         print(json.dumps(merged, indent=2, ensure_ascii=False))
     else:
         STATE_PATH.write_text(json.dumps(merged, indent=2, ensure_ascii=False))
+        # Stamp lastFetchAt so the dashboard freshness badge reflects doc-read time,
+        # not just the heavier Gmail-scan pipeline's lastFullRunAt.
+        try:
+            rs = json.loads(RUN_STATE_PATH.read_text()) if RUN_STATE_PATH.exists() else {}
+            rs['lastFetchAt'] = datetime.utcnow().isoformat()
+            RUN_STATE_PATH.write_text(json.dumps(rs, indent=2))
+        except Exception:
+            pass
 
     elapsed = (datetime.now() - t0).total_seconds()
     dest = 'stdout (dry-run)' if dry_run else str(STATE_PATH)
