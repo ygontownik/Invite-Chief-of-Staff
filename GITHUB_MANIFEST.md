@@ -1,5 +1,8 @@
 # GitHub Manifest — What Gets Committed vs What Stays Local
 
+> **This repo:** https://github.com/ygontownik/Dashboard
+> Active branch: `main`
+
 Every file in this repo falls into one of three buckets:
 
 ---

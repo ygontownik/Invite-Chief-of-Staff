@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """
-setup.py — New-firm setup validator for the COS Pipeline.
-
-Checks that all required config files are in place and correctly filled in.
-Does NOT make any network calls or create Google Docs — just validates locally.
+setup.py — New-firm setup validator and onboarding helper for the COS Pipeline.
 
 Usage:
-    python3 setup.py          # full validation
-    python3 setup.py --fix    # create missing config files from templates
+    python3 setup.py                  # full validation (no network)
+    python3 setup.py --fix            # copy missing config files from templates
+    python3 setup.py --create-docs    # auto-create the 4 required Google Docs and
+                                      # populate their IDs into firm_config.json
+                                      # (interactive — opens browser for OAuth)
 """
+import argparse
 import json
 import os
 import sys
@@ -38,6 +39,146 @@ def section(title: str):
     print(f"\n{'─' * 60}")
     print(f"  {title}")
     print(f"{'─' * 60}")
+
+
+# ─────────────────────────────────────────────────────────────
+# Mode dispatch — --fix and --create-docs run before validation
+# ─────────────────────────────────────────────────────────────
+
+def fix_missing_configs():
+    """Copy missing config files from templates."""
+    section("--fix  Copying missing configs from templates")
+    pairs = [
+        (_HERE / "firm_context.template.yaml", _HERE / "firm_context.yaml"),
+        (_HERE / "firm_config.template.json",  _HERE / "firm_config.json"),
+        (_HERE / "config" / "drive-docs.template.yaml",
+         _DASHBOARDS_CONFIG / "drive-docs.yaml"),
+    ]
+    import shutil
+    for src, dst in pairs:
+        if not src.exists():
+            print(f"  {FAIL}  template missing: {src}")
+            continue
+        if dst.exists():
+            print(f"  {INFO}  {dst.name} already exists — leaving alone")
+            continue
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(src, dst)
+        print(f"  {PASS}  created {dst}")
+    print(f"\n  Now edit those files with your firm's details, then run:")
+    print(f"      python3 setup.py")
+
+
+def create_drive_docs():
+    """Auto-create the 4 required Google Docs and write their IDs into firm_config.json.
+
+    Requires: gdrive_credentials.json at ~/credentials/ (Google Cloud Console OAuth client).
+    Triggers a browser OAuth flow on first run; tokens cached to ~/credentials/gdrive_token.pickle.
+    """
+    section("--create-docs  Auto-create Google Docs for new firm setup")
+
+    creds_path = _CREDS / "gdrive_credentials.json"
+    token_path = _CREDS / "gdrive_token.pickle"
+    cfg_path   = _HERE / "firm_config.json"
+
+    if not creds_path.exists():
+        print(f"  {FAIL}  Missing {creds_path}")
+        print(f"  {INFO}  Download an OAuth client from Google Cloud Console:")
+        print(f"           1. https://console.cloud.google.com/apis/credentials")
+        print(f"           2. Create OAuth 2.0 Client ID (Desktop app)")
+        print(f"           3. Download JSON, save to {creds_path}")
+        sys.exit(1)
+
+    if not cfg_path.exists():
+        print(f"  {FAIL}  Missing {cfg_path}")
+        print(f"  {INFO}  Run: python3 setup.py --fix")
+        sys.exit(1)
+
+    try:
+        from google_auth_oauthlib.flow import InstalledAppFlow
+        from google.auth.transport.requests import Request
+        from googleapiclient.discovery import build
+        import pickle
+    except ImportError:
+        print(f"  {FAIL}  Missing dependencies. Run:")
+        print(f"           pip install google-auth google-auth-oauthlib google-api-python-client")
+        sys.exit(1)
+
+    SCOPES = [
+        "https://www.googleapis.com/auth/drive.file",
+        "https://www.googleapis.com/auth/documents",
+    ]
+
+    # Load or create credentials
+    creds = None
+    if token_path.exists():
+        with open(token_path, "rb") as f:
+            creds = pickle.load(f)
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            flow = InstalledAppFlow.from_client_secrets_file(str(creds_path), SCOPES)
+            creds = flow.run_local_server(port=0, open_browser=True)
+        with open(token_path, "wb") as f:
+            pickle.dump(creds, f)
+    print(f"  {PASS}  OAuth authorized")
+
+    # Load existing config
+    with open(cfg_path) as f:
+        cfg = json.load(f)
+    cfg.setdefault("docs", {})
+
+    # Required docs to create
+    DOC_SPECS = [
+        ("followups",  "Follow-ups",        "Action item table — pending follow-ups across all workstreams."),
+        ("pipeline",   "Deal Pipeline",     "Deal pipeline narrative with target rollup and weekly IC memos."),
+        ("people",     "People / CRM",      "Contact rollup — people from calls, emails, and intros."),
+        ("recruiting", "Recruiting Pipeline","Job-search pipeline — outreach, interview stages."),
+    ]
+
+    docs_svc  = build("docs",  "v1", credentials=creds)
+    drive_svc = build("drive", "v3", credentials=creds)
+
+    print(f"\n  Creating Google Docs ...")
+    for slug, title, description in DOC_SPECS:
+        existing = cfg["docs"].get(slug, "")
+        if existing and not existing.startswith("GOOGLE_DOC_ID"):
+            print(f"  {INFO}  {slug}: already configured ({existing[:18]}...) — skipping")
+            continue
+        try:
+            doc = docs_svc.documents().create(body={"title": f"{title} — {cfg.get('firm_name', 'COS Pipeline')}"}).execute()
+            doc_id = doc["documentId"]
+            cfg["docs"][slug] = doc_id
+            # Seed with a brief description so the Doc isn't empty
+            docs_svc.documents().batchUpdate(
+                documentId=doc_id,
+                body={"requests": [{"insertText": {"location": {"index": 1}, "text": description + "\n\n"}}]}
+            ).execute()
+            print(f"  {PASS}  Created '{title}' → {doc_id}")
+        except Exception as e:
+            print(f"  {FAIL}  Failed to create '{title}': {e}")
+
+    # Save updated config (preserve any _comment fields and ordering)
+    with open(cfg_path, "w") as f:
+        json.dump(cfg, f, indent=2, ensure_ascii=False)
+    print(f"\n  {PASS}  Updated {cfg_path}")
+    print(f"\n  Now run: python3 setup.py")
+
+
+# Parse args before doing any validation
+_parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+_parser.add_argument("--fix",          action="store_true", help="Copy missing config files from templates")
+_parser.add_argument("--create-docs",  action="store_true", help="Auto-create required Google Docs and populate IDs into firm_config.json")
+_args = _parser.parse_args()
+
+if _args.fix:
+    fix_missing_configs()
+    sys.exit(0)
+
+if _args.create_docs:
+    create_drive_docs()
+    sys.exit(0)
 
 
 errors = []

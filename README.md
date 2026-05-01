@@ -1,5 +1,8 @@
 # COS Pipeline — Chief of Staff AI System
 
+> **Repo:** https://github.com/ygontownik/Dashboard
+> **Per-package docs:** [Package A — Market Intelligence](docs/PACKAGE_A.md) · [Package B — Operations](docs/PACKAGE_B.md)
+
 A local AI pipeline that processes emails, call transcripts, and market research into structured action items, deal intelligence, and daily briefings — all routed to Google Docs and a local dashboard.
 
 Built as two packages that can be deployed independently:

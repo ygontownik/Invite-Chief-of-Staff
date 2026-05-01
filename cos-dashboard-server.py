@@ -1788,15 +1788,32 @@ class Handler(BaseHTTPRequestHandler):
         tiles = [t for t in _tiles_for(user) if t.get('id') not in HIDDEN_IN_ALL]
         cards = []
         for t in tiles:
+            # If this tile's required package isn't in firm_config["packages"], render with
+            # a "package inactive" badge so the tile is visible but visibly degraded.
+            # The dashboard always shows the full tile structure regardless of package config.
+            inactive = (t.get('package_active') is False)
+            badge = ''
+            extra_class = ''
+            if inactive:
+                req_pkg = t.get('requires_package', '')
+                badge = ('<div class="tc-tile-badge tc-tile-badge-inactive" '
+                         'title="This tile requires the {pkg} package, which is not enabled in firm_config.json. '
+                         'Tabs will show empty states until the package is activated.">'
+                         '⚠ {pkg} package inactive'
+                         '</div>').format(pkg=req_pkg.replace('_', ' '))
+                extra_class = ' tc-tile-card-inactive'
             cards.append(
-                '<a class="tc-card tc-card-hover tc-tile-card" href="{url}">'
+                '<a class="tc-card tc-card-hover tc-tile-card{extra_class}" href="{url}">'
                 '  <div class="tc-tile-route">{url}</div>'
                 '  <h2>{title}</h2>'
                 '  <p>{desc}</p>'
+                '  {badge}'
                 '</a>'.format(
                     url=t.get('url', '#'),
                     title=t.get('title', t.get('id', '')),
                     desc=t.get('description', ''),
+                    badge=badge,
+                    extra_class=extra_class,
                 )
             )
         try:

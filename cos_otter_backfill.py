@@ -994,7 +994,7 @@ EXTRACTION TASKS:
 
 1. category: "{_RECRUIT_WS}" (job search/recruiter/employer calls), "{_DEAL_WS}" (deal/LP/investor/partner calls), or "Other"
    If the category hint provided below is not "auto", use it unless the text clearly contradicts it.
-   IMPORTANT: If this is a market briefing, broker conference call, analyst call, or any call where {_PRINCIPAL_FIRST} is a LISTENER rather than an active participant (e.g., Capstone DC market calls, IEA briefings, earnings calls), set category="Other" and action_items=[] — there are no actions on calls he didn't participate in.
+   IMPORTANT: If this is a market briefing, broker conference call, analyst call, or any call where {_PRINCIPAL_FIRST} is a LISTENER rather than an active participant (broker market briefings, industry/policy briefings, earnings calls, etc.), set category="Other" and action_items=[] — there are no actions on calls the principal did not participate in.
 
 2. action_items: Every action that must still happen AFTER this call — whether {_PRINCIPAL_FIRST} committed to it OR someone else committed and {_PRINCIPAL_FIRST} needs to follow up.
    CRITICAL: Capture third-party commitments that require follow-up. If someone says "I'll connect you with X" or "I'll send you Y" — create an item to follow up if not received.
