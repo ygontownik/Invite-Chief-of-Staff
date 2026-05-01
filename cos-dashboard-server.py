@@ -40,7 +40,7 @@ _SESSIONS_LOCK  = threading.Lock()
 SESSION_TTL     = 30 * 24 * 3600  # seconds
 
 def _sessions_path():
-    return Path(__file__).resolve().parent.parent / 'data' / 'user-state' / 'sessions.json'
+    return Path(__file__).parent.parent / 'data' / 'user-state' / 'sessions.json'
 
 def _load_sessions():
     try:
@@ -56,7 +56,7 @@ def _load_sessions():
 
 def _save_sessions():
     try:
-        (Path(__file__).resolve().parent.parent / 'data' / 'user-state').mkdir(
+        (Path(__file__).parent.parent / 'data' / 'user-state').mkdir(
             parents=True, exist_ok=True)
         with _SESSIONS_LOCK:
             snapshot = dict(_SESSIONS)
@@ -105,7 +105,7 @@ def _load_active_packages() -> list:
 def _load_tiles():
     """Read ~/dashboards/config/dashboard-tiles.yaml. Minimal parser — handles
     nested tabs arrays without requiring a PyYAML dependency."""
-    path = Path(__file__).resolve().parent.parent / 'config' / 'dashboard-tiles.yaml'
+    path = Path(__file__).parent.parent / 'config' / 'dashboard-tiles.yaml'
     tiles = []
     if not path.exists():
         return tiles
@@ -213,14 +213,14 @@ _deletions_lock  = threading.Lock()
 
 def _ensure_user_state_dir():
     try:
-        (Path(__file__).resolve().parent.parent / 'data' / 'user-state').mkdir(
+        (Path(__file__).parent.parent / 'data' / 'user-state').mkdir(
             parents=True, exist_ok=True)
     except Exception:
         pass
 
 def _load_deletions():
     """Return the current deletions dict, reloading from disk when mtime changes."""
-    path = Path(__file__).resolve().parent.parent / 'data' / 'user-state' / 'deletions.json'
+    path = Path(__file__).parent.parent / 'data' / 'user-state' / 'deletions.json'
     _ensure_user_state_dir()
     try:
         if not path.exists():
@@ -234,7 +234,7 @@ def _load_deletions():
     return _deletions_cache['data']
 
 def _save_deletions(data):
-    path = Path(__file__).resolve().parent.parent / 'data' / 'user-state' / 'deletions.json'
+    path = Path(__file__).parent.parent / 'data' / 'user-state' / 'deletions.json'
     _ensure_user_state_dir()
     with _deletions_lock:
         path.write_text(json.dumps(data, indent=2))
@@ -252,7 +252,7 @@ _topics_cache = {'mtime': 0, 'data': {'content': '', 'updated_at': ''}}
 _topics_lock  = threading.Lock()
 
 def _load_topics():
-    path = Path(__file__).resolve().parent.parent / 'data' / 'user-state' / 'topics.json'
+    path = Path(__file__).parent.parent / 'data' / 'user-state' / 'topics.json'
     _ensure_user_state_dir()
     try:
         if not path.exists():
@@ -266,7 +266,7 @@ def _load_topics():
     return _topics_cache['data']
 
 def _save_topics(content: str):
-    path = Path(__file__).resolve().parent.parent / 'data' / 'user-state' / 'topics.json'
+    path = Path(__file__).parent.parent / 'data' / 'user-state' / 'topics.json'
     _ensure_user_state_dir()
     payload = {'content': content, 'updated_at': datetime.utcnow().isoformat(timespec='seconds') + 'Z'}
     with _topics_lock:
@@ -286,7 +286,7 @@ _build_backlog_cache = {'mtime': 0, 'data': {'schema_version': 1, 'items': []}}
 _build_backlog_lock  = threading.Lock()
 
 def _build_backlog_path() -> Path:
-    return Path(__file__).resolve().parent.parent / 'data' / 'user-state' / 'build-backlog.json'
+    return Path(__file__).parent.parent / 'data' / 'user-state' / 'build-backlog.json'
 
 def _load_build_backlog():
     path = _build_backlog_path()
@@ -314,10 +314,10 @@ def _save_build_backlog(data):
             pass
 
 def _personal_items_path() -> Path:
-    return Path(__file__).resolve().parent.parent / 'data' / 'user-state' / 'personal-items.json'
+    return Path(__file__).parent.parent / 'data' / 'user-state' / 'personal-items.json'
 
 def _resolutions_path() -> Path:
-    return Path(__file__).resolve().parent.parent / 'data' / 'user-state' / 'email-resolutions.json'
+    return Path(__file__).parent.parent / 'data' / 'user-state' / 'email-resolutions.json'
 
 def _djb2(text: str) -> str:
     h = 5381
@@ -353,7 +353,7 @@ def _load_personal_items():
     return filtered
 
 def _load_order():
-    path = Path(__file__).resolve().parent.parent / 'data' / 'user-state' / 'order.json'
+    path = Path(__file__).parent.parent / 'data' / 'user-state' / 'order.json'
     _ensure_user_state_dir()
     try:
         if not path.exists():
@@ -367,7 +367,7 @@ def _load_order():
     return _order_cache['data']
 
 def _save_order(data):
-    path = Path(__file__).resolve().parent.parent / 'data' / 'user-state' / 'order.json'
+    path = Path(__file__).parent.parent / 'data' / 'user-state' / 'order.json'
     _ensure_user_state_dir()
     with _order_lock:
         path.write_text(json.dumps(data, indent=2))
@@ -387,7 +387,7 @@ _fundraising_lock  = threading.Lock()
 _FUNDRAISING_BUCKETS = ('direct_lps', 'gp_stakes', 'placement_agents', 'strategic')
 
 def _fundraising_path() -> Path:
-    return Path(__file__).resolve().parent.parent / 'data' / 'user-state' / 'fundraising.json'
+    return Path(__file__).parent.parent / 'data' / 'user-state' / 'fundraising.json'
 
 def _empty_fundraising():
     return {
@@ -620,7 +620,7 @@ def _is_partner_path(path: str) -> bool:
     return False
 
 PORT                = 7777
-_HERE               = Path(__file__).resolve().parent  # ~/dashboards/app/
+_HERE               = Path(__file__).parent  # ~/dashboards/app/
 _ROOT               = _HERE.parent                   # ~/dashboards/
 REFRESH_SCRIPT      = str(_HERE / 'cos-dashboard-refresh.py')
 FETCH_SCRIPT        = str(_HERE / 'cos-dashboard-fetch.py')
@@ -661,7 +661,7 @@ WARMUP_INTERVAL_MIN  = 10   # auto-fetch every N minutes in background
 _DS_LINK = '<link rel="stylesheet" href="/static/design-system.css">'
 _TOPNAV_CACHE = {'mtime': 0, 'template': ''}
 _STRINGS_CACHE = {'mtime': 0, 'flat': {}}
-_STRINGS_PATH  = Path(__file__).resolve().parent.parent / 'config' / 'strings.yaml'
+_STRINGS_PATH  = Path(__file__).parent.parent / 'config' / 'strings.yaml'
 
 def _flatten_strings(obj, prefix=''):
     """Flatten nested dict to {dot.path: str} for {{STR:...}} substitution."""
@@ -2742,7 +2742,7 @@ class Handler(BaseHTTPRequestHandler):
         # treats the POST 200 as a success and re-fetches /dashboard-data.json.
         try:
             subprocess.Popen(
-                [sys.executable, str(Path(__file__).resolve().parent.parent / 'routines' / 'compile' / 'deal-system-compile.py')],
+                [sys.executable, str(Path(__file__).parent.parent / 'routines' / 'compile' / 'deal-system-compile.py')],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             )
         except Exception:

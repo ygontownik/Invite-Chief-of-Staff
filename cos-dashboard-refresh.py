@@ -16,7 +16,7 @@ import json, subprocess, sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-_HERE               = Path(__file__).resolve().parent    # ~/dashboards/app/
+_HERE               = Path(__file__).parent    # ~/dashboards/app/
 _ROOT               = _HERE.parent                       # ~/dashboards/
 DASHBOARD_PATH      = _HERE / 'templates' / 'cos-dashboard.html'
 STATE_PATH          = _ROOT / 'data' / 'compiled' / 'dashboard-data.json'

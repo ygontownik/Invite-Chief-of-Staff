@@ -20,7 +20,7 @@ from pathlib import Path
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
-_HERE      = Path(__file__).resolve().parent             # ~/dashboards/app/
+_HERE      = Path(__file__).parent             # ~/dashboards/app/
 _ROOT      = _HERE.parent                                 # ~/dashboards/
 CREDS_PATH = Path.home() / 'credentials/gcal_token.json'
 STATE_PATH = _ROOT / 'data' / 'compiled' / 'dashboard-data.json'
