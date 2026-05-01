@@ -919,30 +919,11 @@ def load_pipeline_context():
 
 # Header: built from firm_context.yaml (no hardcoded names below).
 # Body:   static memo-format instructions (same structure for all firms).
-_MEMO_BODY = """
-
-Write a structured investment memo for the call transcript below. Use EXACTLY this format and section headers:
-
-THE CORE ARGUMENT
-[What does this call establish or change for the firm? One to two paragraphs. Lead with the so-what.]
-
-POINTS OF CONSENSUS
-• [What was agreed with conviction? Attribute by name. Be specific — named firms, numbers, terms.]
-
-POINTS OF DISAGREEMENT OR TENSION
-• [Where was there pushback, hedging, or conspicuous vagueness? What wasn't said?]
-
-OPEN QUESTIONS AND UNRESOLVED ISSUES
-• [Explicit uncertainty, missing data, pending decisions, regulatory/timing dependencies.]
-
-WHAT YOU WOULD NEED TO FORM A VIEW
-• [Specific data, diligence questions, market checks, or expert conversations needed before acting. Verb-first.]
-
-KEY NAMES AND FIRMS
-[Every person and organization named in the call. One line each. Format: Name / Firm — role or context.]
-
-Do NOT include an ACTION ITEMS section — that is handled separately downstream.
-Respond with the memo text only. No preamble, no commentary."""
+# Memo body built from firm_context.yaml prompt_overrides (section headers + guidance).
+# Universal improvements to the default sections are pushed to _firm_context.py on
+# GitHub and flow to all users on git pull. Per-firm customizations live in each
+# user's gitignored firm_context.yaml and are never affected by upstream updates.
+_MEMO_BODY = _fc.build_memo_body(_CTX)
 
 MEMO_PREAMBLE = _fc.build_memo_header(_CTX) + _MEMO_BODY
 

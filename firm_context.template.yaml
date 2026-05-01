@@ -119,3 +119,50 @@ draft_voice:
     # Useful for: how you sign off, recurring caveats, things to reference.
     - "If discussing fund formation, note that Fund I is in early stage."
     - "Never commit to specific deal terms over email without a follow-up call."
+
+# ── ANALYTICAL DEFAULTS ────────────────────────────────────────────────────────
+# Controls the memo format and analytical framing for call transcripts.
+# All fields are OPTIONAL — omit the entire block to use the shipped defaults.
+#
+# HOW UPDATES WORK:
+#   The defaults live in _firm_context.py on GitHub. When an improvement is pushed
+#   (e.g. better section guidance, a new default section), you get it on:
+#       git fetch upstream && git merge upstream/main
+#   Your overrides here are in a gitignored file — they are NEVER touched by a merge.
+#   To accept a new default: delete the matching key here and git pull.
+#   To keep your version: leave the key here; it takes precedence over any upstream change.
+#
+# EXAMPLE — law firm that wants different memo sections:
+#   prompt_overrides:
+#     memo_sections:
+#       - "MATTER OVERVIEW"
+#       - "KEY LEGAL ISSUES"
+#       - "OPEN QUESTIONS"
+#       - "RECOMMENDED NEXT STEPS"
+#     section_guidance:
+#       "MATTER OVERVIEW": "One paragraph. Lead with the legal risk and business impact."
+#       "KEY LEGAL ISSUES": "Bullet each issue. Cite statute or precedent where known."
+#       "OPEN QUESTIONS": "Facts still needed before advising. Verb-first."
+#       "RECOMMENDED NEXT STEPS": "Specific actions. Named owner and deadline."
+#     memo_focus_supplement: "Flag any mention of regulatory deadlines or court dates."
+
+prompt_overrides:
+  # memo_sections: leave commented to use defaults (the six-section investor framework)
+  # Uncomment and edit to override:
+  # memo_sections:
+  #   - "THE CORE ARGUMENT"
+  #   - "POINTS OF CONSENSUS"
+  #   - "POINTS OF DISAGREEMENT OR TENSION"
+  #   - "OPEN QUESTIONS AND UNRESOLVED ISSUES"
+  #   - "WHAT YOU WOULD NEED TO FORM A VIEW"
+  #   - "KEY NAMES AND FIRMS"
+
+  # section_guidance: leave commented to use defaults
+  # Uncomment specific sections you want to customize (others keep their defaults):
+  # section_guidance:
+  #   "THE CORE ARGUMENT": "Your custom guidance here."
+
+  # memo_focus_supplement: optional extra instruction appended to every memo prompt.
+  # Useful for firm-specific watch items that apply to all calls.
+  # memo_focus_supplement: "Always flag any mention of FERC Order 1920 or DOE loan guarantees."
+  memo_focus_supplement: ""

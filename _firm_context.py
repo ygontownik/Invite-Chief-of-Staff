@@ -148,6 +148,123 @@ def principal_first_name(ctx: dict) -> str:
     return _principal(ctx).get("name", "Principal").split()[0]
 
 
+# ── Analytical defaults ───────────────────────────────────────────────────────
+# The memo section headers and optional focus supplement are the shipped defaults.
+# They live here (not hardcoded in pipeline scripts) so new users get them for
+# free, and any improvement pushed to GitHub propagates on the next git pull.
+# A user who wants different sections overrides them in firm_context.yaml under
+# prompt_overrides — their customization is never touched by upstream updates.
+
+DEFAULT_MEMO_SECTIONS = [
+    "THE CORE ARGUMENT",
+    "POINTS OF CONSENSUS",
+    "POINTS OF DISAGREEMENT OR TENSION",
+    "OPEN QUESTIONS AND UNRESOLVED ISSUES",
+    "WHAT YOU WOULD NEED TO FORM A VIEW",
+    "KEY NAMES AND FIRMS",
+]
+
+# Per-section guidance appended in brackets after each header.
+# Universal — applies to any firm using the default section set.
+# If a user defines custom sections without matching keys here, the fallback
+# instruction "[content for this section]" is used — still valid, just unguided.
+DEFAULT_SECTION_GUIDANCE = {
+    "THE CORE ARGUMENT": (
+        "What does this call establish or change for the firm? "
+        "One to two paragraphs. Lead with the so-what."
+    ),
+    "POINTS OF CONSENSUS": (
+        "What was agreed with conviction? Attribute by name. "
+        "Be specific — named firms, numbers, terms."
+    ),
+    "POINTS OF DISAGREEMENT OR TENSION": (
+        "Where was there pushback, hedging, or conspicuous vagueness? "
+        "What wasn't said?"
+    ),
+    "OPEN QUESTIONS AND UNRESOLVED ISSUES": (
+        "Explicit uncertainty, missing data, pending decisions, "
+        "regulatory/timing dependencies."
+    ),
+    "WHAT YOU WOULD NEED TO FORM A VIEW": (
+        "Specific data, diligence questions, market checks, or expert "
+        "conversations needed before acting. Verb-first."
+    ),
+    "KEY NAMES AND FIRMS": (
+        "Every person and organization named in the call. One line each. "
+        "Format: Name / Firm — role or context."
+    ),
+}
+
+
+def get_memo_sections(ctx: dict) -> list:
+    """Return memo section headers — from prompt_overrides if set, else defaults.
+
+    Override in firm_context.yaml:
+        prompt_overrides:
+          memo_sections:
+            - "EXECUTIVE SUMMARY"
+            - "KEY ISSUES"
+            - "NEXT STEPS"
+    """
+    return (
+        ctx.get("prompt_overrides", {}).get("memo_sections")
+        or DEFAULT_MEMO_SECTIONS
+    )
+
+
+def get_section_guidance(ctx: dict) -> dict:
+    """Return per-section guidance dict — from prompt_overrides if set, else defaults.
+
+    Override in firm_context.yaml:
+        prompt_overrides:
+          section_guidance:
+            "EXECUTIVE SUMMARY": "One paragraph. Lead with the investment implication."
+            "KEY ISSUES": "Bullet points. Specific risks, named counterparties."
+    """
+    return (
+        ctx.get("prompt_overrides", {}).get("section_guidance")
+        or DEFAULT_SECTION_GUIDANCE
+    )
+
+
+def get_memo_focus_supplement(ctx: dict) -> str:
+    """Return optional extra instruction appended to memo prompt body.
+
+    Override in firm_context.yaml:
+        prompt_overrides:
+          memo_focus_supplement: "Always flag any mention of FERC Order 1920."
+    """
+    return ctx.get("prompt_overrides", {}).get("memo_focus_supplement", "")
+
+
+def build_memo_body(ctx: dict) -> str:
+    """Build the static portion of the memo preamble from firm_context.yaml.
+
+    Replaces the hardcoded _MEMO_BODY string in pipeline scripts. Callers do:
+        MEMO_PREAMBLE = _fc.build_memo_header(ctx) + _fc.build_memo_body(ctx)
+    """
+    sections = get_memo_sections(ctx)
+    guidance = get_section_guidance(ctx)
+    supplement = get_memo_focus_supplement(ctx)
+
+    lines = [
+        "\nWrite a structured investment memo for the call transcript below. "
+        "Use EXACTLY this format and section headers:\n"
+    ]
+    for section in sections:
+        hint = guidance.get(section, "content for this section")
+        lines.append(f"{section}\n[{hint}]\n")
+
+    if supplement:
+        lines.append(f"\nADDITIONAL FOCUS: {supplement}\n")
+
+    lines.append(
+        "Do NOT include an ACTION ITEMS section — that is handled separately downstream.\n"
+        "Respond with the memo text only. No preamble, no commentary."
+    )
+    return "\n".join(lines)
+
+
 # ── Preamble builders ─────────────────────────────────────────────────────────
 
 def build_memo_header(ctx: dict) -> str:
