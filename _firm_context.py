@@ -241,6 +241,29 @@ def peer_firms_str(ctx: dict) -> str:
     return ", ".join(ctx.get("peer_firms", []))
 
 
+def cp_aliases(ctx: dict) -> list:
+    """Return counterparty alias pairs as a flat list of (needle, canonical) tuples.
+
+    Reads counterparty_aliases from firm_context.yaml. Each entry has:
+      needles:   list of lowercase substrings to match (company names, person names,
+                 deal nicknames, abbreviations — anything that refers to this entity)
+      canonical: the display name to show in the dashboard
+
+    Returns a list of (needle, canonical) tuples in the order they appear in the
+    config — ordering matters since the first match wins in _normalize_cp().
+    If counterparty_aliases is absent, returns an empty list (no aliases applied).
+    """
+    out = []
+    for entry in ctx.get("counterparty_aliases", []):
+        canon = entry.get("canonical", "")
+        if not canon:
+            continue
+        for needle in entry.get("needles", []):
+            if needle:
+                out.append((str(needle).lower(), canon))
+    return out
+
+
 def principal_first_name(ctx: dict) -> str:
     return _principal(ctx).get("name", "Principal").split()[0]
 

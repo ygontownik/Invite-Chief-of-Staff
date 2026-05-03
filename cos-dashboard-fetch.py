@@ -25,7 +25,11 @@ _ROOT      = _HERE.parent                                 # ~/dashboards/
 CREDS_PATH = Path.home() / 'credentials/gcal_token.json'
 STATE_PATH = _ROOT / 'data' / 'compiled' / 'dashboard-data.json'
 
-MY_EMAIL = 'ygontownik@gmail.com'
+# Firm context — loads firm_context.yaml for config that varies by team
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _firm_context as _fc
+_CTX     = _fc.load_firm_context()
+MY_EMAIL = (_fc._principal(_CTX).get('email') or 'ygontownik@gmail.com')
 
 DOC_IDS = {
     'followups':    '10leX26u8n3XkoCHzg7SDwLUodVX2CqKjvXcSJ-KAsCY',
@@ -776,23 +780,9 @@ def _has_strong_fundraising_signal(item):
     # rows and the awaiting-external UI doesn't show the same deal twice.
     # Keyed by *lowercased full raw counterparty* (after _normalize_cp splits
     # on separators, we also check the raw string contents).
-_CP_ALIASES = (
-    # (substring needle in lowercased raw cp, canonical display name)
-    ('cholla', 'Cholla'),
-    ('chola', 'Cholla'),
-    ('chisholm', 'Cholla'),
-    ('big south dallas', 'Cholla'),
-    ('gideon powell', 'Cholla'),
-    ('black bayou', 'Black Bayou'),
-    ('pacific fleet', 'Pacific Fleet'),
-    ('pfs', 'Pacific Fleet'),
-    ('pngts', 'PNGTS'),
-    ('att ftth', 'ATT FTTH'),
-    ('at&t ftth', 'ATT FTTH'),
-    ('thunderhead', 'Thunderhead'),
-    ('berkman farm', 'Bill Berkman'),
-    ('berkman', 'Bill Berkman'),
-)
+# Counterparty aliases — loaded from firm_context.yaml (counterparty_aliases section).
+# Edit firm_context.yaml to add/change aliases; do not hardcode deal or person names here.
+_CP_ALIASES = _fc.cp_aliases(_CTX)
 
 def _normalize_cp(name):
     """Normalize a counterparty string for grouping. Splits on separators

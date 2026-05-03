@@ -20,6 +20,7 @@ schema_version: 2
 
 principal:
   name: "YOUR NAME HERE"                             # [REQUIRED] e.g. "Jane Smith"
+  email: "you@yourfirm.com"                          # [REQUIRED] principal's primary email
   role: "YOUR ROLE HERE"                             # [REQUIRED] e.g. "managing director, infrastructure PE"
   background: "YOUR BACKGROUND"                      # [OPTIONAL] e.g. "~12 years, $5B+ deployed"
   prior_firm: "YOUR PRIOR FIRM"                      # [OPTIONAL] used in speaker-ID heuristics
@@ -84,6 +85,19 @@ key_people:
     context: "Brief description — e.g. LP relationship, government contact, strategic partner"
     flag_in_actions: true
   # Add more as needed
+
+# ── COUNTERPARTY ALIASES ──────────────────────────────────────────────────────
+# Maps raw counterparty strings to canonical display names for dashboard clustering.
+# Include both company names AND the key individual's name for each deal —
+# so any mention of the person (in an email or transcript) routes to the right cluster.
+# First match wins — list more specific needles before broad ones.
+
+counterparty_aliases:
+  - needles: ["deal company name", "deal nickname", "deal abbreviation", "lead contact full name"]
+    canonical: "Deal Display Name"
+  - needles: ["second deal name", "second deal abbreviation", "second deal contact name"]
+    canonical: "Second Deal Display Name"
+  # Add one entry per active deal / LP / key counterparty
 
 # ── PEER / CO-INVESTOR FIRMS ──────────────────────────────────────────────────
 # Mentions of these firms in call transcripts trigger competitive intel flags.
