@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow">
-<title>COS Pipeline — New Firm Setup</title>
+<title>COS Pipeline — Get Started (New Firm)</title>
 <style>
   :root {
     --cream:    #faf8f4;
@@ -28,297 +28,230 @@
 
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    font-size: 15px;
-    line-height: 1.6;
-    background: var(--cream);
-    color: var(--ink);
+    font-size: 15px; line-height: 1.6;
+    background: var(--cream); color: var(--ink);
   }
 
-  .header {
-    border-bottom: 1px solid var(--border);
-    background: var(--paper);
-    padding: 32px 0;
-    text-align: center;
+  /* ── Nav ── */
+  .site-nav {
+    background: var(--ink); display: flex; align-items: center;
+    padding: 0 28px; height: 48px; position: sticky; top: 0; z-index: 200; gap: 4px;
   }
-  .header .label { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
-  .header h1 { font-size: 26px; font-weight: 700; color: var(--ink); }
-  .header p  { margin-top: 8px; color: var(--muted); font-size: 14px; }
+  .nav-brand {
+    color: white; font-weight: 700; font-size: 14px; text-decoration: none;
+    margin-right: 20px; letter-spacing: .01em; flex-shrink: 0;
+  }
+  .nav-link {
+    color: rgba(255,255,255,.55); text-decoration: none; font-size: 13px; font-weight: 500;
+    padding: 0 14px; height: 48px; display: flex; align-items: center;
+    border-bottom: 2px solid transparent; transition: all .15s; white-space: nowrap;
+  }
+  .nav-link:hover { color: white; }
+  .nav-link.active { color: white; border-bottom-color: white; }
 
-  .container { max-width: 740px; margin: 0 auto; padding: 48px 24px; }
+  /* ── Page title ── */
+  .page-title {
+    border-bottom: 1px solid var(--border); background: var(--paper); padding: 28px 0 24px;
+  }
+  .page-title-inner { max-width: 740px; margin: 0 auto; padding: 0 24px; }
+  .page-title .label {
+    font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 6px;
+  }
+  .page-title h1 { font-size: 24px; font-weight: 700; }
+  .page-title p  { margin-top: 6px; color: var(--muted); font-size: 13px; }
 
-  /* ── switcher ── */
+  /* ── Container ── */
+  .container { max-width: 740px; margin: 0 auto; padding: 40px 24px 80px; }
+
+  /* ── Switcher ── */
   .switcher {
-    display: flex;
-    gap: 12px;
-    margin-bottom: 36px;
+    display: flex; gap: 10px; margin-bottom: 36px;
   }
   .switcher a {
-    flex: 1;
-    text-align: center;
-    padding: 12px 16px;
-    border-radius: 10px;
-    border: 1px solid var(--border);
-    font-size: 13px;
-    font-weight: 600;
-    text-decoration: none;
-    color: var(--muted);
-    background: white;
-    transition: all .15s;
+    flex: 1; text-align: center; padding: 10px 14px; border-radius: 10px;
+    border: 1px solid var(--border); font-size: 13px; font-weight: 600;
+    text-decoration: none; color: var(--muted); background: white; transition: all .15s;
   }
   .switcher a:hover { border-color: #aaa; color: var(--ink); }
   .switcher a.active { background: var(--ink); color: white; border-color: var(--ink); }
   .switcher-label { font-size: 11px; font-weight: 400; display: block; margin-top: 2px; opacity: .7; }
 
-  /* ── what you get bar ── */
-  .what-you-get {
-    background: var(--blue-bg);
-    border: 1px solid #bfdbfe;
-    border-radius: 10px;
-    padding: 20px 24px;
-    margin-bottom: 40px;
-    font-size: 13px;
-    color: var(--ink);
-  }
-  .what-you-get h3 { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--blue); margin-bottom: 12px; }
-  .what-row { display: flex; flex-wrap: wrap; gap: 8px 32px; }
-  .what-item { display: flex; align-items: center; gap: 6px; }
-  .what-item .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--blue); flex-shrink: 0; }
-
-  /* ── cost ── */
-  .cost-bar {
-    background: var(--amber-bg);
-    border: 1px solid #fcd34d;
-    border-radius: 10px;
-    padding: 16px 20px;
-    margin-bottom: 40px;
-    font-size: 13px;
-    color: var(--amber);
-  }
-  .cost-bar h3 { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 8px; }
-  .cost-grid { display: flex; gap: 24px; flex-wrap: wrap; }
-  .cost-item strong { display: block; font-size: 16px; font-weight: 700; }
-
-  /* ── steps ── */
-  .steps { display: flex; flex-direction: column; gap: 28px; }
+  /* ── Step cards ── */
+  .steps { display: flex; flex-direction: column; gap: 24px; }
 
   .step {
-    background: white;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    overflow: hidden;
+    background: white; border: 1px solid var(--border); border-radius: 14px; overflow: hidden;
   }
   .step-header {
-    padding: 20px 24px 16px;
-    display: flex;
-    align-items: flex-start;
-    gap: 16px;
+    padding: 22px 28px 18px; display: flex; align-items: flex-start; gap: 18px;
+    border-bottom: 1px solid var(--border); position: relative;
   }
   .step-num {
-    width: 32px; height: 32px;
-    border-radius: 50%;
-    background: var(--ink);
-    color: white;
-    font-size: 13px; font-weight: 700;
+    width: 48px; height: 48px; border-radius: 50%;
+    background: var(--ink); color: white;
+    font-size: 18px; font-weight: 700;
     display: flex; align-items: center; justify-content: center;
     flex-shrink: 0;
-    margin-top: 1px;
   }
-  .step-title { font-size: 17px; font-weight: 700; color: var(--ink); margin-bottom: 4px; }
-  .step-time  { font-size: 12px; color: var(--muted); }
+  .step-title-wrap { flex: 1; }
+  .step-title { font-size: 18px; font-weight: 700; color: var(--ink); margin-bottom: 3px; }
+  .step-time-badge {
+    position: absolute; top: 20px; right: 24px;
+    background: var(--paper); border: 1px solid var(--border);
+    border-radius: 20px; padding: 3px 10px;
+    font-size: 11px; font-weight: 600; color: var(--muted); white-space: nowrap;
+  }
+  .step-sub { font-size: 13px; color: var(--muted); }
 
-  .step-body { padding: 0 24px 24px 72px; }
-  .step-body p { color: var(--muted); font-size: 14px; margin-bottom: 14px; }
-  .step-body p:last-child { margin-bottom: 0; }
-  .step-body a { color: var(--blue); }
+  .step-body { padding: 24px 28px 28px 94px; display: flex; flex-direction: column; gap: 16px; }
 
-  .step-body ol, .step-body ul {
-    padding-left: 20px;
-    font-size: 14px;
-    color: var(--muted);
-    margin-bottom: 14px;
+  /* ── Wizard callout ── */
+  .wizard-callout {
+    background: var(--blue-bg); border: 1px solid #bfdbfe; border-radius: 12px; padding: 20px 24px;
   }
-  .step-body li { margin-bottom: 5px; }
-  .step-body li a { color: var(--blue); }
+  .wizard-callout h3 { font-size: 13px; font-weight: 700; color: var(--blue); margin-bottom: 10px; }
+  .wizard-callout p  { font-size: 13px; color: var(--ink); margin-bottom: 12px; }
+  .wizard-callout p:last-child { margin-bottom: 0; }
+  .wizard-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--blue); color: white; text-decoration: none;
+    font-size: 14px; font-weight: 700; padding: 10px 20px; border-radius: 8px;
+    transition: background .15s;
+  }
+  .wizard-btn:hover { background: #1d4ed8; }
+  .wizard-note { font-size: 12px; color: var(--muted); margin-top: 10px !important; }
 
-  /* ── sub-steps (Google Cloud) ── */
-  .substeps {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    margin: 14px 0;
+  /* ── Account cards grid ── */
+  .account-grid { display: flex; flex-direction: column; gap: 14px; }
+  .account-card {
+    border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; background: var(--cream);
   }
-  .substep {
-    display: flex;
-    gap: 12px;
-    align-items: flex-start;
-  }
-  .substep-num {
-    width: 22px; height: 22px;
-    border-radius: 50%;
-    background: #e5e0d8;
-    color: var(--ink);
-    font-size: 11px; font-weight: 700;
-    display: flex; align-items: center; justify-content: center;
-    flex-shrink: 0;
-    margin-top: 2px;
-  }
-  .substep-body { font-size: 14px; color: var(--muted); flex: 1; }
-  .substep-body strong { color: var(--ink); }
-  .substep-body a { color: var(--blue); }
+  .account-card-title { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+  .account-card-note  { font-size: 12px; color: var(--muted); margin-top: 6px; }
 
-  /* ── code blocks ── */
-  .code-block {
-    background: var(--code-bg);
-    border-radius: 8px;
-    margin: 12px 0;
-    overflow: hidden;
-  }
+  /* ── Code blocks ── */
+  .code-block { background: var(--code-bg); border-radius: 8px; margin: 0; overflow: hidden; }
   .code-label {
     font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
-    color: #6b7280;
-    padding: 8px 14px 6px;
+    color: #6b7280; padding: 8px 14px 6px;
     border-bottom: 1px solid #2a2520;
     display: flex; justify-content: space-between; align-items: center;
   }
   .copy-btn {
-    font-size: 11px; font-weight: 600;
-    color: #9ca3af;
-    background: none;
-    border: 1px solid #374151;
-    border-radius: 4px;
-    padding: 2px 8px;
-    cursor: pointer;
-    transition: all .15s;
+    font-size: 11px; font-weight: 600; color: #9ca3af;
+    background: none; border: 1px solid #374151; border-radius: 4px;
+    padding: 2px 8px; cursor: pointer; transition: all .15s;
   }
   .copy-btn:hover { color: white; border-color: #6b7280; }
   .copy-btn.copied { color: #34d399; border-color: #34d399; }
   .code-block code {
-    display: block;
-    padding: 14px;
+    display: block; padding: 14px;
     font-family: "SFMono-Regular", "Menlo", "Consolas", monospace;
-    font-size: 13px; line-height: 1.6;
-    color: var(--code-fg);
-    white-space: pre;
-    overflow-x: auto;
+    font-size: 13px; line-height: 1.6; color: var(--code-fg);
+    white-space: pre; overflow-x: auto;
   }
 
   /* ── URL blocks ── */
   .url-block {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    background: var(--blue-bg);
-    border: 1px solid #bfdbfe;
-    border-radius: 8px;
-    padding: 10px 14px;
-    margin: 12px 0;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    background: var(--blue-bg); border: 1px solid #bfdbfe; border-radius: 8px;
+    padding: 10px 14px; margin: 0;
   }
   .url-block a {
-    font-family: "SFMono-Regular", "Menlo", monospace;
-    font-size: 13px;
-    color: var(--blue);
-    text-decoration: none;
-    word-break: break-all;
+    font-family: "SFMono-Regular", "Menlo", monospace; font-size: 13px;
+    color: var(--blue); text-decoration: none; word-break: break-all;
   }
   .url-block a:hover { text-decoration: underline; }
   .url-copy-btn {
-    font-size: 11px; font-weight: 600;
-    color: var(--blue);
-    background: none;
-    border: 1px solid #93c5fd;
-    border-radius: 4px;
-    padding: 2px 8px;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: all .15s;
-    flex-shrink: 0;
+    font-size: 11px; font-weight: 600; color: var(--blue); background: none;
+    border: 1px solid #93c5fd; border-radius: 4px; padding: 2px 8px; cursor: pointer;
+    white-space: nowrap; transition: all .15s; flex-shrink: 0;
   }
   .url-copy-btn:hover { background: var(--blue); color: white; border-color: var(--blue); }
   .url-copy-btn.copied { color: var(--green); border-color: var(--green); }
 
-  /* ── callouts ── */
-  .note {
-    background: var(--amber-bg); border: 1px solid #fcd34d;
-    border-radius: 8px; padding: 12px 16px;
-    font-size: 13px; color: var(--amber); margin: 12px 0;
+  /* ── Auto tag ── */
+  .auto-tag {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: var(--green-bg); border: 1px solid #86efac;
+    border-radius: 12px; padding: 2px 8px;
+    font-size: 11px; font-weight: 700; color: var(--green);
+    white-space: nowrap;
   }
-  .note strong { display: block; margin-bottom: 2px; }
+
+  /* ── Install steps list ── */
+  .install-list { display: flex; flex-direction: column; gap: 18px; }
+  .install-item { display: flex; flex-direction: column; gap: 8px; }
+  .install-item-label {
+    font-size: 13px; font-weight: 700; color: var(--ink);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .install-item-explain {
+    font-size: 13px; color: var(--muted); padding-left: 2px;
+  }
+  .explain-bullets {
+    display: flex; flex-direction: column; gap: 4px;
+    margin: 4px 0 0; padding-left: 14px;
+    font-size: 13px; color: var(--muted); list-style: none;
+  }
+  .explain-bullets li::before { content: "·  "; }
+
+  /* ── Transcript cards ── */
+  .transcript-cards { display: flex; gap: 14px; flex-wrap: wrap; }
+  .transcript-card {
+    flex: 1; min-width: 240px;
+    border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; background: var(--cream);
+  }
+  .transcript-card h4 { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
+  .transcript-card p  { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+  .transcript-card .path {
+    font-size: 11px; background: var(--paper); border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 10px; color: var(--muted);
+    font-family: "SFMono-Regular", monospace;
+  }
+
+  /* ── Tip / note ── */
   .tip {
     background: var(--green-bg); border: 1px solid #86efac;
-    border-radius: 8px; padding: 12px 16px;
-    font-size: 13px; color: #166534; margin: 12px 0;
+    border-radius: 8px; padding: 12px 16px; font-size: 13px; color: #166534;
   }
-  .purple-note {
-    background: var(--purple-bg); border: 1px solid #c4b5fd;
-    border-radius: 8px; padding: 12px 16px;
-    font-size: 13px; color: var(--purple); margin: 12px 0;
-  }
-  .purple-note strong { display: block; margin-bottom: 2px; }
-
-  /* ── inline code ── */
-  code.inline {
-    font-family: "SFMono-Regular", monospace;
-    font-size: 12px;
-    background: #f0ece4;
-    padding: 1px 5px;
-    border-radius: 3px;
-    color: var(--ink);
+  .note {
+    background: var(--amber-bg); border: 1px solid #fcd34d;
+    border-radius: 8px; padding: 12px 16px; font-size: 13px; color: var(--amber);
   }
 
-  /* ── done panel ── */
+  /* ── Done panel ── */
   .done-panel {
     background: var(--green-bg); border: 1px solid #86efac;
-    border-radius: 12px; padding: 28px 32px;
-    text-align: center; margin-top: 12px;
+    border-radius: 14px; padding: 28px 32px; text-align: center; margin-top: 8px;
   }
-  .done-panel h2 { font-size: 22px; color: #15803d; margin-bottom: 8px; }
-  .done-panel p  { font-size: 14px; color: #166534; }
+  .done-panel h2 { font-size: 22px; font-weight: 700; color: var(--green); margin-bottom: 8px; }
+  .done-panel p  { font-size: 13px; color: #166534; }
+  .done-schedules { margin-top: 14px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+  .sched-badge {
+    background: white; border: 1px solid #86efac; border-radius: 20px;
+    padding: 4px 12px; font-size: 12px; font-weight: 600; color: var(--green);
+  }
 
-  /* ── team section ── */
-  .team-box {
-    background: var(--purple-bg); border: 1px solid #c4b5fd;
-    border-radius: 12px; padding: 24px 28px; margin-top: 28px;
+  /* ── Inline code ── */
+  code.inline {
+    font-family: "SFMono-Regular", monospace; font-size: 12px;
+    background: #f0ece4; padding: 1px 5px; border-radius: 3px; color: var(--ink);
   }
-  .team-box h2 { font-size: 16px; font-weight: 700; color: var(--purple); margin-bottom: 12px; }
-  .team-box p  { font-size: 14px; color: #5b21b6; margin-bottom: 12px; }
-  .team-box ol { font-size: 14px; color: #5b21b6; padding-left: 20px; }
-  .team-box li { margin-bottom: 6px; }
-  .team-box .code-block { margin: 12px 0; }
 
   .footer {
     text-align: center; color: var(--muted); font-size: 12px;
-    padding: 32px 0 48px; margin-top: 40px;
-    border-top: 1px solid var(--border);
+    padding: 32px 0 48px; margin-top: 40px; border-top: 1px solid var(--border);
   }
   .footer a { color: var(--muted); }
 
   @media (max-width: 600px) {
     .step-body { padding-left: 24px; }
+    .step-time-badge { position: static; margin-top: 4px; display: inline-block; }
+    .transcript-cards { flex-direction: column; }
     .switcher { flex-direction: column; }
-    .cost-grid { flex-direction: column; gap: 12px; }
   }
-
-  /* ── Nav ── */
-  .site-nav {
-    background: var(--ink);
-    display: flex; align-items: center;
-    padding: 0 28px; height: 48px;
-    position: sticky; top: 0; z-index: 200; gap: 4px;
-  }
-  .nav-brand {
-    color: white; font-weight: 700; font-size: 14px;
-    text-decoration: none; margin-right: 20px; letter-spacing: .01em; flex-shrink: 0;
-  }
-  .nav-link {
-    color: rgba(255,255,255,.55); text-decoration: none;
-    font-size: 13px; font-weight: 500;
-    padding: 0 14px; height: 48px;
-    display: flex; align-items: center;
-    border-bottom: 2px solid transparent; transition: all .15s; white-space: nowrap;
-  }
-  .nav-link:hover { color: white; }
-  .nav-link.active { color: white; border-bottom-color: white; }
 </style>
 </head>
 <body>
@@ -331,10 +264,12 @@
   <a href="configure.html" class="nav-link">Configure</a>
 </nav>
 
-<div class="header">
-  <div class="label">COS Pipeline</div>
-  <h1>New Firm Setup</h1>
-  <p>First install &nbsp;·&nbsp; 9 steps &nbsp;·&nbsp; ~60 minutes &nbsp;·&nbsp; one person does this once</p>
+<div class="page-title">
+  <div class="page-title-inner">
+    <div class="label">COS Pipeline · New Firm Setup</div>
+    <h1>Set up your pipeline</h1>
+    <p>5 steps &nbsp;·&nbsp; ~50 minutes &nbsp;·&nbsp; done once by one person</p>
+  </div>
 </div>
 
 <div class="container">
@@ -343,7 +278,7 @@
   <div class="switcher">
     <a href="onboard.html">
       Joining an existing team
-      <span class="switcher-label">Config repo already exists, Yoni or your admin sends you a link</span>
+      <span class="switcher-label">Config repo already exists — your admin sends you a link</span>
     </a>
     <a href="onboard-new-firm.html" class="active">
       Setting up for a new firm
@@ -351,458 +286,247 @@
     </a>
   </div>
 
-  <!-- What you get -->
-  <div class="what-you-get">
-    <h3>What this sets up</h3>
-    <div class="what-row">
-      <div class="what-item"><span class="dot"></span> Daily email triage → deal, recruiting, research buckets</div>
-      <div class="what-item"><span class="dot"></span> Call transcript processing from Google Drive</div>
-      <div class="what-item"><span class="dot"></span> Podcast transcription + summaries (optional)</div>
-      <div class="what-item"><span class="dot"></span> Structured action items written to Google Docs</div>
-      <div class="what-item"><span class="dot"></span> Local dashboard at localhost:7777</div>
-      <div class="what-item"><span class="dot"></span> Everything runs automatically in the background</div>
-    </div>
-  </div>
-
-  <!-- Cost estimate -->
-  <div class="cost-bar">
-    <h3>Estimated monthly cost (typical solo GP use)</h3>
-    <div class="cost-grid">
-      <div class="cost-item"><strong>~$15–30</strong> Anthropic API (Claude) — email triage, memos, action items</div>
-      <div class="cost-item"><strong>~$20/mo</strong> Claude Code CLI subscription — personal briefing + SKILL pipelines (optional)</div>
-      <div class="cost-item"><strong>~$5–15</strong> AssemblyAI — podcast transcription (optional)</div>
-      <div class="cost-item"><strong>$0</strong> Google APIs (within free tier)</div>
-      <div class="cost-item"><strong>$0</strong> GitHub (public repo, free)</div>
-    </div>
-  </div>
-
   <div class="steps">
 
-    <!-- Step 1: Prerequisites -->
+    <!-- ── Step 1: Configure ── -->
     <div class="step">
       <div class="step-header">
         <div class="step-num">1</div>
-        <div>
-          <div class="step-title">Install prerequisites</div>
-          <div class="step-time">10 minutes &nbsp;·&nbsp; one-time</div>
+        <div class="step-title-wrap">
+          <div class="step-title">Configure your identity first</div>
+          <div class="step-sub">Before you touch a terminal — shapes every memo the pipeline produces</div>
         </div>
+        <div class="step-time-badge">~10 min</div>
       </div>
       <div class="step-body">
-        <p><strong>Python 3.11+ and Git.</strong> Run these in Terminal to check:</p>
-        <div class="code-block">
-          <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
-          <code>python3 --version
-git --version</code>
-        </div>
-        <p>If Python is missing or below 3.11:</p>
-        <div class="url-block">
-          <a href="https://www.python.org/downloads/" target="_blank">https://www.python.org/downloads/</a>
-          <button class="url-copy-btn" onclick="copyUrl(this)">Copy URL</button>
-        </div>
-        <p>If Git is missing: run <code class="inline">xcode-select --install</code> in Terminal.</p>
-        <div class="tip">Homebrew (<a href="https://brew.sh" target="_blank">brew.sh</a>) makes macOS package installs easier if you don't have it yet.</div>
 
-        <p style="margin-top: 20px;"><strong>GitHub account.</strong> Needed later to host your private firm config repo so teammates can pull shared settings. Free at:</p>
-        <div class="url-block">
-          <a href="https://github.com/signup" target="_blank">https://github.com/signup</a>
-          <button class="url-copy-btn" onclick="copyUrl(this)">Copy URL</button>
+        <div class="wizard-callout">
+          <h3>START HERE — Open the configuration wizard</h3>
+          <p>The wizard asks you about your investment focus, analytical style, email voice, and active deals. Your answers are woven into every memo, briefing, and action item the pipeline produces.</p>
+          <a href="configure.html" class="wizard-btn">Open the wizard →</a>
+          <p class="wizard-note">The wizard generates your <code class="inline">CLAUDE.md</code>, <code class="inline">firm_context.yaml</code>, and <code class="inline">firm_config.json</code>. Keep the browser tab open — you'll paste the output into files in Step 3.</p>
         </div>
 
-        <p style="margin-top: 20px;"><strong>Claude Code CLI</strong> — required only for SKILL-based pipelines (personal briefing, podcast transcription). Not required for email triage, dashboard, or transcript processing.</p>
-        <div class="purple-note" style="margin: 10px 0 14px;">
-          <strong>Two modes — pick one:</strong>
-          <div style="margin-top: 8px; display: flex; flex-direction: column; gap: 8px;">
-            <div><strong>API only</strong> — Anthropic API key is enough. Email triage, call transcript memos, action items, dashboard all work. No Claude Code subscription needed. Monthly cost: ~$15–30.</div>
-            <div><strong>API + Claude Code</strong> — Adds personal daily briefing and podcast transcription via scheduled SKILL pipelines. Requires Claude Code CLI installed and authenticated (~$20/mo additional). Recommended for full functionality.</div>
-          </div>
+        <div class="tip">
+          <strong>What is Claude Code CLI?</strong> It's Anthropic's terminal tool that runs AI-powered pipeline scripts on a schedule. Required only for the daily briefing feature — email triage and the dashboard work without it.
         </div>
-        <p>If you want the full experience, install Claude Code now (requires Node.js 18+):</p>
-        <div class="code-block">
-          <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
-          <code>node --version            # need 18+; install from nodejs.org if missing
-npm install -g @anthropic-ai/claude-code
-claude login              # opens browser — sign in with your Anthropic account</code>
-        </div>
-        <div class="tip">If you're starting with API-only mode, skip the Claude Code install. You can add it later without redoing any other steps.</div>
+
       </div>
     </div>
 
-    <!-- Step 2: Anthropic -->
+    <!-- ── Step 2: Accounts ── -->
     <div class="step">
       <div class="step-header">
         <div class="step-num">2</div>
-        <div>
-          <div class="step-title">Create an Anthropic account and get an API key</div>
-          <div class="step-time">5 minutes &nbsp;·&nbsp; one-time per firm</div>
+        <div class="step-title-wrap">
+          <div class="step-title">Create your accounts</div>
+          <div class="step-sub">API keys you'll paste when the installer asks</div>
         </div>
+        <div class="step-time-badge">~15 min</div>
       </div>
       <div class="step-body">
-        <p>The pipeline uses Claude (Anthropic's AI) to classify emails, extract action items, and write memos. You need your own account and API key.</p>
-        <div class="substeps">
-          <div class="substep">
-            <div class="substep-num">a</div>
-            <div class="substep-body">Sign up and add a credit card (pay-per-use, no monthly fee until you use it):
-              <div class="url-block" style="margin-top: 8px;">
-                <a href="https://console.anthropic.com" target="_blank">https://console.anthropic.com</a>
-                <button class="url-copy-btn" onclick="copyUrl(this)">Copy URL</button>
-              </div>
+
+        <div class="account-grid">
+
+          <div class="account-card">
+            <div class="account-card-title">GitHub account</div>
+            <div class="url-block">
+              <a href="https://github.com/signup" target="_blank">https://github.com/signup</a>
+              <button class="url-copy-btn" onclick="copyUrl(this)">Copy URL</button>
             </div>
+            <div class="account-card-note">You'll need your GitHub username in Step 3 when you clone the repo.</div>
           </div>
-          <div class="substep">
-            <div class="substep-num">b</div>
-            <div class="substep-body">Go to <strong>API Keys</strong> → <strong>Create Key</strong> → name it <strong>cos-pipeline</strong></div>
+
+          <div class="account-card">
+            <div class="account-card-title">Anthropic API key</div>
+            <div class="url-block">
+              <a href="https://console.anthropic.com/settings/keys" target="_blank">https://console.anthropic.com/settings/keys</a>
+              <button class="url-copy-btn" onclick="copyUrl(this)">Copy URL</button>
+            </div>
+            <div class="account-card-note">Create a new key, copy it. The installer asks for it and stores it in macOS Keychain — it never touches a file.</div>
           </div>
-          <div class="substep">
-            <div class="substep-num">c</div>
-            <div class="substep-body">Copy the key (starts with <code class="inline">sk-ant-</code>) — you'll paste it during setup</div>
+
+          <div class="account-card">
+            <div class="account-card-title">AssemblyAI API key (for podcast transcription)</div>
+            <div class="url-block">
+              <a href="https://www.assemblyai.com/dashboard" target="_blank">https://www.assemblyai.com/dashboard</a>
+              <button class="url-copy-btn" onclick="copyUrl(this)">Copy URL</button>
+            </div>
+            <div class="account-card-note">Free tier included. Create account, copy the API key from the dashboard. ~$0.009/min billed after the free tier.</div>
           </div>
+
+          <div class="account-card">
+            <div class="account-card-title">Claude Code CLI — optional, for daily briefing</div>
+            <div class="code-block">
+              <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+              <code>npm install -g @anthropic-ai/claude-code
+claude</code>
+            </div>
+            <div class="account-card-note">Requires Node.js 18+. Run <code class="inline">node --version</code> to check. The second command opens authentication in your browser.</div>
+          </div>
+
         </div>
-        <div class="note"><strong>Keep this key private.</strong> Don't put it in any file — the setup script stores it in macOS Keychain where scripts can access it without it ever touching disk.</div>
+
+        <div class="note">Google Cloud OAuth is handled automatically by the installer in Step 3 — you don't need to do anything in the Google Cloud Console manually.</div>
+
       </div>
     </div>
 
-    <!-- Step 3: Google Cloud -->
+    <!-- ── Step 3: Install ── -->
     <div class="step">
       <div class="step-header">
         <div class="step-num">3</div>
-        <div>
-          <div class="step-title">Create Google Cloud OAuth credentials</div>
-          <div class="step-time">10 minutes &nbsp;·&nbsp; most complex step</div>
+        <div class="step-title-wrap">
+          <div class="step-title">Run the installer</div>
+          <div class="step-sub">Four commands — most of the work happens automatically</div>
         </div>
+        <div class="step-time-badge">~20 min</div>
       </div>
       <div class="step-body">
-        <p>The pipeline reads your Gmail and writes to Google Docs. Google requires you to create OAuth credentials to authorize this. It's free — you're creating a "private app" for your own use.</p>
-        <div class="substeps">
-          <div class="substep">
-            <div class="substep-num">1</div>
-            <div class="substep-body">Create a new project and name it <strong>cos-pipeline</strong>:
-              <div class="url-block" style="margin-top: 8px;">
-                <a href="https://console.cloud.google.com" target="_blank">https://console.cloud.google.com</a>
-                <button class="url-copy-btn" onclick="copyUrl(this)">Copy URL</button>
-              </div>
+
+        <div class="install-list">
+
+          <div class="install-item">
+            <div class="install-item-label"><span style="color:var(--muted);font-size:12px;font-weight:700;">1</span> Clone the pipeline code</div>
+            <div class="code-block">
+              <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+              <code>git clone https://github.com/ygontownik/Dashboard.git ~/cos-pipeline</code>
             </div>
           </div>
-          <div class="substep">
-            <div class="substep-num">2</div>
-            <div class="substep-body">With that project selected, go to <strong>APIs &amp; Services → Library</strong> and enable these three APIs one at a time:
-              <ul style="margin-top: 6px;">
-                <li><strong>Gmail API</strong></li>
-                <li><strong>Google Drive API</strong></li>
-                <li><strong>Google Docs API</strong></li>
-              </ul>
+
+          <div class="install-item">
+            <div class="install-item-label"><span style="color:var(--muted);font-size:12px;font-weight:700;">2</span> Enter the pipeline folder</div>
+            <div class="code-block">
+              <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+              <code>cd ~/cos-pipeline</code>
             </div>
           </div>
-          <div class="substep">
-            <div class="substep-num">3</div>
-            <div class="substep-body">Go to <strong>APIs &amp; Services → OAuth consent screen</strong>
-              <ul style="margin-top: 6px;">
-                <li>User type: <strong>External</strong></li>
-                <li>App name: <strong>COS Pipeline</strong>, support email: your email</li>
-                <li>Click through to <strong>Test users</strong> → add your email address</li>
-                <li>Save and continue through remaining screens</li>
-              </ul>
+
+          <div class="install-item">
+            <div class="install-item-label"><span style="color:var(--muted);font-size:12px;font-weight:700;">3</span> Run setup — installs dependencies, keys, and Google OAuth</div>
+            <div class="code-block">
+              <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+              <code>./setup.sh</code>
             </div>
+            <ul class="explain-bullets">
+              <li>Installs Python packages (pyyaml, google-auth, anthropic, assemblyai…) <span class="auto-tag">✓ automatic</span></li>
+              <li>Stores Anthropic and AssemblyAI API keys in macOS Keychain <span class="auto-tag">✓ automatic</span></li>
+              <li>Opens Google OAuth in your browser — sign in, click Allow <span class="auto-tag">✓ automatic</span></li>
+              <li>Installs background LaunchAgents (email triage, dashboard) <span class="auto-tag">✓ automatic</span></li>
+            </ul>
           </div>
-          <div class="substep">
-            <div class="substep-num">4</div>
-            <div class="substep-body">Go to <strong>APIs &amp; Services → Credentials → Create Credentials → OAuth 2.0 Client ID</strong>
-              <ul style="margin-top: 6px;">
-                <li>Application type: <strong>Desktop app</strong></li>
-                <li>Name: <strong>cos-pipeline-desktop</strong></li>
-                <li>Click <strong>Create</strong></li>
-              </ul>
+
+          <div class="install-item">
+            <div class="install-item-label"><span style="color:var(--muted);font-size:12px;font-weight:700;">4</span> Create your Google Drive structure automatically</div>
+            <div class="code-block">
+              <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+              <code>python3 setup_new_firm.py</code>
             </div>
+            <ul class="explain-bullets">
+              <li>Creates all Google Drive folders (Chief of Staff, Transcripts, Deals…) <span class="auto-tag">✓ automatic</span></li>
+              <li>Creates all six Google Docs (Briefing Log, Follow-ups, Deal Pipeline…) <span class="auto-tag">✓ automatic</span></li>
+              <li>Writes <code class="inline">firm_context.yaml</code> with every folder and doc ID filled in <span class="auto-tag">✓ automatic</span></li>
+              <li>Writes <code class="inline">firm_config.json</code> with Keychain prefix and keyword arrays <span class="auto-tag">✓ automatic</span></li>
+            </ul>
           </div>
-          <div class="substep">
-            <div class="substep-num">5</div>
-            <div class="substep-body">Click <strong>Download JSON</strong> on the credential that was just created. Save it as:</div>
-          </div>
+
         </div>
-        <div class="code-block">
-          <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
-          <code>mkdir -p ~/credentials
-mv ~/Downloads/client_secret_*.json ~/credentials/gdrive_credentials.json</code>
-        </div>
-        <div class="tip">If you get lost anywhere in Google Cloud Console, search for the page name in the top search bar — it works well.</div>
+
       </div>
     </div>
 
-    <!-- Step 4: Clone + setup -->
+    <!-- ── Step 4: Connect transcript app ── -->
     <div class="step">
       <div class="step-header">
         <div class="step-num">4</div>
-        <div>
-          <div class="step-title">Clone the pipeline and run setup</div>
-          <div class="step-time">5 minutes &nbsp;·&nbsp; installs everything</div>
+        <div class="step-title-wrap">
+          <div class="step-title">Connect your transcript app</div>
+          <div class="step-sub">Paste two folder IDs — takes two minutes</div>
         </div>
+        <div class="step-time-badge">~2 min</div>
       </div>
       <div class="step-body">
-        <p>Clone the pipeline code (public repo — no credentials needed) and run the interactive setup script:</p>
-        <div class="code-block">
-          <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
-          <code>git clone https://github.com/ygontownik/Dashboard.git ~/cos-pipeline
-cd ~/cos-pipeline
-./setup.sh</code>
+
+        <p style="font-size:13px;color:var(--muted);">The <code class="inline">setup_new_firm.py</code> script printed two folder IDs at the end. Paste them into your transcription app now:</p>
+
+        <div class="transcript-cards">
+          <div class="transcript-card">
+            <h4>Otter AI</h4>
+            <p>Paste the <strong>Otter AI folder ID</strong> printed by the setup script.</p>
+            <div class="path">Settings → Integrations → Google Drive → Connect → paste folder ID</div>
+          </div>
+          <div class="transcript-card">
+            <h4>Firefly</h4>
+            <p>Paste the <strong>Firefly folder ID</strong> printed by the setup script.</p>
+            <div class="path">Settings → Sync → Google Drive → paste folder ID</div>
+          </div>
         </div>
-        <p>The setup script will ask you for:</p>
-        <ul>
-          <li><strong>Your name and role</strong> — used in AI prompts and memo attribution</li>
-          <li><strong>Your firm name and short name</strong> — e.g. "Cascade Capital Partners" / "CCP"</li>
-          <li><strong>Email provider</strong> — gmail or outlook</li>
-          <li><strong>Anthropic API key</strong> — from Step 2</li>
-          <li><strong>Dashboard username and password</strong> — anything you want; used for local HTTP auth</li>
-        </ul>
-        <p>It also opens a browser for Google OAuth sign-in (uses the credentials file from Step 3). Sign in with your Google account and click Allow.</p>
+
+        <div class="tip">From now on, any transcript saved by Otter or Firefly will be picked up by the pipeline automatically within 24 hours. No manual action needed.</div>
+
       </div>
     </div>
 
-    <!-- Step 5: firm_context.yaml -->
+    <!-- ── Step 5: First run ── -->
     <div class="step">
       <div class="step-header">
         <div class="step-num">5</div>
-        <div>
-          <div class="step-title">Customize your firm identity and investment focus</div>
-          <div class="step-time">15 minutes &nbsp;·&nbsp; edit one file</div>
+        <div class="step-title-wrap">
+          <div class="step-title">First run &amp; validate</div>
+          <div class="step-sub">Two commands — then everything runs automatically</div>
         </div>
+        <div class="step-time-badge">~3 min</div>
       </div>
       <div class="step-body">
-        <p>Rather than editing the YAML directly, use the configuration wizard — it asks you questions and generates the correct config blocks to paste in:</p>
-        <div class="url-block">
-          <a href="configure.html" target="_blank">→ Open the configuration wizard</a>
-          <button class="url-copy-btn" onclick="copyUrl(this)">Copy URL</button>
-        </div>
-        <p>Or open the file directly if you prefer editing YAML:</p>
-        <div class="code-block">
-          <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
-          <code>open -a TextEdit ~/cos-pipeline/firm_context.yaml</code>
-        </div>
 
-        <p><strong>Shared firm sections</strong> (everyone on your team uses these):</p>
-        <ul>
-          <li><strong>investment_focus</strong> — your sector priorities in order (e.g. "power &amp; utilities", "digital infrastructure")</li>
-          <li><strong>team</strong> — your partners/colleagues with their roles; drives speaker attribution on call transcripts</li>
-          <li><strong>peer_firms</strong> — competitors and co-investors you want flagged in intel</li>
-          <li><strong>key_people</strong> — counterparties and contacts you want flagged in action items</li>
-          <li><strong>deal_keywords</strong> in <code class="inline">firm_config.json</code> — active deal names, target company names</li>
-        </ul>
+        <div class="install-list">
 
-        <p><strong>Personal section</strong> — goes at the bottom of your local copy only. Never commit this to the shared repo. It controls your personal briefing and podcast feeds:</p>
-        <div class="code-block">
-          <div class="code-label">firm_context.yaml — personal: block</div>
-          <code>personal:
-  briefing_email: "you@yourdomain.com"   # where daily briefing is emailed
-  podcast_feeds:
-    - show: "Catalyst"
-      rss:  "https://feeds.megaphone.fm/catalyst"
-    - show: "Your Favorite Show"
-      rss:  "https://example.com/feed.rss"
-  briefing_time: "07:00"                 # local time for daily briefing delivery</code>
-        </div>
-        <p>Each person on the team adds their own <code class="inline">personal:</code> block to their local <code class="inline">firm_context.yaml</code> with their own email and podcast feeds. If you share a config repo, this section stays out of it — add it after pulling.</p>
-
-        <div class="purple-note"><strong>Keychain service prefix.</strong> In <code class="inline">firm_config.json</code>, set <code class="inline">"keychain_service_prefix"</code> to something unique for your firm (e.g. <code class="inline">"cascade-pipeline"</code>). This isolates your secrets from any other firm's installation on the same machine and makes your API billing fully self-contained.</div>
-      </div>
-    </div>
-
-    <!-- Step 6: Google Docs -->
-    <div class="step">
-      <div class="step-header">
-        <div class="step-num">6</div>
-        <div>
-          <div class="step-title">Create your output Google Docs</div>
-          <div class="step-time">5 minutes &nbsp;·&nbsp; auto-created</div>
-        </div>
-      </div>
-      <div class="step-body">
-        <p>The pipeline writes to four Google Docs: Follow-ups, Deal Pipeline, People/CRM, and Recruiting. Run the auto-create command and it will make blank Docs in your Drive and populate <code class="inline">firm_config.json</code> with their IDs:</p>
-        <div class="code-block">
-          <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
-          <code>cd ~/cos-pipeline
-python3 setup.py --create-docs</code>
-        </div>
-        <p>This opens a browser once (Google OAuth). After that, you'll see the four new Docs appear in your Google Drive. Their IDs are saved automatically — no manual copying needed.</p>
-        <div class="tip">You can also create the Docs manually and paste their IDs into <code class="inline">firm_config.json</code> under the <code class="inline">"docs"</code> key if you prefer to name them yourself.</div>
-      </div>
-    </div>
-
-    <!-- Step 7: AssemblyAI (optional) -->
-    <div class="step">
-      <div class="step-header">
-        <div class="step-num">7</div>
-        <div>
-          <div class="step-title">Set up podcast transcription (optional)</div>
-          <div class="step-time">5 minutes &nbsp;·&nbsp; skip if not using podcasts</div>
-        </div>
-      </div>
-      <div class="step-body">
-        <p>If you added podcast feeds to your <code class="inline">personal:</code> block in Step 5, the pipeline transcribes each new episode using AssemblyAI and writes structured memos to Google Docs. You need your own AssemblyAI account — Anthropic is not used for this step.</p>
-        <div class="substeps">
-          <div class="substep">
-            <div class="substep-num">1</div>
-            <div class="substep-body">Sign up (free tier available; transcription billed per minute after that):
-              <div class="url-block" style="margin-top: 8px;">
-                <a href="https://www.assemblyai.com" target="_blank">https://www.assemblyai.com</a>
-                <button class="url-copy-btn" onclick="copyUrl(this)">Copy URL</button>
-              </div>
+          <div class="install-item">
+            <div class="install-item-label">Validate everything is wired up</div>
+            <div class="code-block">
+              <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+              <code>python3 ~/cos-pipeline/setup.py --validate</code>
             </div>
           </div>
-          <div class="substep">
-            <div class="substep-num">2</div>
-            <div class="substep-body">Go to your dashboard → copy your <strong>API Key</strong></div>
-          </div>
-          <div class="substep">
-            <div class="substep-num">3</div>
-            <div class="substep-body">Store it in your Keychain (same prefix as your other secrets):
-              <div class="code-block" style="margin-top: 8px;">
-                <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
-                <code>security add-generic-password \
-  -s "cos-pipeline/ASSEMBLYAI_API_KEY" \
-  -a "$USER" -w "YOUR_KEY_HERE" -U</code>
-              </div>
-              Replace <code class="inline">cos-pipeline</code> with your <code class="inline">keychain_service_prefix</code> if you changed it.
+
+          <div class="install-item">
+            <div class="install-item-label">Run the pipeline for the first time (processes last 7 days)</div>
+            <div class="code-block">
+              <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+              <code>python3 ~/cos-pipeline/cos_capture_pipeline.py --since 168h</code>
             </div>
           </div>
+
+          <div class="install-item">
+            <div class="install-item-label">Open your dashboard</div>
+            <div class="url-block">
+              <a href="http://localhost:7777" target="_blank">http://localhost:7777</a>
+              <button class="url-copy-btn" onclick="copyUrl(this)">Copy URL</button>
+            </div>
+          </div>
+
         </div>
-        <div class="tip">Typical cost: ~$0.009/minute of audio. A 45-minute podcast episode costs about $0.40. Most users spend $5–15/month on this.</div>
+
+        <div class="tip">The pipeline runs automatically every day. You only need to run commands manually if you want to process something immediately or test a change.</div>
+
       </div>
     </div>
 
-    <!-- Step 8: Transcript sources -->
-    <div class="step">
-      <div class="step-header">
-        <div class="step-num">8</div>
-        <div>
-          <div class="step-title">Connect your call transcript source</div>
-          <div class="step-time">5 minutes &nbsp;·&nbsp; add Drive folder IDs</div>
-        </div>
-      </div>
-      <div class="step-body">
-        <p>The pipeline can process call transcripts that land in Google Drive — from Otter AI, Zoom, or any other tool that saves to Drive. Add your folder IDs to <code class="inline">firm_context.yaml</code> under <code class="inline">transcript_sources</code>:</p>
-        <div class="code-block">
-          <div class="code-label">firm_context.yaml</div>
-          <code>transcript_sources:
-  - type: "google_drive_folder"
-    name: "Otter AI"
-    folder_ids:
-      - "YOUR_FOLDER_ID_HERE"   # paste from the Drive URL
-    category_hint: "auto"</code>
-        </div>
-        <p>To get a folder ID: open the folder in Google Drive, copy the string at the end of the URL after <code class="inline">/folders/</code>.</p>
-        <div class="note"><strong>Skip this if you don't use Drive-based transcripts.</strong> The pipeline works without it — email triage and the dashboard run independently.</div>
-      </div>
-    </div>
-
-    <!-- Step 9: Verify + install tasks -->
-    <div class="step">
-      <div class="step-header">
-        <div class="step-num">9</div>
-        <div>
-          <div class="step-title">Validate and install background tasks</div>
-          <div class="step-time">2 minutes</div>
-        </div>
-      </div>
-      <div class="step-body">
-        <p>Check everything is wired up correctly:</p>
-        <div class="code-block">
-          <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
-          <code>cd ~/cos-pipeline && python3 setup.py --validate</code>
-        </div>
-        <p>Install the three background tasks (if setup.sh didn't do this already):</p>
-        <div class="code-block">
-          <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
-          <code>cd ~/cos-pipeline && ./setup_launchagents.sh all</code>
-        </div>
-        <p>Then open the dashboard:</p>
-        <div class="code-block">
-          <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
-          <code>open http://localhost:7777</code>
-        </div>
-      </div>
-    </div>
-
-    <!-- Done panel -->
+    <!-- Done -->
     <div class="done-panel">
       <h2>Your firm is set up.</h2>
-      <p>Three tasks are now running automatically on your machine.</p>
-      <p style="margin: 12px 0 0; font-size: 13px;">
-        <strong>7:22am Mon–Fri</strong> — intelligence capture &nbsp;·&nbsp;
-        <strong>Every 2h</strong> — email triage &nbsp;·&nbsp;
-        <strong>Always on</strong> — dashboard
-      </p>
+      <p>Three background tasks are now running on your machine.</p>
+      <div class="done-schedules">
+        <span class="sched-badge">7:22am Mon–Fri — intelligence capture</span>
+        <span class="sched-badge">Every 2h — email triage</span>
+        <span class="sched-badge">Always on — dashboard</span>
+      </div>
     </div>
 
-    <!-- Team section -->
-    <div class="team-box">
-      <h2>Adding colleagues to your firm's pipeline</h2>
-      <p>Once you're set up, adding team members is faster — they don't repeat the Google Cloud or Anthropic steps. You do two things once, they do one thing:</p>
-      <ol>
-        <li><strong>Create a private GitHub repo</strong> for your firm config (firm_context.yaml, firm_config.json, drive-docs.yaml). Push your configured files there. This becomes your shared source of truth.</li>
-        <li><strong>Add their GitHub account</strong> as a collaborator on that private repo.</li>
-        <li><strong>Send them the team onboarding link</strong> — they clone both repos, store the API key you give them, and run OAuth with their own Google account.</li>
-      </ol>
-      <p style="margin-top: 8px;">Create your private config repo:</p>
-      <div class="code-block">
-        <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
-        <code># Create a new private repo on GitHub, then:
-mkdir ~/my-firm-config
-cp ~/cos-pipeline/firm_context.yaml ~/my-firm-config/
-cp ~/cos-pipeline/firm_config.json ~/my-firm-config/
-cd ~/my-firm-config
-git init && git remote add origin https://github.com/YOUR_ORG/YOUR-config.git
-git add . && git commit -m "Initial firm config"
-git push -u origin main</code>
-      </div>
-      <p>Then set <code class="inline">COS_CONFIG_DIR="$HOME/my-firm-config"</code> in your <code class="inline">~/.zshrc</code> and tell new team members to clone it there. The pipeline picks it up automatically.</p>
-    </div>
-
-  </div>
-
-  <!-- FAQ -->
-  <div style="margin-top: 48px; border-top: 1px solid var(--border); padding-top: 36px;">
-    <h2 style="font-size: 16px; font-weight: 700; margin-bottom: 20px;">Common questions</h2>
-    <div style="display: flex; flex-direction: column; gap: 20px;">
-
-      <div>
-        <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px;">Will this touch all my email or just specific things?</div>
-        <div style="font-size: 14px; color: var(--muted);">It reads recent email using OAuth (revocable at any time from your Google account settings). It only processes emails that match your configured keywords or senders. Everything else is skipped. Nothing is sent — it only reads and writes to your own Google Docs.</div>
-      </div>
-
-      <div>
-        <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px;">Can I run this on two machines (office + home)?</div>
-        <div style="font-size: 14px; color: var(--muted);">Yes. Install on each machine. The dedup system checks the shared Google Docs before writing — if machine A already processed something, machine B skips it. You don't need to coordinate.</div>
-      </div>
-
-      <div>
-        <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px;">How do I update when new pipeline features are released?</div>
-        <div style="font-size: 14px; color: var(--muted);">
-          <div class="code-block" style="margin: 8px 0 0;">
-            <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
-            <code>git -C ~/cos-pipeline pull   # gets pipeline code updates
-git -C ~/my-firm-config pull  # gets any config changes you pushed from another machine</code>
-          </div>
-        </div>
-      </div>
-
-      <div>
-        <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px;">How do I stop the background tasks?</div>
-        <div style="font-size: 14px; color: var(--muted);">
-          <div class="code-block" style="margin: 8px 0 0;">
-            <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
-            <code>cd ~/cos-pipeline && ./setup_launchagents.sh --uninstall</code>
-          </div>
-        </div>
-      </div>
-
-      <div>
-        <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px;">Is my firm's data isolated from other firms using this software?</div>
-        <div style="font-size: 14px; color: var(--muted);">Completely. Your API key, Google credentials, and output Docs are yours. The pipeline code is open source and shared, but it processes only your data against your accounts. No data passes through any intermediary. You can audit every script in <code class="inline">~/cos-pipeline/</code>.</div>
-      </div>
-
-    </div>
   </div>
 
   <div class="footer">
-    <a href="onboard.html">Joining an existing team →</a>
+    <a href="onboard.html">Already on a team? →</a>
     &nbsp;·&nbsp;
     <a href="HOW_IT_ALL_WORKS.html">How it all works →</a>
     &nbsp;·&nbsp;
@@ -815,16 +539,14 @@ git -C ~/my-firm-config pull  # gets any config changes you pushed from another 
 function copyCode(btn) {
   const code = btn.closest('.code-block').querySelector('code').textContent;
   navigator.clipboard.writeText(code).then(() => {
-    btn.textContent = 'Copied!';
-    btn.classList.add('copied');
+    btn.textContent = 'Copied!'; btn.classList.add('copied');
     setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
   });
 }
 function copyUrl(btn) {
   const url = btn.closest('.url-block').querySelector('a').href;
   navigator.clipboard.writeText(url).then(() => {
-    btn.textContent = 'Copied!';
-    btn.classList.add('copied');
+    btn.textContent = 'Copied!'; btn.classList.add('copied');
     setTimeout(() => { btn.textContent = 'Copy URL'; btn.classList.remove('copied'); }, 2000);
   });
 }

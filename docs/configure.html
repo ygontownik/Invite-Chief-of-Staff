@@ -366,6 +366,46 @@
     100% { background: inherit; }
   }
 
+  /* ── Podcast cards ── */
+  .podcast-card {
+    border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px;
+    background: var(--cream); display: flex; align-items: flex-start; gap: 12px;
+    cursor: pointer; transition: all .15s; user-select: none;
+  }
+  .podcast-card:hover { border-color: #aaa; background: white; }
+  .podcast-card.selected { border-color: var(--blue); background: var(--blue-bg); }
+  .podcast-card.hidden-card { display: none; }
+  .podcast-toggle {
+    width: 18px; height: 18px; border-radius: 4px; border: 2px solid var(--border);
+    flex-shrink: 0; margin-top: 2px; transition: all .15s;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .podcast-card.selected .podcast-toggle { background: var(--blue); border-color: var(--blue); }
+  .podcast-toggle::after { content: ''; display: none; width: 10px; height: 7px;
+    border-left: 2px solid white; border-bottom: 2px solid white;
+    transform: rotate(-45deg) translate(1px, -1px); }
+  .podcast-card.selected .podcast-toggle::after { display: block; }
+  .podcast-info { flex: 1; }
+  .podcast-name { font-size: 13px; font-weight: 700; color: var(--ink); margin-bottom: 2px; }
+  .podcast-desc { font-size: 12px; color: var(--muted); }
+  .podcast-sector-badge {
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--blue); background: var(--blue-bg); border: 1px solid #bfdbfe;
+    border-radius: 10px; padding: 1px 7px; flex-shrink: 0; white-space: nowrap;
+  }
+
+  /* ── Custom feed row ── */
+  .custom-feed-row {
+    display: flex; gap: 8px; align-items: center;
+  }
+  .custom-feed-row input[type="text"] { flex: 1; }
+  .custom-feed-remove {
+    background: none; border: 1px solid var(--border); border-radius: 6px;
+    padding: 5px 10px; cursor: pointer; font-size: 12px; color: var(--muted);
+    flex-shrink: 0; transition: all .15s;
+  }
+  .custom-feed-remove:hover { border-color: #e53e3e; color: #e53e3e; }
+
   /* ── Nav ── */
   .site-nav {
     background: var(--ink);
@@ -833,6 +873,53 @@
     </div>
   </div>
 
+  <!-- Section 8: Intelligence Sources -->
+  <div class="section" id="section-intelligence">
+    <div class="section-header">
+      <div class="section-num">8</div>
+      <div>
+        <div class="section-title">Intelligence sources</div>
+        <div class="section-sub">What should the pipeline monitor and summarize automatically?</div>
+      </div>
+    </div>
+
+    <!-- 8A: Podcasts -->
+    <div class="field">
+      <label>Podcasts &amp; audio</label>
+      <div class="hint">Toggle the shows you want transcribed and summarized. Suggestions update based on your sector selection above.</div>
+
+      <div id="podcast-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:10px;margin-top:10px;"></div>
+
+      <!-- Custom feed rows -->
+      <div id="custom-feeds" style="display:flex;flex-direction:column;gap:8px;margin-top:12px;"></div>
+      <button class="add-btn" onclick="addCustomFeed()" style="margin-top:10px;">+ Add custom feed</button>
+    </div>
+
+    <hr class="field-divider">
+
+    <!-- 8B: Newsletters -->
+    <div class="field">
+      <label>Substacks &amp; newsletters</label>
+      <div class="hint">Paste a Substack or newsletter URL and press Enter to add it.</div>
+      <div class="tag-input-wrap" onclick="this.querySelector('input').focus()">
+        <div id="newsletter-tags"></div>
+        <input class="tag-input" id="newsletter-input" placeholder="e.g. https://heatmap.news, https://www.chartr.co" onkeydown="addUrlTag(event,'newsletter')">
+      </div>
+    </div>
+
+    <hr class="field-divider">
+
+    <!-- 8C: Websites -->
+    <div class="field">
+      <label>Websites to summarize weekly</label>
+      <div class="hint">Paste a URL and press Enter. The pipeline fetches and summarizes these every week.</div>
+      <div class="tag-input-wrap" onclick="this.querySelector('input').focus()">
+        <div id="website-tags"></div>
+        <input class="tag-input" id="website-input" placeholder="e.g. https://rbnenergy.com, https://www.rechargenews.com" onkeydown="addUrlTag(event,'website')">
+      </div>
+    </div>
+  </div>
+
   <!-- ── Generated Output ── -->
   <div class="output-section">
     <h2>Your generated config</h2>
@@ -896,7 +983,148 @@ const state = {
   recruitTags: [],
   keypeopleEntries: [],
   teamMembers: [],
+  newsletterTags: [],
+  websiteTags: [],
+  customFeeds: [],   // [{name, rss}]
 };
+
+// ── Section 8: Intelligence Sources ───────────────────────────────────────
+
+// All suggested podcast definitions
+const ALL_PODCASTS = [
+  { name: 'Infrastructure Investor Podcast', rss: 'https://feeds.megaphone.fm/MSNBCbusiness-7594684', desc: 'Flagship PE infrastructure show', sectors: [] },
+  { name: 'Acquired', rss: 'https://feeds.acquired.fm/acquired', desc: 'Deep-dives on companies and markets', sectors: [] },
+  { name: 'Catalyst', rss: 'https://feeds.megaphone.fm/FRHI3783594776', desc: 'Energy transition and power markets', sectors: ['power & utilities', 'energy transition', 'renewables'] },
+  { name: 'The Energy Gang', rss: 'https://feeds.simplecast.com/yS_4V_br', desc: 'Power sector policy and markets', sectors: ['power & utilities', 'energy transition'] },
+  { name: 'The Data Center Podcast', rss: 'https://feeds.buzzsprout.com/752836.rss', desc: 'Operators, hyperscalers, capacity', sectors: ['digital infrastructure'] },
+  { name: 'Eye on AI', rss: 'https://feeds.transistor.fm/eye-on-ai', desc: 'Enterprise AI adoption', sectors: ['digital infrastructure'] },
+  { name: 'Oil & Gas This Week', rss: 'https://feeds.buzzsprout.com/1141396.rss', desc: 'Midstream and commodity markets', sectors: ['midstream / LNG'] },
+  { name: 'S&P Global Platts', rss: 'https://feeds.megaphone.fm/spglobal', desc: 'LNG and gas fundamentals', sectors: ['midstream / LNG'] },
+  { name: 'Capital Allocators', rss: 'https://feeds.simplecast.com/j4V3ygFB', desc: 'LP/GP strategy and manager selection', sectors: ['general PE', 'macro'] },
+  { name: 'Invest Like the Best', rss: 'https://feeds.megaphone.fm/ILTB2021', desc: 'Broad investing perspectives', sectors: ['general PE', 'macro'] },
+];
+
+// Track selected podcast names
+const selectedPodcasts = new Set(['Infrastructure Investor Podcast', 'Acquired']);
+
+function renderPodcastGrid() {
+  const grid = document.getElementById('podcast-grid');
+  if (!grid) return;
+
+  // Determine which sectors are active
+  const activeSectors = state.focusItems.map(f => f.value.toLowerCase());
+
+  grid.innerHTML = '';
+  ALL_PODCASTS.forEach(pod => {
+    const isAlways = pod.sectors.length === 0;
+    const isRelevant = isAlways || pod.sectors.some(s =>
+      activeSectors.some(a => a.includes(s.toLowerCase()) || s.toLowerCase().includes(a.split(' ')[0]))
+    );
+
+    if (!isRelevant) return;
+
+    const selected = selectedPodcasts.has(pod.name);
+    const sectorLabel = isAlways ? 'Always' : pod.sectors[0];
+
+    const card = document.createElement('div');
+    card.className = 'podcast-card' + (selected ? ' selected' : '');
+    card.innerHTML = `
+      <div class="podcast-toggle"></div>
+      <div class="podcast-info">
+        <div class="podcast-name">${pod.name}</div>
+        <div class="podcast-desc">${pod.desc}</div>
+      </div>
+      <div class="podcast-sector-badge">${sectorLabel}</div>
+    `;
+    card.onclick = () => {
+      if (selectedPodcasts.has(pod.name)) {
+        selectedPodcasts.delete(pod.name);
+        card.classList.remove('selected');
+      } else {
+        selectedPodcasts.add(pod.name);
+        card.classList.add('selected');
+      }
+      update();
+    };
+    grid.appendChild(card);
+  });
+}
+
+function addCustomFeed() {
+  state.customFeeds.push({ name: '', rss: '' });
+  renderCustomFeeds();
+}
+
+function renderCustomFeeds() {
+  const el = document.getElementById('custom-feeds');
+  if (!el) return;
+  el.innerHTML = state.customFeeds.map((feed, i) => `
+    <div class="custom-feed-row">
+      <input type="text" placeholder="Show name" value="${feed.name}"
+        oninput="state.customFeeds[${i}].name=this.value;update()" style="max-width:180px;">
+      <input type="text" placeholder="RSS feed URL" value="${feed.rss}"
+        oninput="state.customFeeds[${i}].rss=this.value;update()">
+      <button class="custom-feed-remove" onclick="state.customFeeds.splice(${i},1);renderCustomFeeds();update()">Remove</button>
+    </div>
+  `).join('');
+}
+
+// URL tag inputs (newsletters, websites)
+function addUrlTag(e, type) {
+  if (e.key !== 'Enter' && e.key !== ',') return;
+  e.preventDefault();
+  const input = document.getElementById(`${type}-input`);
+  const val = input.value.trim().replace(/,$/, '');
+  if (!val) return;
+  const arr = type === 'newsletter' ? state.newsletterTags : state.websiteTags;
+  if (!arr.includes(val)) arr.push(val);
+  input.value = '';
+  renderUrlTags(type);
+  update();
+}
+
+function removeUrlTag(type, val) {
+  const arr = type === 'newsletter' ? state.newsletterTags : state.websiteTags;
+  const i = arr.indexOf(val);
+  if (i !== -1) arr.splice(i, 1);
+  renderUrlTags(type);
+  update();
+}
+
+function renderUrlTags(type) {
+  const el = document.getElementById(`${type}-tags`);
+  if (!el) return;
+  const arr = type === 'newsletter' ? state.newsletterTags : state.websiteTags;
+  el.innerHTML = arr.map(v =>
+    `<span class="tag">${v}<span class="tag-remove" onclick="removeUrlTag('${type}','${v.replace(/'/g,"\\'")}')">×</span></span>`
+  ).join('');
+}
+
+function genIntelligenceSourcesYaml() {
+  const podLines = [];
+
+  ALL_PODCASTS.forEach(pod => {
+    if (selectedPodcasts.has(pod.name)) {
+      podLines.push(`  - show: "${pod.name}"\n    rss: "${pod.rss}"\n    enabled: true`);
+    }
+  });
+  state.customFeeds.forEach(feed => {
+    if (feed.name && feed.rss) {
+      podLines.push(`  - show: "${feed.name}"\n    rss: "${feed.rss}"\n    enabled: true`);
+    }
+  });
+
+  const newsLines = state.newsletterTags.map(u => `  - url: "${u}"`).join('\n');
+  const siteLines = state.websiteTags.map(u => `  - url: "${u}"\n    cadence: weekly`).join('\n');
+
+  let yaml = `intelligence_sources:\n  podcasts:\n`;
+  yaml += podLines.length ? podLines.join('\n') + '\n' : '    # No podcasts selected\n';
+  yaml += `  newsletters:\n`;
+  yaml += newsLines ? newsLines + '\n' : '    # No newsletters added\n';
+  yaml += `  websites:\n`;
+  yaml += siteLines ? siteLines + '\n' : '    # No websites added\n';
+  return yaml;
+}
 
 // ── Radio helpers ──────────────────────────────────────────────────────────
 function selectRadio(groupId, el, value) {
@@ -932,6 +1160,7 @@ function toggleFocus(el, value) {
     if (i !== -1) { orderEl.textContent = i + 1; c.classList.add('selected'); }
     else { c.classList.remove('selected'); }
   });
+  renderPodcastGrid();
   update();
 }
 
@@ -1196,7 +1425,9 @@ function genFirmContextYaml() {
   const owners = [name.split(' ')[0], ...state.teamMembers.filter(m=>m.name).map(m=>m.name.split(' ')[0])]
     .filter(Boolean).map(n => `  - "${n}"`).join('\n');
 
-  return `# ── WHO YOU ARE ──────────────────────────────────────────────────
+  return `# ── INTELLIGENCE SOURCES ─────────────────────────────────────────
+${genIntelligenceSourcesYaml()}
+# ── WHO YOU ARE ──────────────────────────────────────────────────
 principal:
   name: "${name}"
   role: "${frame}"
@@ -1551,6 +1782,8 @@ function update() {
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────
+renderPodcastGrid();
+renderCustomFeeds();
 update();
 </script>
 </body>
