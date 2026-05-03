@@ -5,13 +5,15 @@ setup_new_firm.py — Auto-creates the Google Drive folder/Doc structure for a n
 Run AFTER setup.sh (which handles OAuth, Keychain, LaunchAgents).
 
 Usage:
-    python3 setup_new_firm.py [--config /path/to/config] [--force]
+    python3 setup_new_firm.py [--config /path/to/config] [--force] [--dry-run]
+
+Idempotent: if a "COS Pipeline — {short}" root folder already exists, the script
+detects it and (with --force) refreshes IDs in place rather than creating duplicates.
 """
 
 import argparse
 import json
 import os
-import pickle
 import sys
 from pathlib import Path
 
@@ -27,18 +29,12 @@ CYAN   = "\033[36m"
 
 def ok(msg):   print(f"  {GREEN}✓{RESET} {msg}")
 def info(msg): print(f"  {BLUE}·{RESET} {msg}")
+def warn(msg): print(f"  {YELLOW}!{RESET} {msg}")
 def step(msg): print(f"\n{BOLD}{CYAN}▶ {msg}{RESET}")
 def err(msg):  print(f"  {RED}✗{RESET} {msg}", file=sys.stderr)
 def head(msg): print(f"\n{BOLD}{msg}{RESET}")
 
-# ── Defaults ──────────────────────────────────────────────────────────────────
-
-DEFAULT_PODCAST_FEEDS = [
-    {"show": "Infrastructure Investor", "rss": "https://feeds.megaphone.fm/MSNBCbusiness-7594684"},
-    {"show": "Catalyst",                "rss": "https://feeds.megaphone.fm/FRHI3783594776"},
-    {"show": "Acquired",                "rss": "https://feeds.acquired.fm/acquired"},
-    {"show": "The Gist (PitchBook)",    "rss": "https://feeds.megaphone.fm/pitchbook"},
-]
+# ── Paths & defaults ──────────────────────────────────────────────────────────
 
 TOKEN_PATH = Path.home() / "credentials" / "token.json"
 
@@ -47,6 +43,42 @@ SCOPES = [
     "https://www.googleapis.com/auth/documents",
     "https://www.googleapis.com/auth/gmail.readonly",
 ]
+
+# Empty by default — user adds real RSS feeds via the configure.html wizard
+# (which generates the intelligence_sources.podcasts block). Shipping fake
+# placeholder URLs would 404 every time the pipeline runs.
+DEFAULT_PODCAST_FEEDS = []
+
+# Folder structure: list of (logical_key, display_name, parent_logical_key_or_None)
+FOLDER_TREE = [
+    ("root",        None,                    None),          # name set dynamically
+    ("cos",         "Chief of Staff",        "root"),
+    ("transcripts", "Transcripts",           "root"),
+    ("recordings",  "Call Recordings",       "root"),
+    ("recruiting",  "Recruiting",            "root"),
+    ("deals",       None,                    "root"),         # name set dynamically
+    ("otter",       "Otter AI",              "transcripts"),
+    ("firefly",     "Firefly",               "transcripts"),
+]
+
+# Doc list: (logical_key, display_name_template, parent_logical_key)
+DOC_TREE = [
+    ("briefing_log",     "Personal Briefing Log",       "cos"),
+    ("follow_ups",       "Follow-ups",                  "cos"),
+    ("people_crm",       "People / CRM",                "cos"),
+    ("recruiting",       "Recruiting Pipeline",         "cos"),
+    ("deal_pipeline",    "{short} Deal Pipeline",       "cos"),
+    ("call_transcripts", "Call Transcripts & Memos",    "cos"),
+]
+
+# ── Dependency checks ────────────────────────────────────────────────────────
+
+try:
+    import yaml
+except ImportError:
+    err("Missing required package: pyyaml")
+    print(f"\n  Install with: pip3 install pyyaml")
+    sys.exit(1)
 
 # ── Google auth ───────────────────────────────────────────────────────────────
 
@@ -60,7 +92,6 @@ def load_credentials():
     try:
         from google.oauth2.credentials import Credentials
         from google.auth.transport.requests import Request
-        import google.auth.exceptions
 
         creds = Credentials.from_authorized_user_file(str(TOKEN_PATH), SCOPES)
         if creds.expired and creds.refresh_token:
@@ -74,36 +105,81 @@ def load_credentials():
         sys.exit(1)
 
 
-def build_services(creds):
+def build_drive(creds):
     from googleapiclient.discovery import build
-    drive = build("drive", "v3", credentials=creds)
-    docs  = build("docs",  "v1", credentials=creds)
-    return drive, docs
+    return build("drive", "v3", credentials=creds)
 
 
 # ── Drive helpers ─────────────────────────────────────────────────────────────
 
+def find_folder(drive, name, parent_id=None):
+    """Return folder ID if a folder with this name exists under parent_id, else None."""
+    q = (
+        f"name = '{name.replace(chr(39), chr(92)+chr(39))}' "
+        f"and mimeType = 'application/vnd.google-apps.folder' "
+        f"and trashed = false"
+    )
+    if parent_id:
+        q += f" and '{parent_id}' in parents"
+    resp = drive.files().list(q=q, fields="files(id,name)", pageSize=10).execute()
+    files = resp.get("files", [])
+    return files[0]["id"] if files else None
+
+
+def find_doc(drive, name, parent_id=None):
+    """Return doc ID if a Google Doc with this name exists under parent_id."""
+    q = (
+        f"name = '{name.replace(chr(39), chr(92)+chr(39))}' "
+        f"and mimeType = 'application/vnd.google-apps.document' "
+        f"and trashed = false"
+    )
+    if parent_id:
+        q += f" and '{parent_id}' in parents"
+    resp = drive.files().list(q=q, fields="files(id,name)", pageSize=10).execute()
+    files = resp.get("files", [])
+    return files[0]["id"] if files else None
+
+
 def create_folder(drive, name, parent_id=None):
-    meta = {
-        "name": name,
-        "mimeType": "application/vnd.google-apps.folder",
-    }
+    meta = {"name": name, "mimeType": "application/vnd.google-apps.folder"}
     if parent_id:
         meta["parents"] = [parent_id]
-    result = drive.files().create(body=meta, fields="id").execute()
-    return result["id"]
+    return drive.files().create(body=meta, fields="id").execute()["id"]
 
 
-def create_doc(drive, docs_svc, name, parent_id=None):
-    """Create a blank Google Doc inside a Drive folder."""
-    meta = {
-        "name": name,
-        "mimeType": "application/vnd.google-apps.document",
-    }
+def create_doc(drive, name, parent_id=None):
+    meta = {"name": name, "mimeType": "application/vnd.google-apps.document"}
     if parent_id:
         meta["parents"] = [parent_id]
-    result = drive.files().create(body=meta, fields="id").execute()
-    return result["id"]
+    return drive.files().create(body=meta, fields="id").execute()["id"]
+
+
+def get_or_create_folder(drive, name, parent_id, dry_run=False):
+    """Idempotent: returns existing folder ID if present, else creates."""
+    existing = find_folder(drive, name, parent_id)
+    if existing:
+        info(f"Folder exists: {name}  ({existing})")
+        return existing, "found"
+    if dry_run:
+        info(f"DRY RUN — would create folder: {name}")
+        return "DRY-RUN", "would-create"
+    fid = create_folder(drive, name, parent_id)
+    ok(f"Folder created: {name}  ({fid})")
+    return fid, "created"
+
+
+def get_or_create_doc(drive, name, parent_id, dry_run=False):
+    """Idempotent: returns existing doc ID if present, else creates."""
+    existing = find_doc(drive, name, parent_id)
+    if existing:
+        info(f"Doc exists: {name}  ({existing})")
+        return existing, "found"
+    if dry_run:
+        info(f"DRY RUN — would create doc: {name}")
+        return "DRY-RUN", "would-create"
+    did = create_doc(drive, name, parent_id)
+    ok(f"Doc created: {name}  ({did})")
+    return did, "created"
 
 
 # ── Prompt helpers ────────────────────────────────────────────────────────────
@@ -121,177 +197,16 @@ def prompt(label, default=None, required=True):
         print(f"  {YELLOW}This field is required.{RESET}")
 
 
-def prompt_yn(label, default=True):
-    suffix = " [Y/n]" if default else " [y/N]"
-    val = input(f"  {BOLD}{label}{RESET}{suffix}: ").strip().lower()
-    if not val:
-        return default
-    return val.startswith("y")
-
-
-# ── YAML writer (no external dep needed for simple cases) ─────────────────────
-
-def _yaml_str(s):
-    """Wrap a string in double quotes, escaping embedded quotes."""
-    s = str(s).replace('"', '\\"')
-    return f'"{s}"'
-
-
-def write_firm_context_yaml(config_dir: Path, data: dict, existing: dict):
-    """Write firm_context.yaml, preserving wizard-generated keys from existing file."""
-
-    # Keys from the configure.html wizard that we preserve verbatim
-    PRESERVE_KEYS = [
-        "investment_focus", "analytical_style", "draft_voice",
-        "prompt_overrides", "deal_keywords", "recruit_keywords",
-        "principal", "firm", "team", "owner_whitelist",
-        "key_people", "peer_firms",
-    ]
-
-    fi = data["folder_ids"]
-    di = data["doc_ids"]
-    fs = data["firm_short"]
-    fn = data["firm_name"]
-    yn = data["your_name"]
-    yr = data["your_role"]
-    em = data["your_email"]
-
-    # Podcast feeds: use existing if already set, else defaults
-    if "podcast_feeds" in existing.get("personal", {}):
-        podcast_feeds = existing["personal"]["podcast_feeds"]
-        podcast_yaml = "\n".join(
-            f'    - show: {_yaml_str(f["show"])}\n      rss:  {_yaml_str(f["rss"])}'
-            for f in podcast_feeds
-        )
-    else:
-        podcast_yaml = "\n".join(
-            f'    - show: {_yaml_str(f["show"])}\n      rss:  {_yaml_str(f["rss"])}'
-            for f in DEFAULT_PODCAST_FEEDS
-        )
-
-    lines = []
-    lines.append("# ── GOOGLE DRIVE STRUCTURE ────────────────────────────────────────")
-    lines.append("# Generated by setup_new_firm.py — do not edit IDs manually")
-    lines.append("google_drive:")
-    lines.append(f"  root_folder_id:     {_yaml_str(fi['root'])}")
-    lines.append(f"  cos_folder_id:      {_yaml_str(fi['cos'])}")
-    lines.append(f"  transcripts_folder_id: {_yaml_str(fi['transcripts'])}")
-    lines.append(f"  otter_folder_id:    {_yaml_str(fi['otter'])}")
-    lines.append(f"  firefly_folder_id:  {_yaml_str(fi['firefly'])}")
-    lines.append(f"  recordings_folder_id: {_yaml_str(fi['recordings'])}")
-    lines.append(f"  recruiting_folder_id: {_yaml_str(fi['recruiting'])}")
-    lines.append(f"  deals_folder_id:    {_yaml_str(fi['deals'])}")
-    lines.append("")
-    lines.append("# ── GOOGLE DOCS ────────────────────────────────────────────────────")
-    lines.append("google_docs:")
-    lines.append(f"  briefing_log:       {_yaml_str(di['briefing_log'])}")
-    lines.append(f"  follow_ups:         {_yaml_str(di['follow_ups'])}")
-    lines.append(f"  people_crm:         {_yaml_str(di['people_crm'])}")
-    lines.append(f"  recruiting:         {_yaml_str(di['recruiting'])}")
-    lines.append(f"  deal_pipeline:      {_yaml_str(di['deal_pipeline'])}")
-    lines.append(f"  call_transcripts:   {_yaml_str(di['call_transcripts'])}")
-    lines.append("")
-
-    # Merge preserved keys from existing file
-    for key in PRESERVE_KEYS:
-        if key in existing:
-            lines.append(f"# ── {key.upper()} (from configure.html wizard) ─────────────────────────")
-            # Re-serialize the preserved block (best-effort — dict → yaml)
-            lines.append(_dict_to_yaml(key, existing[key], indent=0))
-            lines.append("")
-
-    # Personal block
-    lines.append("# ── PERSONAL ────────────────────────────────────────────────────────")
-    lines.append("personal:")
-    lines.append(f"  name:           {_yaml_str(yn)}")
-    lines.append(f"  email:          {_yaml_str(em)}")
-    lines.append(f"  role:           {_yaml_str(yr)}")
-    lines.append(f"  briefing_email: {_yaml_str(em)}")
-    lines.append("  podcast_feeds:")
-    lines.append(podcast_yaml)
-    lines.append("")
-
-    # Transcript sources using the created folders
-    lines.append("# ── TRANSCRIPT SOURCES ────────────────────────────────────────────")
-    lines.append("transcript_sources:")
-    lines.append("  - type: google_drive_folder")
-    lines.append("    name: Otter AI")
-    lines.append("    folder_ids:")
-    lines.append(f"      - {_yaml_str(fi['otter'])}")
-    lines.append("    category_hint: auto")
-    lines.append("  - type: google_drive_folder")
-    lines.append("    name: Firefly")
-    lines.append("    folder_ids:")
-    lines.append(f"      - {_yaml_str(fi['firefly'])}")
-    lines.append("    category_hint: auto")
-    lines.append("")
-
-    path = config_dir / "firm_context.yaml"
-    path.write_text("\n".join(lines))
-    return path
-
-
-def _dict_to_yaml(key, val, indent=0):
-    """Very simple dict/list/scalar → YAML serializer (enough for preserved blocks)."""
-    pad = "  " * indent
-    if isinstance(val, dict):
-        lines = [f"{pad}{key}:"]
-        for k, v in val.items():
-            lines.append(_dict_to_yaml(k, v, indent + 1))
-        return "\n".join(lines)
-    elif isinstance(val, list):
-        lines = [f"{pad}{key}:"]
-        for item in val:
-            if isinstance(item, dict):
-                sub = "\n".join(
-                    _dict_to_yaml(k, v, indent + 2) for k, v in item.items()
-                )
-                lines.append(f"{'  ' * (indent+1)}-")
-                lines.append(sub)
-            else:
-                lines.append(f"{'  ' * (indent+1)}- {_yaml_str(item)}")
-        return "\n".join(lines)
-    else:
-        return f"{pad}{key}: {_yaml_str(val)}"
-
-
-def write_firm_config_json(config_dir: Path, data: dict, existing_config: dict):
-    """Write firm_config.json."""
-    fs = data["firm_short"]
-    prefix = f"cos-pipeline-{fs.lower().replace(' ', '-')}"
-
-    config = {
-        "keychain_service_prefix": existing_config.get("keychain_service_prefix", prefix),
-        "first_run_lookback_hours": existing_config.get("first_run_lookback_hours", 168),
-        "packages": existing_config.get("packages", [
-            "pyyaml",
-            "google-auth",
-            "google-auth-oauthlib",
-            "google-api-python-client",
-            "anthropic",
-            "pypdf",
-            "assemblyai",
-        ]),
-        "deal_keywords": existing_config.get("deal_keywords", []),
-        "recruit_keywords": existing_config.get("recruit_keywords", []),
-    }
-
-    path = config_dir / "firm_config.json"
-    path.write_text(json.dumps(config, indent=2))
-    return path
-
-
-# ── Load existing config ──────────────────────────────────────────────────────
+# ── Config I/O ────────────────────────────────────────────────────────────────
 
 def load_existing_yaml(path: Path) -> dict:
-    """Load existing firm_context.yaml if present. Returns {} on any error."""
     if not path.exists():
         return {}
     try:
-        import yaml
         with open(path) as f:
             return yaml.safe_load(f) or {}
-    except Exception:
+    except Exception as e:
+        warn(f"Could not parse existing {path.name}: {e} — starting fresh")
         return {}
 
 
@@ -300,209 +215,316 @@ def load_existing_json(path: Path) -> dict:
         return {}
     try:
         return json.loads(path.read_text())
-    except Exception:
+    except Exception as e:
+        warn(f"Could not parse existing {path.name}: {e} — starting fresh")
         return {}
+
+
+def write_firm_context_yaml(path: Path, existing: dict, identity: dict, folder_ids: dict, doc_ids: dict):
+    """
+    Build the merged firm_context.yaml using yaml.safe_dump (no hand-rolled serialization).
+
+    Order of precedence:
+      1. Wizard-generated keys (principal, firm, team, draft_voice, prompt_overrides,
+         intelligence_sources, etc.) are preserved verbatim from existing.
+      2. We overwrite/add: google_drive, google_docs, transcript_sources, personal.
+      3. Identity fields (name, email, role) update principal/personal/team if missing.
+    """
+    merged = dict(existing)  # shallow copy — existing top-level keys preserved
+
+    # ── Identity: ensure principal block reflects what user just typed ──
+    principal = dict(merged.get("principal", {}))
+    principal.setdefault("name",        identity["name"])
+    principal.setdefault("role",        identity["role"])
+    principal.setdefault("background",  principal.get("background", ""))
+    principal.setdefault("investor_frame", principal.get("investor_frame", ""))
+    merged["principal"] = principal
+
+    # ── Firm block ──
+    firm = dict(merged.get("firm", {}))
+    firm.setdefault("name",       identity["firm_name"])
+    firm.setdefault("short_name", identity["firm_short"])
+    merged["firm"] = firm
+
+    # ── Team block: ensure user is listed if team is empty ──
+    if not merged.get("team"):
+        merged["team"] = [{
+            "name":               identity["name"],
+            "role":               identity["role"],
+            "internal_call_role": "host (drives the conversation, takes most action items)",
+        }]
+
+    # ── Personal block ──
+    personal = dict(merged.get("personal", {}))
+    personal.setdefault("email",          identity["email"])
+    personal.setdefault("briefing_email", identity["email"])
+    # Only set podcast_feeds if intelligence_sources.podcasts not already present
+    if not (merged.get("intelligence_sources", {}) or {}).get("podcasts"):
+        personal.setdefault("podcast_feeds", DEFAULT_PODCAST_FEEDS)
+    merged["personal"] = personal
+
+    # ── Drive folders (always overwritten with fresh IDs) ──
+    merged["google_drive"] = {
+        "root_folder_id":         folder_ids.get("root"),
+        "cos_folder_id":          folder_ids.get("cos"),
+        "transcripts_folder_id":  folder_ids.get("transcripts"),
+        "otter_folder_id":        folder_ids.get("otter"),
+        "firefly_folder_id":      folder_ids.get("firefly"),
+        "recordings_folder_id":   folder_ids.get("recordings"),
+        "recruiting_folder_id":   folder_ids.get("recruiting"),
+        "deals_folder_id":        folder_ids.get("deals"),
+    }
+
+    # ── Docs (always overwritten) ──
+    merged["google_docs"] = {
+        "briefing_log":     doc_ids.get("briefing_log"),
+        "follow_ups":       doc_ids.get("follow_ups"),
+        "people_crm":       doc_ids.get("people_crm"),
+        "recruiting":       doc_ids.get("recruiting"),
+        "deal_pipeline":    doc_ids.get("deal_pipeline"),
+        "call_transcripts": doc_ids.get("call_transcripts"),
+    }
+
+    # ── Transcript sources (use the freshly-created Otter / Firefly folder IDs) ──
+    merged["transcript_sources"] = [
+        {
+            "type":           "google_drive_folder",
+            "name":           "Otter AI",
+            "folder_ids":     [folder_ids.get("otter")],
+            "category_hint":  "auto",
+        },
+        {
+            "type":           "google_drive_folder",
+            "name":           "Firefly",
+            "folder_ids":     [folder_ids.get("firefly")],
+            "category_hint":  "auto",
+        },
+    ]
+
+    # Header comment
+    header = (
+        "# firm_context.yaml — generated by setup_new_firm.py\n"
+        "# Wizard-generated keys (principal, firm, team, draft_voice, intelligence_sources)\n"
+        "# are preserved on re-run. google_drive / google_docs / transcript_sources are\n"
+        "# regenerated each time setup_new_firm.py is run.\n\n"
+    )
+    body = yaml.safe_dump(merged, sort_keys=False, default_flow_style=False, allow_unicode=True, width=100)
+    path.write_text(header + body)
+
+
+def write_firm_config_json(path: Path, existing: dict, firm_short: str):
+    prefix = f"cos-pipeline-{firm_short.lower().replace(' ', '-')}"
+    config = {
+        "keychain_service_prefix":   existing.get("keychain_service_prefix", prefix),
+        "first_run_lookback_hours":  existing.get("first_run_lookback_hours", 168),
+        "packages":                  existing.get("packages", [
+            "pyyaml",
+            "google-auth",
+            "google-auth-oauthlib",
+            "google-api-python-client",
+            "anthropic",
+            "pypdf",
+            "assemblyai",
+        ]),
+        "deal_keywords":    existing.get("deal_keywords", []),
+        "recruit_keywords": existing.get("recruit_keywords", []),
+    }
+    path.write_text(json.dumps(config, indent=2) + "\n")
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
     parser = argparse.ArgumentParser(description="COS Pipeline — New Firm Setup")
-    parser.add_argument("--config", default=os.environ.get("COS_CONFIG_DIR", str(Path.home() / "cos-pipeline-config")),
+    parser.add_argument("--config",
+                        default=os.environ.get("COS_CONFIG_DIR", str(Path.home() / "cos-pipeline-config")),
                         help="Path to config directory (default: $COS_CONFIG_DIR or ~/cos-pipeline-config)")
-    parser.add_argument("--force", action="store_true", help="Re-create even if config already exists")
+    parser.add_argument("--force",   action="store_true",
+                        help="Refresh folder/doc IDs in place even if root folder already exists")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Show what would be created without creating anything")
     args = parser.parse_args()
 
-    config_dir = Path(args.config)
+    config_dir = Path(args.config).expanduser()
     config_dir.mkdir(parents=True, exist_ok=True)
 
-    yaml_path   = config_dir / "firm_context.yaml"
-    config_path = config_dir / "firm_config.json"
+    yaml_path = config_dir / "firm_context.yaml"
+    json_path = config_dir / "firm_config.json"
 
     print(f"\n{BOLD}{'═'*60}{RESET}")
     print(f"{BOLD}  COS Pipeline — New Firm Setup{RESET}")
     print(f"{BOLD}{'═'*60}{RESET}")
-    print(f"  Config dir: {CYAN}{config_dir}{RESET}")
+    print(f"  Config dir : {CYAN}{config_dir}{RESET}")
+    if args.dry_run:
+        print(f"  Mode       : {YELLOW}DRY RUN — no changes will be made{RESET}")
 
-    if yaml_path.exists() and not args.force:
-        print(f"\n  {YELLOW}firm_context.yaml already exists.{RESET}")
-        print(f"  Use {BOLD}--force{RESET} to overwrite, or press Enter to continue and update IDs.")
-        cont = input("  Continue? [Y/n]: ").strip().lower()
-        if cont == "n":
-            print("  Aborted.")
-            sys.exit(0)
-
-    # Load existing config to pre-fill and preserve wizard-generated keys
+    # ── Load existing config ──
     existing_yaml   = load_existing_yaml(yaml_path)
-    existing_config = load_existing_json(config_path)
+    existing_config = load_existing_json(json_path)
 
-    existing_principal = existing_yaml.get("principal", {})
-    existing_firm      = existing_yaml.get("firm", {})
-    existing_personal  = existing_yaml.get("personal", {})
+    if existing_yaml:
+        info(f"Found existing firm_context.yaml — will preserve wizard-generated keys")
 
-    # ── Prompt for identity ───────────────────────────────────────────────────
+    # ── Identity prompts (pre-fill from existing) ──
     step("Firm identity")
 
-    firm_name  = prompt("Firm full name",  existing_firm.get("name", ""))
-    firm_short = prompt("Firm short name (2-5 chars)", existing_firm.get("short_name", ""))
-    your_name  = prompt("Your full name",  existing_principal.get("name", ""))
-    your_email = prompt("Your email",      existing_personal.get("email", ""))
-    your_role  = prompt("Your role/title", existing_principal.get("role", ""))
+    existing_principal = existing_yaml.get("principal", {}) or {}
+    existing_firm      = existing_yaml.get("firm", {})      or {}
+    existing_personal  = existing_yaml.get("personal", {})  or {}
 
-    data = {
+    firm_name  = prompt("Firm full name",            existing_firm.get("name"))
+    firm_short = prompt("Firm short name (2-8 chars)", existing_firm.get("short_name"))
+    your_name  = prompt("Your full name",            existing_principal.get("name"))
+    your_email = prompt("Your email",                existing_personal.get("email"))
+    your_role  = prompt("Your role/title",           existing_principal.get("role", "Principal"))
+
+    identity = {
+        "name":        your_name,
+        "email":       your_email,
+        "role":        your_role,
         "firm_name":   firm_name,
         "firm_short":  firm_short,
-        "your_name":   your_name,
-        "your_email":  your_email,
-        "your_role":   your_role,
-        "folder_ids":  {},
-        "doc_ids":     {},
     }
 
-    # ── Load Google APIs ──────────────────────────────────────────────────────
+    # ── Auth ──
     step("Authenticating with Google")
     creds = load_credentials()
-    ok("Token loaded")
+    ok("OAuth token loaded")
 
     try:
-        drive, docs_svc = build_services(creds)
-        ok("Drive and Docs API clients ready")
+        drive = build_drive(creds)
+        ok("Drive API client ready")
     except Exception as e:
-        err(f"Failed to build API clients: {e}")
-        print("\n  Install missing packages: pip3 install google-api-python-client google-auth-oauthlib")
+        err(f"Failed to build Drive client: {e}")
+        print(f"\n  Install missing packages: pip3 install google-api-python-client google-auth-oauthlib")
         sys.exit(1)
 
-    # ── Create folder structure ───────────────────────────────────────────────
+    # ── Idempotency check: does the root folder already exist? ──
+    root_name = f"COS Pipeline — {firm_short}"
+    existing_root = find_folder(drive, root_name, parent_id=None)
+
+    if existing_root and not args.force and not args.dry_run:
+        warn(f"Root folder already exists: {root_name} ({existing_root})")
+        print()
+        print(f"  Re-running would create duplicate folders. Choose one:")
+        print(f"    • Re-use the existing structure and refresh IDs in YAML:")
+        print(f"        {BOLD}python3 setup_new_firm.py --force{RESET}")
+        print(f"    • Move/rename the existing folder in Drive, then re-run this script.")
+        print()
+        sys.exit(2)
+
+    # ── Create / find folders ──
     step("Creating Google Drive folder structure")
 
-    created = 0
-    failed  = 0
+    folder_ids = {}
+    counts = {"created": 0, "found": 0, "would-create": 0}
 
-    def safe_create_folder(name, parent=None, key=None):
-        nonlocal created, failed
+    for key, name, parent_key in FOLDER_TREE:
+        # Resolve dynamic names
+        if key == "root":
+            name = root_name
+        elif key == "deals":
+            name = f"{firm_short} Deals"
+
+        parent_id = folder_ids.get(parent_key) if parent_key else None
+        # If parent failed (None) but was expected, skip
+        if parent_key and not parent_id:
+            err(f"Skipping {name} — parent folder missing")
+            folder_ids[key] = None
+            continue
+
         try:
-            fid = create_folder(drive, name, parent)
-            ok(f"Folder created: {name}  ({fid})")
-            created += 1
-            if key:
-                data["folder_ids"][key] = fid
-            return fid
+            fid, status = get_or_create_folder(drive, name, parent_id, dry_run=args.dry_run)
+            folder_ids[key] = fid
+            counts[status] = counts.get(status, 0) + 1
         except Exception as e:
-            err(f"Failed to create folder '{name}': {e}")
-            failed += 1
-            if key:
-                data["folder_ids"][key] = "ERROR"
-            return None
+            err(f"Failed on folder '{name}': {e}")
+            folder_ids[key] = None
 
-    def safe_create_doc(name, parent=None, key=None):
-        nonlocal created, failed
-        try:
-            did = create_doc(drive, docs_svc, name, parent)
-            ok(f"Doc created: {name}  ({did})")
-            created += 1
-            if key:
-                data["doc_ids"][key] = did
-            return did
-        except Exception as e:
-            err(f"Failed to create doc '{name}': {e}")
-            failed += 1
-            if key:
-                data["doc_ids"][key] = "ERROR"
-            return None
-
-    # Root folder
-    root_id = safe_create_folder(f"COS Pipeline — {firm_short}", key="root")
-
-    # Sub-folders
-    cos_id         = safe_create_folder("Chief of Staff",   root_id, "cos")
-    transcripts_id = safe_create_folder("Transcripts",      root_id, "transcripts")
-    recordings_id  = safe_create_folder("Call Recordings",  root_id, "recordings")
-    recruiting_id  = safe_create_folder("Recruiting",       root_id, "recruiting")
-    deals_id       = safe_create_folder(f"{firm_short} Deals", root_id, "deals")
-
-    # Transcripts sub-folders
-    otter_id   = safe_create_folder("Otter AI", transcripts_id, "otter")
-    firefly_id = safe_create_folder("Firefly",  transcripts_id, "firefly")
-
-    # ── Create Google Docs ────────────────────────────────────────────────────
+    # ── Create / find docs ──
     step("Creating Google Docs in Chief of Staff folder")
 
-    safe_create_doc("Personal Briefing Log",       cos_id, "briefing_log")
-    safe_create_doc("Follow-ups",                  cos_id, "follow_ups")
-    safe_create_doc("People / CRM",                cos_id, "people_crm")
-    safe_create_doc("Recruiting Pipeline",         cos_id, "recruiting")
-    safe_create_doc(f"{firm_short} Deal Pipeline", cos_id, "deal_pipeline")
-    safe_create_doc("Call Transcripts & Memos",    cos_id, "call_transcripts")
+    doc_ids = {}
+    cos_id = folder_ids.get("cos")
 
-    # ── Write config files ────────────────────────────────────────────────────
-    step("Writing config files")
+    if not cos_id and not args.dry_run:
+        err("Cannot create docs — Chief of Staff folder ID missing")
+    else:
+        for key, name_tmpl, parent_key in DOC_TREE:
+            name = name_tmpl.format(short=firm_short)
+            parent_id = folder_ids.get(parent_key)
+            if not parent_id and not args.dry_run:
+                err(f"Skipping doc '{name}' — parent folder missing")
+                doc_ids[key] = None
+                continue
+            try:
+                did, status = get_or_create_doc(drive, name, parent_id, dry_run=args.dry_run)
+                doc_ids[key] = did
+                counts[status] = counts.get(status, 0) + 1
+            except Exception as e:
+                err(f"Failed on doc '{name}': {e}")
+                doc_ids[key] = None
 
-    try:
-        yaml_out = write_firm_context_yaml(config_dir, data, existing_yaml)
-        ok(f"Written: {yaml_out}")
-    except Exception as e:
-        err(f"Failed to write firm_context.yaml: {e}")
-        failed += 1
+    # ── Write config files ──
+    if args.dry_run:
+        info("Dry-run mode — skipping config file writes")
+    else:
+        step("Writing config files")
+        try:
+            write_firm_context_yaml(yaml_path, existing_yaml, identity, folder_ids, doc_ids)
+            ok(f"Wrote: {yaml_path}")
+        except Exception as e:
+            err(f"Failed to write firm_context.yaml: {e}")
 
-    try:
-        json_out = write_firm_config_json(config_dir, data, existing_config)
-        ok(f"Written: {json_out}")
-    except Exception as e:
-        err(f"Failed to write firm_config.json: {e}")
-        failed += 1
+        try:
+            write_firm_config_json(json_path, existing_config, firm_short)
+            ok(f"Wrote: {json_path}")
+        except Exception as e:
+            err(f"Failed to write firm_config.json: {e}")
 
-    # ── Summary ───────────────────────────────────────────────────────────────
-    fi = data["folder_ids"]
-    di = data["doc_ids"]
-
+    # ── Summary ──
     print(f"\n{BOLD}{'═'*60}{RESET}")
-    print(f"{BOLD}  Setup complete — {GREEN}{created} created{RESET}{BOLD} | {RED}{failed} failed{RESET}")
+    summary_bits = []
+    if counts.get("created"):       summary_bits.append(f"{GREEN}{counts['created']} created{RESET}")
+    if counts.get("found"):         summary_bits.append(f"{BLUE}{counts['found']} already existed{RESET}")
+    if counts.get("would-create"):  summary_bits.append(f"{YELLOW}{counts['would-create']} would be created{RESET}")
+    print(f"{BOLD}  Setup {'preview' if args.dry_run else 'complete'} — {' | '.join(summary_bits) if summary_bits else 'nothing to do'}")
     print(f"{BOLD}{'═'*60}{RESET}")
 
-    head("Google Drive folders")
-    for label, key in [
-        ("Root",           "root"),
-        ("Chief of Staff", "cos"),
-        ("Transcripts",    "transcripts"),
-        ("Call Recordings","recordings"),
-        ("Recruiting",     "recruiting"),
-        (f"{firm_short} Deals", "deals"),
-    ]:
-        fid = fi.get(key, "ERROR")
-        print(f"  {label:<22} {CYAN}{fid}{RESET}")
+    head("Folder IDs")
+    for key, _, _ in FOLDER_TREE:
+        label = {
+            "root":        "Root",
+            "cos":         "Chief of Staff",
+            "transcripts": "Transcripts",
+            "recordings":  "Call Recordings",
+            "recruiting":  "Recruiting",
+            "deals":       f"{firm_short} Deals",
+            "otter":       "  └─ Otter AI",
+            "firefly":     "  └─ Firefly",
+        }[key]
+        print(f"  {label:<22} {CYAN}{folder_ids.get(key)}{RESET}")
 
-    head("Google Docs")
-    for label, key in [
-        ("Personal Briefing Log",       "briefing_log"),
-        ("Follow-ups",                  "follow_ups"),
-        ("People / CRM",                "people_crm"),
-        ("Recruiting Pipeline",         "recruiting"),
-        (f"{firm_short} Deal Pipeline", "deal_pipeline"),
-        ("Call Transcripts & Memos",    "call_transcripts"),
-    ]:
-        did = di.get(key, "ERROR")
-        print(f"  {label:<28} {CYAN}{did}{RESET}")
+    head("Doc IDs")
+    for key, name_tmpl, _ in DOC_TREE:
+        label = name_tmpl.format(short=firm_short)
+        print(f"  {label:<28} {CYAN}{doc_ids.get(key)}{RESET}")
 
-    # Prominent Otter / Firefly callout
+    # ── Transcript app callout ──
     print(f"\n{BOLD}{'─'*60}{RESET}")
-    print(f"{BOLD}  TRANSCRIPT APP CONNECTION{RESET}")
+    print(f"{BOLD}  CONNECT YOUR TRANSCRIPT APP{RESET}")
     print(f"{BOLD}{'─'*60}{RESET}")
-
-    otter_id_val   = fi.get("otter",   "ERROR")
-    firefly_id_val = fi.get("firefly", "ERROR")
-
     print(f"""
   {BOLD}Otter AI{RESET}
-  Folder ID : {YELLOW}{otter_id_val}{RESET}
-  Path      : Otter app → Settings → Integrations → Google Drive → Connect
+    Folder ID : {YELLOW}{folder_ids.get('otter')}{RESET}
+    Path      : Otter app → Settings → Apps → Google Drive → Connect
 
   {BOLD}Firefly{RESET}
-  Folder ID : {YELLOW}{firefly_id_val}{RESET}
-  Path      : Firefly app → Settings → Sync → Google Drive
+    Folder ID : {YELLOW}{folder_ids.get('firefly')}{RESET}
+    Path      : Firefly app → Settings → Integrations → Google Drive
 
-  Paste the folder ID shown above into each app's Google Drive field.
-  From now on, any transcript saved by Otter or Firefly will be picked
-  up automatically by the pipeline within 24 hours.
+  Paste the folder ID into each app. From now on, any transcript saved
+  by Otter or Firefly will be picked up by the pipeline within 24 hours.
 """)
 
     print(f"{BOLD}{'─'*60}{RESET}")
@@ -519,14 +541,9 @@ def main():
     http://localhost:7777
 
   {BOLD}Config written to:{RESET}
-    {config_dir}/firm_context.yaml
-    {config_dir}/firm_config.json
+    {yaml_path}
+    {json_path}
 """)
-
-    if failed:
-        print(f"  {YELLOW}Warning: {failed} item(s) failed. Review errors above and re-run with --force.{RESET}\n")
-    else:
-        print(f"  {GREEN}All items created successfully.{RESET}\n")
 
 
 if __name__ == "__main__":

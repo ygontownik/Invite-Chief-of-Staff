@@ -334,7 +334,7 @@
               <a href="https://github.com/signup" target="_blank">https://github.com/signup</a>
               <button class="url-copy-btn" onclick="copyUrl(this)">Copy URL</button>
             </div>
-            <div class="account-card-note">You'll need your GitHub username in Step 3 when you clone the repo.</div>
+            <div class="account-card-note">Send your GitHub username to whoever is granting you access to the Dashboard repo. They'll add you as a read-only collaborator so you can clone it in Step 3.</div>
           </div>
 
           <div class="account-card">
@@ -352,7 +352,7 @@
               <a href="https://www.assemblyai.com/dashboard" target="_blank">https://www.assemblyai.com/dashboard</a>
               <button class="url-copy-btn" onclick="copyUrl(this)">Copy URL</button>
             </div>
-            <div class="account-card-note">Free tier included. Create account, copy the API key from the dashboard. ~$0.009/min billed after the free tier.</div>
+            <div class="account-card-note">Sign up (credit card required), copy your API key from the dashboard. Pricing is ~$0.009/min of audio. Expect a few dollars/month for typical use.</div>
           </div>
 
           <div class="account-card">
@@ -392,6 +392,10 @@ claude</code>
               <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
               <code>git clone https://github.com/ygontownik/Dashboard.git ~/cos-pipeline</code>
             </div>
+            <ul class="explain-bullets">
+              <li>The Dashboard repo is private. Git will prompt for your GitHub username and a Personal Access Token (not your password).</li>
+              <li>Generate a token at <a href="https://github.com/settings/tokens/new" target="_blank" style="color:var(--blue);">github.com/settings/tokens/new</a> with the <code class="inline">repo</code> scope.</li>
+            </ul>
           </div>
 
           <div class="install-item">
