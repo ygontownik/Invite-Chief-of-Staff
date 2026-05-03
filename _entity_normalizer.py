@@ -40,10 +40,43 @@ DEAL_SYSTEM_PATH     = Path.home() / "dashboards/data/compiled/deal-system-data.
 DEAL_PIPELINE_PATH   = Path.home() / "dashboards/data/compiled/deal-pipeline-data.json"
 
 # ── Vague-descriptor patterns (no proper name) ────────────────────────────────
-# Matches phrases like "Yoni's buddy at X", "the X guy", "the X father figure".
+# Matches phrases like "<owner>'s buddy at X", "the X guy", "the X father figure".
 # Whole-string match against an extracted Who/counterparty field.
+#
+# B4 (ID excision): the first pattern was hardcoded `yoni|mark|nik`. Now
+# constructed from firm_context.yaml :: owner_whitelist + team[].name +
+# principal.name so the regex tracks each tenant's roster automatically.
+def _build_owner_possessive_pattern():
+    try:
+        from pathlib import Path as _P
+        import sys as _sys
+        _sys.path.insert(0, str(_P(__file__).resolve().parent))
+        import _firm_context as _fc  # noqa: E402
+        ctx = _fc.load_firm_context()
+    except Exception:
+        ctx = {}
+
+    names = set()
+    for n in ctx.get("owner_whitelist", []) or []:
+        if n:
+            names.add(str(n).strip().split()[0].lower())
+    p = (ctx.get("principal", {}) or {}).get("name", "")
+    if p:
+        names.add(p.split()[0].lower())
+    for m in ctx.get("team", []) or []:
+        n = (m or {}).get("name", "")
+        if n:
+            names.add(n.split()[0].lower())
+    names.discard("")
+
+    alt = "|".join(sorted(re.escape(n) for n in names)) if names else r"\w+"
+    return re.compile(
+        rf"^({alt})'?s?\s+(buddy|friend|contact|guy|colleague)",
+        re.I,
+    )
+
 VAGUE_PATTERNS = [
-    re.compile(r"^(yoni'?s?|mark'?s?|nik'?s?)\s+(buddy|friend|contact|guy|colleague)", re.I),
+    _build_owner_possessive_pattern(),
     re.compile(r"^the\s+\w+\s+(guy|gal|person|contact|advisor|father\s+figure)", re.I),
     re.compile(r"^(town|local|industry)\s+\w+\s+guy", re.I),
     re.compile(r"contact\s*\(\s*identity\s+unconfirmed", re.I),

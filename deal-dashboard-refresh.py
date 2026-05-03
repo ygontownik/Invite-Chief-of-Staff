@@ -175,14 +175,25 @@ def _classify_all_items_haiku(items: list, theme_map: dict) -> int:
     return confirmed
 
 
-_HERE         = Path(__file__).resolve().parent             # ~/dashboards/app/
+_HERE         = Path(__file__).parent                       # ~/dashboards/app/ (preserve symlink — see cos-dashboard-refresh.py)
 _ROOT         = _HERE.parent                                 # ~/dashboards/
 JSON_PATH     = _ROOT / 'data' / 'compiled' / 'deal-pipeline-data.json'
 COS_DATA_PATH = _ROOT / 'data' / 'compiled' / 'dashboard-data.json'
+# HTML strip P2 paths (Track 1.7) — see cos-dashboard-refresh.py for full notes.
+HTML_TEMPLATE = _HERE / 'templates' / 'deal-dashboard.template.html'
+HTML_RENDERED = _HERE / 'templates' / 'deal-dashboard.rendered.html'
 HTML_PATH     = _HERE / 'templates' / 'deal-dashboard.html'
 
 
-def main():
+def assemble_data():
+    """Load deal-pipeline JSON, merge origination inbox, classify themes.
+
+    Extracted from main() as part of the HTML strip P2 refactor (see
+    HTML_STRIP_RUNBOOK.md). Lets the template/rendered split helper
+    reuse the same data-assembly logic without a subprocess hop.
+
+    Returns the full data dict ready for HTML injection.
+    """
     # ── Read deal pipeline JSON ────────────────────────────
     if not JSON_PATH.exists():
         print(f'ERROR: JSON not found: {JSON_PATH}', file=sys.stderr)
@@ -226,13 +237,25 @@ def main():
         tagged = sum(1 for i in data['originationInbox'] if i.get('theme_ids'))
         print(f'  Keyword mode: {tagged}/{len(data["originationInbox"])} items tagged')
 
+    return data
+
+
+def main():
+    data = assemble_data()
     compact_json = json.dumps(data, separators=(',', ':'), ensure_ascii=False)
 
     # ── Read HTML ──────────────────────────────────────────
-    if not HTML_PATH.exists():
-        print(f'ERROR: HTML not found: {HTML_PATH}', file=sys.stderr)
+    # Read from clean .template.html when present; fall back to legacy .html
+    # (bootstrap case before the template was generated).
+    if HTML_TEMPLATE.exists():
+        source_path = HTML_TEMPLATE
+    elif HTML_PATH.exists():
+        source_path = HTML_PATH
+    else:
+        print(f'ERROR: neither template nor legacy HTML found '
+              f'({HTML_TEMPLATE} / {HTML_PATH})', file=sys.stderr)
         sys.exit(1)
-    html = HTML_PATH.read_text(encoding='utf-8')
+    html = source_path.read_text(encoding='utf-8')
 
     # ── Replace DATA block ─────────────────────────────────
     # Use a callable replacement so backslash sequences in compact_json
@@ -253,6 +276,9 @@ def main():
         sys.exit(1)
 
     # ── Write back ─────────────────────────────────────────
+    # Write to .rendered.html (new server-read path) AND mirror to legacy
+    # .html for rollback safety during transition.
+    HTML_RENDERED.write_text(new_html, encoding='utf-8')
     HTML_PATH.write_text(new_html, encoding='utf-8')
 
     theme_count  = len(data.get('themes', []))
@@ -260,7 +286,8 @@ def main():
     orig_count   = len(data.get('originationInbox', []))
     week         = data.get('week_number', '?')
     print(f'Deal Pipeline Dashboard refreshed — week {week}, {theme_count} themes, '
-          f'{target_count} targets, {orig_count} origination items')
+          f'{target_count} targets, {orig_count} origination items '
+          f'→ {HTML_RENDERED.name} (+ legacy {HTML_PATH.name})')
 
 
 if __name__ == '__main__':

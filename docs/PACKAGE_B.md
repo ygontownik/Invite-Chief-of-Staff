@@ -6,21 +6,21 @@
 
 Watches your day-to-day workflow and turns it into structured intelligence:
 
-- **Inbound emails** (Gmail) → triaged into DEAL / RECRUIT / ACTION / RESEARCH / IGNORE; deal and recruiting threads get enriched analysis appended to the right Google Docs.
+- **Inbound emails** (Gmail) → triaged into DEAL / ACTION / RESEARCH / IGNORE; deal threads get enriched analysis appended to the right Google Docs. Optional RECRUIT category enabled per-tenant via `firm_context.yaml :: features.job_search`.
 - **Call transcripts** (Otter AI + desktop recordings) → six-section investor memo + structured JSON extraction (action items, deal updates, LP intel, new contacts).
 - **Real-time hook** → fires after each new recording lands in Drive; lightweight extraction so action items show up on the dashboard within ~30 seconds of the call ending.
 
 All output flows to:
 - **Follow-ups doc** — pending actions table
-- **Recruiting doc** — job-search pipeline (only if `job_search_active: true` in firm_context)
 - **Pipeline doc** — deal intelligence prose
 - **People doc** — contact rollup
+- **Recruiting doc** — only created/written when `features.job_search: true` (off by default for new tenants; opt-in for principals running an active job search)
 
 ## Scripts
 
 | Script | Trigger | Model routing | Cost / run |
 |--------|---------|---------------|-----------|
-| `cos_gmail_mini_v2.py` | LaunchAgent every 2h, Mon–Fri 8am–8pm | Haiku triage all → Sonnet enrich DEAL/RECRUIT ≥0.7 | ~$0.02–0.08 |
+| `cos_gmail_mini_v2.py` | LaunchAgent every 2h, Mon–Fri 8am–8pm | Haiku triage all → Sonnet enrich DEAL ≥0.7 (RECRUIT also when features.job_search on) | ~$0.02–0.08 |
 | **`cos_capture_pipeline.py`** | **LaunchAgent daily 7:22am** | Sonnet — full capture + reconciliation + auto-drafts in one call | ~$0.10–0.30 / run |
 | `cos_otter_backfill.py` | LaunchAgent daily | Pass 1 Sonnet (memo) + Pass 2 Opus (deal/LP extraction, multi-hop) | ~$0.10–0.50 / transcript |
 | `cos_transcript_hook.py` | Fired by `call_recorder.py` post-recording | Sonnet (single-pass) | ~$0.02–0.05 / call |
@@ -39,18 +39,18 @@ Package B activates when `firm_config.json` includes `"operations"` in the `pack
 }
 ```
 
-The dashboard then lights up the **Status**, **TC Pipeline**, and **Personal** tiles. Tiles requiring `market_intelligence` show empty-state placeholders.
+The dashboard then lights up the **HQ** (formerly "Status"), **Deal Pipeline** (formerly "TC Pipeline"), and **Personal** tiles. Tiles requiring `market_intelligence` show empty-state placeholders. Tile labels can be customized per-tenant via `firm_context.yaml :: tile_labels`. The **Personal** tile is hidden unless `features.job_search` is on.
 
 ## Required Drive docs
 
-These four must exist before Package B can run:
+These three must exist before Package B can run (recruiting is opt-in):
 
-| Slug in `firm_config.json["docs"]` | Purpose |
-|-----|---------|
-| `followups` | Action item table |
-| `pipeline` | Deal intel narrative |
-| `people` | Contact rollup |
-| `recruiting` | Job-search tracker |
+| Slug in `firm_config.json["docs"]` | Purpose | Required? |
+|-----|---------|---|
+| `followups` | Action item table | Always |
+| `pipeline` | Deal intel narrative | Always |
+| `people` | Contact rollup | Always |
+| `recruiting` | Job-search tracker | Only when `features.job_search: true` |
 
 The setup script (`python3 setup.py --create-docs`) can auto-create blank Google Docs and populate the IDs for you.
 
@@ -58,10 +58,10 @@ The setup script (`python3 setup.py --create-docs`) can auto-create blank Google
 
 Package B uses two keyword lists from `firm_config.json` for fast pre-classification:
 
-- **`deal_keywords`** — terms like specific deal names, "term sheet", "loi", "diligence", "ic memo". Any email matching one of these auto-classifies as DEAL without LLM triage.
-- **`recruit_keywords`** — search firm names, "interview", "offer", "headhunter", "comp". Auto-classifies as RECRUITING.
+- **`deal_keywords`** — terms like specific deal names, "term sheet", "loi", "diligence", "ic memo". Any email matching one of these auto-classifies as DEAL without LLM triage. Loaded from per-tenant `firm_config.json` first, then the active domain bundle's `config.yaml`, then a hardcoded fallback.
+- **`recruit_keywords`** — only consulted when `features.job_search: true`. Search firm names, "interview", "offer", "comp", etc. Auto-classifies as RECRUIT.
 
-Tune these to your firm. The defaults in `firm_config.template.json` are illustrative — replace with your actual deal codenames and recruiting contacts.
+Tune these to your firm. The defaults in your domain bundle (`~/cos-pipeline/domains/<your-domain>/config.yaml`) are illustrative — replace with your actual deal codenames.
 
 ## Required research senders
 
@@ -102,7 +102,7 @@ Every extracted action gets a `dashboard_path` field that controls where it appe
 - `COS › [DEAL_WORKSTREAM] Deals › [deal name]` — deal-specific actions
 - `COS › [DEAL_WORKSTREAM] Fundraising › [LP name]` — fundraising actions
 - `Deal Pipeline › [theme] › [target name]` — deal pipeline actions (Package A integration)
-- `COS › Recruiting › [firm name]` — recruiting actions
+- `COS › Recruiting › [firm name]` — recruiting actions (only when `features.job_search: true`)
 - `COS › Follow-ups` — fallback for actions with no specific deal/LP
 
 The `[DEAL_WORKSTREAM]` token is replaced at runtime with `firm_context.yaml.workstream_categories.deal` (e.g. "Tomac Cove" or "Meridian Deals").
@@ -241,7 +241,7 @@ tail -50 ~/dashboards/logs/claude-tasks/cos-gmail-mini.stdout.log
 ```
 Most common causes:
 - `ANTHROPIC_API_KEY not set` — Keychain not loaded; run `./setup_keychain.sh` and ensure the LaunchAgent script sources it
-- All emails got classified `IGNORE` — your `deal_keywords` and `recruit_keywords` in `firm_config.json` are too narrow
+- All emails got classified `IGNORE` — your `deal_keywords` (and `recruit_keywords` if job_search is on) in `firm_config.json` are too narrow
 - `processed_emails.json` got corrupted — `rm ~/credentials/processed_emails.json` and re-run
 
 **Dashboard shows "package inactive" badges everywhere**

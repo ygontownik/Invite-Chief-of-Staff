@@ -1,0 +1,99 @@
+# firm_context.example.yaml
+# Example tenant config showing the top-level domain field plus stubs for
+# tenant-specific values. Copy into ~/cos-pipeline-config-<slug>/firm_context.yaml
+# during onboarding (Track D), then fill in real values per tenant.
+#
+# This file is PUBLIC-REPO SAFE — every value is a placeholder.
+# Real tenant values live in the private per-tenant config dir
+# (~/cos-pipeline-config-<slug>/) and are git-ignored.
+
+# ── DOMAIN ────────────────────────────────────────────────────────────────────
+# Which domain bundle (~/cos-pipeline/domains/<name>/) drives this tenant.
+# Allowed values per DECISIONS.md C12: real-estate | infra-pe | generic-dealmaker
+domain: infra-pe
+
+# ── GOOGLE DOCS ───────────────────────────────────────────────────────────────
+# Canonical Doc registry per DECISIONS.md C8 (firm_context.yaml :: google_docs is authoritative;
+# firm_config.json :: docs is deprecated). Each value is a Google Doc ID, never a URL.
+google_docs:
+  personal_briefing_log: "<DOC_ID>"      # daily briefing log doc
+  followups: "<DOC_ID>"                  # follow-ups / action tracker doc
+  people_crm: "<DOC_ID>"                 # people / CRM doc
+  recruiting_pipeline: "<DOC_ID>"        # job-search / recruiting pipeline (omit for guinea pig)
+  deal_pipeline: "<DOC_ID>"              # deal pipeline doc (Tomac Cove style)
+  yoni_context: "<DOC_ID>"               # principal context doc (rename per tenant)
+
+# ── PRINCIPAL ─────────────────────────────────────────────────────────────────
+# The single primary user of this dashboard. Used for owner attribution,
+# pronoun handling in briefings, and entity normalization.
+principal:
+  name: "Jane Smith"                     # full name
+  short: "Jane"                          # first-name reference used in memos
+  email: "jane@example.com"              # primary email (used by gmail-mini, briefing recipient)
+  gmail: "jane.personal@gmail.com"       # gmail used for personal/test runs (replaces hardcoded ygontownik@gmail.com)
+  role: "Managing Partner"               # title for context
+
+# ── TEAM ──────────────────────────────────────────────────────────────────────
+# Other named people on this principal's team. Each name is used by
+# _entity_normalizer.py for owner attribution (replaces hardcoded yoni|mark|nik regex per B4).
+team:
+  - name: "Mark Saxe"
+    short: "Mark"
+    role: "Co-founder"
+    email: "mark@example.com"
+  - name: "Nik Example"
+    short: "Nik"
+    role: "Analyst"
+    email: "nik@example.com"
+
+# ── OWNER WHITELIST ───────────────────────────────────────────────────────────
+# Names that the dashboard is allowed to auto-promote as action owners.
+# Combined with principal.name + team[].name in cos-dashboard-fetch.py
+# _auto_promote_origination per E1.2.
+owner_whitelist:
+  - "Jane Smith"
+  - "Mark Saxe"
+  - "Nik Example"
+
+# ── DEAL KEYWORDS ─────────────────────────────────────────────────────────────
+# Tenant-specific keywords that override / extend the domain bundle's
+# deal_keywords list. Use sparingly — domain bundle should cover 90%.
+deal_keywords:
+  - "Project Venus"                      # tenant-specific deal codename
+  - "Cholla"                             # tenant-specific asset
+  # Most generic keywords come from domains/<domain>/config.yaml :: deal_keywords
+
+# ── COUNTERPARTY ALIASES ──────────────────────────────────────────────────────
+# Maps the many ways a counterparty appears in source text to a canonical name.
+# Used by entity normalizer and capture pipeline scoring.
+counterparty_aliases:
+  - canonical: "Stonepeak"
+    aliases: ["Stonepeak Partners", "stonepeak", "SP"]
+  - canonical: "I Squared Capital"
+    aliases: ["I Squared", "ISQ", "ISQ Capital"]
+
+# ── DISTRIBUTIONS ─────────────────────────────────────────────────────────────
+# References to the per-tenant distribution lists (lives in
+# ~/cos-pipeline-config-<slug>/distributions/<name>.yaml). Only the basenames
+# go here; the actual email lists are in the private repo.
+distributions:
+  morning_briefing: "morning-briefing"   # → ~/cos-pipeline-config-<slug>/distributions/morning-briefing.yaml
+  weekly_briefing: "weekly-briefing"
+  deal_pipeline: "deal-pipeline"
+
+# ── KEYCHAIN SERVICE PREFIX ───────────────────────────────────────────────────
+# Per DECISIONS.md C11. Format: cos-pipeline-<slug>. Required field.
+# All Keychain entries for this tenant use this prefix
+# (e.g. cos-pipeline-tomac-anthropic-key, cos-pipeline-tomac-gdrive-token).
+keychain_service_prefix: "cos-pipeline-tomac"
+
+# ── (OPTIONAL) DOMAIN OVERRIDES ───────────────────────────────────────────────
+# Tenant-level overrides of the domain bundle. Use only when the tenant's
+# pipeline stages or memo sections genuinely diverge from the domain default.
+# Leave commented out unless needed.
+# pipeline_stages_override: []
+# memo_section_names_override: []
+# model_routing_override:
+#   pass2_pipeline_analyst:
+#     model: claude-opus-4-7
+#     max_tokens: 8192

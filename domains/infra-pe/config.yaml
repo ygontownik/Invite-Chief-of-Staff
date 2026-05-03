@@ -1,0 +1,142 @@
+# domains/infra-pe/config.yaml
+# Domain bundle for infrastructure private equity firms.
+# Loaded when firm_context.yaml :: domain == "infra-pe".
+# Track M-MIN.2 — schema defined in PLAN_v3.1.md.
+
+domain: infra-pe
+
+pipeline_stages:
+  - Sourcing
+  - Initial Screen
+  - IC1
+  - Diligence
+  - IC2
+  - Term Sheet
+  - Documentation
+  - Closed
+  - Portfolio
+
+counterparty_types:
+  - GP/sponsor
+  - LP
+  - lender
+  - advisor
+  - banker
+  - target management
+  - regulator
+
+deal_keywords:
+  # Sectors
+  - power
+  - utilities
+  - midstream
+  - LNG
+  - digital infrastructure
+  - data center
+  - data centers
+  - hyperscaler
+  - fiber
+  - towers
+  - renewables
+  - storage
+  - nuclear
+  - geothermal
+  - solar
+  - wind
+  - transmission
+  - generation
+  # Markets / ISOs
+  - ERCOT
+  - PJM
+  - MISO
+  - WECC
+  - SPP
+  - CAISO
+  - NYISO
+  - ISO-NE
+  # Deal vocabulary
+  - GenCo carveout
+  - interconnection queue
+  - PPA
+  - tolling agreement
+  - SPA
+  - take-or-pay
+  - JCC slope
+  - mtpa
+  - FID
+  - cap ex
+  - EBITDA
+  - DSCR
+  - project finance
+  - tax equity
+  - ITC
+  - PTC
+  # Deal stages / docs
+  - LOI
+  - term sheet
+  - NDA
+  - IC memo
+  - CIM
+  - teaser
+
+email_triage_rules:
+  high_priority_senders_role:
+    - GP/sponsor partner
+    - banker (active mandate)
+    - LP (active commitment)
+    - target management (active diligence)
+  auto_archive_keywords:
+    - newsletter
+    - unsubscribe
+    - webinar invite
+  flag_for_followup_keywords:
+    - term sheet
+    - LOI
+    - signed NDA
+    - data room
+    - IC date
+    - close date
+    - wire instructions
+  research_routing_keywords:
+    - Jefferies
+    - Goldman
+    - GS Energy
+    - RBN
+    - PeakLoad
+    - FVR
+    - a16z
+
+default_research_vendors:
+  - jefferies
+  - gs-energy
+  - gs-macro
+  - rbn
+  - peakload
+  - fvr
+  - a16z
+
+promote_owners_default:
+  # Filled in per-tenant via firm_context.yaml :: owner_whitelist + team[].name + principal.name
+  # Domain default is empty — infra-PE firms have small named teams.
+  []
+
+memo_section_names:
+  - THE CORE ARGUMENT
+  - POINTS OF CONSENSUS
+  - POINTS OF DISAGREEMENT OR TENSION
+  - OPEN QUESTIONS AND UNRESOLVED ISSUES
+  - WHAT YOU WOULD NEED TO FORM A VIEW
+  - KEY NAMES AND FIRMS
+  - ACTION ITEMS
+
+model_routing:
+  # Per CLAUDE.md: Pass 2 = Opus (multi-hop inference). Pass 1/3 = Sonnet.
+  pass1_source_scanner:
+    model: claude-sonnet-4-6
+    max_tokens: 2048
+  pass2_pipeline_analyst:
+    model: claude-opus-4-7
+    max_tokens: 4096
+  pass3_ic_memo:
+    model: claude-sonnet-4-6
+    max_tokens: 4096

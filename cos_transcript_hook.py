@@ -30,6 +30,7 @@ _PIPELINE_DIR = Path.home() / "tomac-cove-pipeline"
 if str(_PIPELINE_DIR) not in sys.path:
     sys.path.insert(0, str(_PIPELINE_DIR))
 import _firm_context as _fc  # noqa: E402
+import _secrets  # noqa: E402
 _CTX = _fc.load_firm_context()
 _OWNERS          = _fc.owner_whitelist_str(_CTX)   # e.g. "Yoni|Mark|Nik"
 _DEAL_WS         = _fc.workstream_deal(_CTX)        # e.g. "Tomac Cove"
@@ -95,7 +96,8 @@ DASHBOARD_DATA_PATH = Path.home() / "dashboards/data/compiled/dashboard-data.jso
 DEAL_SYSTEM_PATH    = Path.home() / "dashboards/data/compiled/deal-system-data.json"
 DASHBOARD_URL       = "http://localhost:7777/warmup"
 CLAUDE_MODEL        = "claude-sonnet-4-6"
-ANTHROPIC_KEY       = os.environ.get("ANTHROPIC_API_KEY", "")
+# Resolves through keychain (Mac default) then env-var fallback per BOOTSTRAP_PLAN #2.
+ANTHROPIC_KEY       = _secrets.load_secret("ANTHROPIC_API_KEY", "")
 
 
 # ── Google OAuth ──────────────────────────────────────────────────────────────

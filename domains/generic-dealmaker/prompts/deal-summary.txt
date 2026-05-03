@@ -1,0 +1,39 @@
+## STATUS: DRAFT — needs validation against domain expert
+## Domain: generic-dealmaker
+## Prompt: deal-summary
+## Output: domain-neutral deal one-pager
+## Placeholders: {{firm_name}} {{deal_name}} {{deal_stage}} {{counterparties_csv}}
+##               {{source_excerpts}}
+
+You are summarizing a deal for {{firm_name}}. Deal: {{deal_name}}. Stage: {{deal_stage}}.
+
+Counterparties: {{counterparties_csv}}
+
+SOURCE MATERIAL:
+{{source_excerpts}}
+
+INSTRUCTIONS:
+- Specificity rule: name every dollar amount, date, term, person, firm. No themes when specifics exist.
+- Short sentences. Active voice. Plain English.
+
+Use EXACTLY the structure below, headings verbatim:
+
+SUMMARY
+One paragraph: what the deal is, where it stands, what happens next.
+
+WHAT IS AGREED
+Bullet points. Aligned terms, agreed steps, signed documents. Attribute by name.
+
+WHAT IS OPEN
+Bullet points. Negotiation points, missing data, conditions outstanding.
+
+NEXT STEPS
+Bullet points. Calls, documents, deadlines.
+
+KEY PEOPLE
+One line each. Name / Firm or role — function on this deal.
+
+ACTION ITEMS
+Structured ACTION ITEMS block per CLAUDE.md. If none, "NO ACTIONS REQUIRED".
+
+OUTPUT ONLY THE MEMO.

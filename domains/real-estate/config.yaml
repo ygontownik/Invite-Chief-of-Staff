@@ -1,0 +1,130 @@
+# domains/real-estate/config.yaml
+# Domain bundle for real estate developers / RE operators.
+# Loaded when firm_context.yaml :: domain == "real-estate".
+# Track M-MIN.2 — schema defined in PLAN_v3.1.md.
+
+domain: real-estate
+
+pipeline_stages:
+  - Sourced
+  - LOI
+  - Under Contract
+  - In Diligence
+  - Closing
+  - Closed
+  - Stabilized
+  - Disposed
+
+counterparty_types:
+  - broker
+  - seller
+  - lender
+  - equity partner
+  - contractor
+  - attorney
+  - property manager
+  - tenant
+  - architect
+  - inspector
+  - title company
+
+deal_keywords:
+  # Valuation / underwriting
+  - cap rate
+  - NOI
+  - IRR
+  - equity multiple
+  - debt yield
+  - DSCR
+  - LTV
+  - LTC
+  - going-in yield
+  - stabilized yield
+  - exit cap
+  # Deal docs
+  - LOI
+  - PSA
+  - term sheet
+  - OM
+  - broker package
+  - rent roll
+  - T-12
+  - T-3
+  - operating memo
+  # Transaction vocab
+  - earnest money
+  - hard money
+  - due diligence period
+  - closing
+  - title
+  - survey
+  - environmental
+  - Phase I
+  - Phase II
+  - zoning
+  - entitlement
+  - tax abatement
+  # Asset types
+  - multifamily
+  - office
+  - industrial
+  - retail
+  - hospitality
+  - mixed-use
+  - self-storage
+  - student housing
+  - senior housing
+  - land
+
+email_triage_rules:
+  high_priority_senders_role:
+    - broker (active deal)
+    - lender (active loan)
+    - attorney (active transaction)
+    - equity partner
+    - seller (under contract)
+  auto_archive_keywords:
+    - newsletter
+    - market report digest
+    - webinar invite
+    - unsubscribe
+  flag_for_followup_keywords:
+    - LOI
+    - PSA
+    - signed
+    - earnest money
+    - closing date
+    - inspection
+    - appraisal
+    - loan commitment
+    - wire instructions
+  research_routing_keywords: []
+
+# RE developers do not consume institutional research feeds.
+# Public-comp tracking is out of scope for M-MIN — explicitly empty.
+default_research_vendors: []
+
+promote_owners_default: []
+
+memo_section_names:
+  # Adapted RE developer frame — building/site/financing pipeline focus.
+  - THE DEAL IN ONE PARAGRAPH
+  - KEY ECONOMICS
+  - CRITICAL DILIGENCE ITEMS
+  - OPEN QUESTIONS AND DECISIONS NEEDED
+  - WHAT IT WOULD TAKE TO MOVE FORWARD
+  - KEY PEOPLE AND COUNTERPARTIES
+  - ACTION ITEMS
+
+model_routing:
+  pass1_source_scanner:
+    model: claude-sonnet-4-6
+    max_tokens: 2048
+  pass2_pipeline_analyst:
+    # RE deal logic is less multi-hop than infra-PE; Sonnet is sufficient.
+    # Override to opus per-tenant if needed.
+    model: claude-sonnet-4-6
+    max_tokens: 4096
+  pass3_ic_memo:
+    model: claude-sonnet-4-6
+    max_tokens: 4096

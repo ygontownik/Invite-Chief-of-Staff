@@ -89,6 +89,7 @@ if str(_PIPELINE_DIR) not in sys.path:
     sys.path.insert(0, str(_PIPELINE_DIR))
 
 import _firm_context as _fc  # noqa: E402
+import _secrets  # noqa: E402
 _CTX      = _fc.load_firm_context()
 _FIRM_CFG = _fc.load_firm_config()
 
@@ -113,8 +114,9 @@ def _load_env_from_zshrc():
 
 _load_env_from_zshrc()
 
-ASSEMBLYAI_API_KEY = os.environ.get("ASSEMBLYAI_API_KEY", "")
-ANTHROPIC_API_KEY  = os.environ.get("ANTHROPIC_API_KEY", "")
+# Resolves through keychain (Mac default) then env-var fallback per BOOTSTRAP_PLAN #2.
+ASSEMBLYAI_API_KEY = _secrets.load_secret("ASSEMBLYAI_API_KEY", "")
+ANTHROPIC_API_KEY  = _secrets.load_secret("ANTHROPIC_API_KEY", "")
 
 # GDRIVE_FOLDER_ID — folder where per-show transcript Docs live.
 # SUMMARY_GDRIVE_FOLDER_ID — folder where the aggregate Podcast Summaries Doc lives.
@@ -147,14 +149,20 @@ def _load_feeds() -> dict:
     if _FIRM_CFG.get("podcast_feeds"):
         return _FIRM_CFG["podcast_feeds"]
 
-    # 3. Built-in defaults (original hardcoded list)
-    return {
-        "Catalyst":                "https://feeds.megaphone.fm/catalyst",
-        "Open Circuit":            "https://feeds.megaphone.fm/open-circuit",
-        "Energy Capital":          "https://api.substack.com/feed/podcast/1180283.rss",
-        "Infrastructure Investor": "https://feed.podbean.com/infrastructureinvestorpodcast/feed.xml",
-        "Energy Gang":             "https://rss.art19.com/the-energy-gang",
-    }
+    # 3. B5 (ID excision): no fallback. The legacy hardcoded RSS list
+    #    (Catalyst / Open Circuit / Energy Capital / Infrastructure Investor /
+    #    Energy Gang) was tenant-specific. New tenants must populate their feeds
+    #    in firm_context.yaml :: personal.content_feeds.podcasts or
+    #    firm_config.json :: podcast_feeds. Returning {} causes the script to
+    #    have no episodes to process — caller logs a warning at the call site.
+    import sys as _sys
+    print(
+        "[podcast_transcribe] WARNING: no podcast feeds configured. "
+        "Populate firm_context.yaml :: personal.content_feeds.podcasts or "
+        "firm_config.json :: podcast_feeds.",
+        file=_sys.stderr,
+    )
+    return {}
 
 FEEDS = _load_feeds()
 

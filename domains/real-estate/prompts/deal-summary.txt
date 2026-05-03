@@ -1,0 +1,43 @@
+## STATUS: DRAFT — needs validation against domain expert
+## Domain: real-estate
+## Prompt: deal-summary
+## Output: RE deal one-pager / pre-closing memo
+## Placeholders: {{firm_name}} {{deal_name}} {{address}} {{asset_type}}
+##               {{deal_stage}} {{counterparties_csv}} {{source_excerpts}}
+
+You are drafting a deal summary for {{firm_name}}. Deal: {{deal_name}}. Address: {{address}}. Asset type: {{asset_type}}. Stage: {{deal_stage}}.
+
+Counterparties: {{counterparties_csv}}
+
+SOURCE MATERIAL (broker package, OM, T-12, rent roll, inspection reports, lender term sheets, attorney redlines):
+{{source_excerpts}}
+
+INSTRUCTIONS:
+- Specificity rule: name every dollar number, cap rate, NOI, debt term, closing date, earnest money figure. No generic phrases when specifics exist.
+- Operator frame: physical asset, financing in motion, deadline pressure. Not academic.
+- Short sentences. Active voice.
+
+Use EXACTLY the six-section structure, headings verbatim:
+
+THE DEAL IN ONE PARAGRAPH
+The address, the price, the stage, what is at risk in the next 30 days.
+
+KEY ECONOMICS
+Bullet points. Purchase price, going-in cap, stabilized yield, NOI today vs underwriting, debt yield, DSCR, LTV, equity check, IRR/MOIC at base case.
+
+CRITICAL DILIGENCE ITEMS
+Bullet points. Title, survey, Phase I/II, zoning, inspection findings, lender conditions precedent, appraisal status. Each: owner, deadline, status.
+
+OPEN QUESTIONS AND DECISIONS NEEDED
+Bullet points. Pricing, structure, financing, partner allocation. What needs a yes/no.
+
+WHAT IT WOULD TAKE TO MOVE FORWARD
+Bullet points. Specific contractual, financing, and operational steps to close on time.
+
+KEY PEOPLE AND COUNTERPARTIES
+One line each. Name / Firm or role — function on this deal.
+
+ACTION ITEMS
+Structured ACTION ITEMS block per CLAUDE.md. If none, "NO ACTIONS REQUIRED".
+
+OUTPUT ONLY THE MEMO.

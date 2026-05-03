@@ -18,6 +18,13 @@ from pathlib import Path
 
 _HERE               = Path(__file__).parent    # ~/dashboards/app/
 _ROOT               = _HERE.parent                       # ~/dashboards/
+# HTML strip P2 paths (Track 1.7):
+#  - .template.html — clean source, committed, no injected data block.
+#  - .rendered.html — data-injected output, gitignored, served by the dashboard.
+#  - .html         — legacy path; still kept fresh during transition as a rollback target.
+#                     Will be retired once 7 days of clean .rendered.html operation pass.
+DASHBOARD_TEMPLATE  = _HERE / 'templates' / 'cos-dashboard.template.html'
+DASHBOARD_RENDERED  = _HERE / 'templates' / 'cos-dashboard.rendered.html'
 DASHBOARD_PATH      = _HERE / 'templates' / 'cos-dashboard.html'
 STATE_PATH          = _ROOT / 'data' / 'compiled' / 'dashboard-data.json'
 FETCH_SCRIPT        = _HERE / 'cos-dashboard-fetch.py'
@@ -398,9 +405,18 @@ def clean_recruiting(rec_active: list) -> list:
 
 
 # ── Main ──────────────────────────────────────────────────
-def main():
-    t0 = datetime.now()
+def assemble_data():
+    """Load cached state and build the dashboard DATA dict.
 
+    Extracted from main() as part of the HTML strip P2 refactor (see
+    HTML_STRIP_RUNBOOK.md). This keeps the data-assembly logic in one
+    place so the template/rendered split helper can call it directly
+    without a subprocess hop and without duplicating ~120 lines.
+
+    Returns (data, state) — `data` is the JSON-injectable dict; `state`
+    is the cleaned cache (callers use it for staleness reporting and
+    other downstream metadata).
+    """
     # ── Load cache ──
     state = {}
     if STATE_PATH.exists():
@@ -527,23 +543,45 @@ def main():
         'routingExceptions':      state.get('routingExceptions',      []),
     }
 
+    return data, state
+
+
+def main():
+    t0 = datetime.now()
+
+    data, state = assemble_data()
+    age = cache_age_minutes(state)
+
     # ── Inject into HTML ──
-    if not DASHBOARD_PATH.exists():
-        print(f'ERROR: dashboard not found at {DASHBOARD_PATH}', file=sys.stderr)
+    # Read from clean .template.html (committed, no injected data block).
+    # Write to .rendered.html (gitignored, served by dashboard) AND mirror
+    # to legacy .html for the transition window — see HTML_STRIP_RUNBOOK.
+    if DASHBOARD_TEMPLATE.exists():
+        source_path = DASHBOARD_TEMPLATE
+    elif DASHBOARD_PATH.exists():
+        source_path = DASHBOARD_PATH   # bootstrap case before .template.html exists
+    else:
+        print(f'ERROR: neither template nor legacy dashboard found '
+              f'({DASHBOARD_TEMPLATE} / {DASHBOARD_PATH})', file=sys.stderr)
         sys.exit(1)
 
-    html = DASHBOARD_PATH.read_text()
+    html = source_path.read_text()
     s, e = find_data_block(html)
     if s is None:
-        print('ERROR: could not find DATA block in dashboard HTML', file=sys.stderr)
+        print(f'ERROR: could not find DATA block in {source_path.name}', file=sys.stderr)
         sys.exit(1)
 
     data_js = 'const DATA = ' + json.dumps(data, indent=2, ensure_ascii=False) + '; // __END_DATA__'
-    DASHBOARD_PATH.write_text(html[:s] + data_js + html[e:])
+    rendered = html[:s] + data_js + html[e:]
+    DASHBOARD_RENDERED.write_text(rendered)
+    # Legacy mirror — keep .html fresh during transition so rollback by
+    # reverting server.py constants stays a single-step undo.
+    DASHBOARD_PATH.write_text(rendered)
 
     elapsed = (datetime.now() - t0).total_seconds() * 1000
     source  = f'cache ({age_label(age)})' if age is not None else 'live fetch'
-    print(f'Dashboard refreshed in {elapsed:.0f}ms from {source} → {DASHBOARD_PATH}')
+    print(f'Dashboard refreshed in {elapsed:.0f}ms from {source} '
+          f'→ {DASHBOARD_RENDERED.name} (+ legacy {DASHBOARD_PATH.name})')
 
 if __name__ == '__main__':
     main()

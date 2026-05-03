@@ -12,7 +12,7 @@ Run in the background by:
 
 cos-dashboard-refresh.py (the FAST path) reads the JSON this writes and injects HTML instantly.
 """
-import json, re, sys
+import json, os, re, sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -25,19 +25,107 @@ _ROOT      = _HERE.parent                                 # ~/dashboards/
 CREDS_PATH = Path.home() / 'credentials/gcal_token.json'
 STATE_PATH = _ROOT / 'data' / 'compiled' / 'dashboard-data.json'
 
+# Track G — costs/quota tile aggregator. Pure-stdlib, no I/O at import time.
+import importlib.util as _ilu
+_costs_mod_path = Path(os.path.expanduser('~/cos-pipeline/next/track-G/costs_aggregator.py'))
+if _costs_mod_path.exists():
+    _spec = _ilu.spec_from_file_location('costs_aggregator', _costs_mod_path)
+    _costs_mod = _ilu.module_from_spec(_spec)
+    _spec.loader.exec_module(_costs_mod)
+else:
+    _costs_mod = None
+
 # Firm context — loads firm_context.yaml for config that varies by team
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _firm_context as _fc
 _CTX     = _fc.load_firm_context()
+_FCONFIG = _fc.load_firm_config()                          # firm_config.json
 MY_EMAIL = (_fc._principal(_CTX).get('email') or 'ygontownik@gmail.com')
 
+# Drive doc IDs — prefer firm_context.yaml :: google_docs (canonical
+# per DECISIONS.md C8), fall back to firm_config.json :: docs (legacy).
+def _doc_id(key, default=''):
+    gdocs = (_CTX.get('google_docs') or {})
+    if key in gdocs:
+        return gdocs[key]
+    legacy = (_FCONFIG.get('docs') or {})
+    return legacy.get(key, default)
+
 DOC_IDS = {
-    'followups':    '10leX26u8n3XkoCHzg7SDwLUodVX2CqKjvXcSJ-KAsCY',
-    'recruiting':   '1ZnTCVoA0ID7XTDFy27yDnrEVhBqx75kaTg_QXFq4eXA',
-    'tomac':        '1LHorixPs8ppwSvQzGfA_B6609YZA8dSpR4rmppENzpc',
-    'briefing_log': '14wE3L6ZRsjhhx2psRKbaHS5i0kgEoteWYZusqETiAZ0',
-    'daily_market': '1UZ1t4bhgzll5VcAuP3Mj1CyYb-4xjgmbUK1xg6oUS_k',
+    'followups':     _doc_id('followups',     '10leX26u8n3XkoCHzg7SDwLUodVX2CqKjvXcSJ-KAsCY'),
+    'recruiting':    _doc_id('recruiting',    '1ZnTCVoA0ID7XTDFy27yDnrEVhBqx75kaTg_QXFq4eXA'),
+    'deal_pipeline': _doc_id('pipeline',      _doc_id('tomac', '1LHorixPs8ppwSvQzGfA_B6609YZA8dSpR4rmppENzpc')),
+    'briefing_log':  _doc_id('briefing_log',  '14wE3L6ZRsjhhx2psRKbaHS5i0kgEoteWYZusqETiAZ0'),
+    'daily_market':  _doc_id('daily_market',  '1UZ1t4bhgzll5VcAuP3Mj1CyYb-4xjgmbUK1xg6oUS_k'),
 }
+# Backward-compat alias key — preserved for 1 release so any in-flight
+# caller referencing DOC_IDS['tomac'] still works. Will be removed in
+# the release after this one. SAFE to read; do NOT write.
+DOC_IDS['tomac'] = DOC_IDS['deal_pipeline']
+
+# Owner whitelist — loaded from firm_context.yaml. Falls back to
+# owner_whitelist; if absent, derives from principal.name + team[].name.
+# Used to reject person-only counterparties from being mis-classified
+# as deal-shaped firms (line 849-857 region in live file).
+def _firm_owner_reject_set(ctx):
+    owners = ctx.get('owner_whitelist') or []
+    if not owners:
+        owners = []
+        p = (ctx.get('principal') or {}).get('name', '')
+        if p: owners.append(p)
+        for m in (ctx.get('team') or []):
+            n = m.get('name', '')
+            if n: owners.append(n)
+    out = set()
+    for o in owners:
+        if not o: continue
+        out.add(o.lower())
+        # Add first-name token (e.g. "Mark Saxe" → "mark") so a raw
+        # counterparty like "mark" still rejects.
+        first = o.split()[0].lower() if o.split() else ''
+        if first: out.add(first)
+    return out
+
+# Deal/recruit keyword sets — loaded from firm_config.json.
+# Per DECISIONS.md C13, the canonical source is
+# ~/cos-pipeline/domains/<domain>/config.yaml; firm_config.json acts
+# as the resolved per-tenant copy that the loader merges. We read from
+# _FCONFIG (which respects $COS_CONFIG_DIR) and fall back to a minimal
+# generic set if the field is missing.
+_DEFAULT_DEAL_KEYWORDS = (
+    'term sheet', 'loi', 'letter of intent', ' nda ', 'diligence',
+    'investment committee', ' ic ', 'closing', 'co-invest', 'co invest',
+)
+_DEFAULT_RECRUIT_KEYWORDS = (
+    'resume', ' cv ', 'recruiting', 'recruiter', 'interview',
+    'shortlist', 'longlist', 'offer letter', 'compensation',
+    'job description', ' jd ', 'open role', 'opportunity',
+)
+
+def _firm_deal_keywords(fcfg):
+    raw = fcfg.get('deal_keywords') or list(_DEFAULT_DEAL_KEYWORDS)
+    aliases = (fcfg.get('counterparty_aliases') or {})
+    canon = []
+    if isinstance(aliases, dict):
+        for v in aliases.values():
+            if isinstance(v, str):
+                canon.append(v)
+            elif isinstance(v, dict) and v.get('canonical'):
+                canon.append(v['canonical'])
+    elif isinstance(aliases, list):
+        for entry in aliases:
+            if isinstance(entry, dict) and entry.get('canonical'):
+                canon.append(entry['canonical'])
+    return {str(k).lower() for k in (raw + canon) if k}
+
+def _firm_recruit_keywords(fcfg):
+    raw = fcfg.get('recruit_keywords') or list(_DEFAULT_RECRUIT_KEYWORDS)
+    return {str(k).lower() for k in raw if k}
+
+def _is_deal_ws(ws):
+    """True if a workstream code refers to deal/pipeline activity.
+    Accepts both legacy 'tomac' and canonical 'deals' for one release."""
+    return ws in ('deals', 'tomac')
 
 # ── Services ──────────────────────────────────────────────
 def get_services():
@@ -109,28 +197,11 @@ def get_doc_text_cached(docs_svc, drive_svc, doc_id, doc_cache):
 
 
 # ── Gmail activity ─────────────────────────────────────────
-# Keywords that classify an email as recruiting-relevant
-_RECRUIT_KEYS = {
-    'resume', ' cv ', 'curriculum vitae', 'recruiting', 'recruiter',
-    'interview', 'shortlist', 'longlist', 'offer letter', 'compensation',
-    'piper maddox', 'harper harrison', 'korn ferry', 'reinova', 'one search',
-    'related digital', 'bill lowry', 'thomas cooper', 'matt thomas',
-    'jeff blau', 'job description', ' jd ', 'open role', 'opportunity',
-    # Russell Reynolds / Charlie Watson
-    'russell reynolds', 'charlie watson',
-    # George Allen
-    'george allen',
-    # Bennet Cogden
-    'bennet cogden',
-}
-# Keywords that classify an email as deal/Tomac-relevant
-_DEAL_KEYS = {
-    'stonepeak', 'i squared', 'isquared', 'ecp', 'quantum energy',
-    'kkr infra', 'brookfield', 'nuveen', 'arclight', 'ls power',
-    'tomac cove', 'mark saxe', 'fit ventures', 'thunderhead',
-    'term sheet', ' loi ', 'letter of intent', ' nda ', 'diligence',
-    'investment committee', ' ic ', 'closing', 'co-invest', 'co invest',
-}
+# Keyword sets sourced from firm_config.json (was hardcoded — see DELTA 3 of
+# track-C/cos-dashboard-fetch.py.next). Helpers defined above near DOC_IDS.
+_DEAL_KEYS    = _firm_deal_keywords(_FCONFIG)
+_RECRUIT_KEYS = _firm_recruit_keywords(_FCONFIG)
+_OWNER_REJECT = _firm_owner_reject_set(_CTX)
 
 def _header(headers_list, name):
     name_l = name.lower()
@@ -167,16 +238,18 @@ def get_gmail_activity(gmail_svc):
     try:
         # Broad query: anything from/to me in last 48h that touches recruiting or deal keywords.
         # Gmail search is server-side so this is fast even on a large inbox.
-        query = (
-            'newer_than:2d ('
-            'from:me OR '
-            'subject:(resume OR CV OR recruiting OR interview OR "job description" OR '
-            '"term sheet" OR LOI OR NDA OR diligence OR stonepeak OR brookfield OR '
-            '"i squared" OR "piper maddox" OR "harper harrison" OR "korn ferry" OR '
-            '"related digital" OR "tomac cove") OR '
-            'from:("russell reynolds" OR "charlie watson" OR "george allen" OR "bennet cogden")'
-            ')'
-        )
+        # Gmail server-side query — built from firm_config keywords so
+        # adding a counterparty in firm_config.json doesn't require code
+        # edits. We bound to the top ~20 strongest terms to keep the URL
+        # under Gmail's query length cap (~3KB safe).
+        deal_terms = [k for k in sorted(_DEAL_KEYS, key=len, reverse=True) if len(k) >= 4][:15]
+        recruit_terms = [k for k in sorted(_RECRUIT_KEYS, key=len, reverse=True) if len(k) >= 4][:10]
+        # Quote multi-word terms; strip embedded spaces for single-word.
+        def _q(t):
+            t = t.strip()
+            return f'"{t}"' if ' ' in t else t
+        subj = ' OR '.join(_q(t) for t in (deal_terms + recruit_terms)) or '"deal"'
+        query = f'newer_than:2d (from:me OR subject:({subj}))'
         list_resp = gmail_svc.users().messages().list(
             userId='me', q=query, maxResults=20,
             fields='messages(id)'
@@ -383,7 +456,12 @@ def _auto_expire_stale_events(items):
 
 
 def parse_followups(text):
-    ws_map = {'Job Search': 'job', 'Tomac Cove': 'tomac', 'Personal': 'personal'}
+    # Workstream codes: 'deals' is the canonical code (was 'tomac' pre-E1).
+    # Display labels come from firm_context.yaml :: workstream_categories.
+    _ws_deal_label = (_CTX.get('workstream_categories') or {}).get('deal', 'Tomac Cove')
+    ws_map = {'Job Search': 'job', _ws_deal_label: 'deals', 'Personal': 'personal'}
+    # Back-compat alias — accept the legacy literal label too.
+    ws_map.setdefault('Tomac Cove', 'deals')
     today = datetime.now().strftime('%Y-%m-%d')
 
     # Drive doc IDs for source hyperlinking — keyed by lowercase fragment
@@ -545,9 +623,12 @@ def parse_recruiting(text):
         })
     return results[:25]
 
-def parse_tomac(text):
+def parse_deal_pipeline(text):
+    """Parse the deal-pipeline doc into deal cards.
+    Renamed from parse_tomac in PLAN E1.1. Old name kept as alias."""
     results = []
-    skip = {'Tomac Cove — Deal Pipeline', 'Template'}
+    _deal_label = (_CTX.get('workstream_categories') or {}).get('deal', 'Tomac Cove')
+    skip = {f'{_deal_label} — Deal Pipeline', 'Template'}
     # Dated log/journal headers are section artifacts, not deals.
     # Matches "Update Log — 2026-04-14", "Update Log - 2026-04-14", "Log 2026-04-14", etc.
     _LOG_HEADER_RE = re.compile(r'^(update\s+)?log\b', re.IGNORECASE)
@@ -584,6 +665,10 @@ def parse_tomac(text):
             'notes':    history,
         })
     return results
+
+# Back-compat alias — kept for 1 release so any external caller
+# importing parse_tomac still works. Remove in next major release.
+parse_tomac = parse_deal_pipeline
 
 # ── Deal-card freshest-signal overlay (Gap B) ─────────────────────────────
 # Static nextStep from the doc goes stale the moment a call or email
@@ -633,7 +718,7 @@ def _overlay_freshest_signal(deals, followups, envelope_items, today_str):
         # Collect candidate signals
         matched_fus = []
         for fu in followups or []:
-            if fu.get('workstream') not in (None, '', 'tomac'):
+            if fu.get('workstream') not in (None, '', 'tomac', 'deals'):
                 continue
             if _item_mentions_deal(fu, tokens):
                 matched_fus.append(fu)
@@ -846,14 +931,14 @@ def _is_deal_shaped_cp(cp, raw_cp=None):
     if not cp or len(cp) < 3:
         return False
     low = cp.lower().strip()
-    REJECT_NAMES = {
-        'yoni','mark','nik','nick','jason','guillermo','ansel','sarah','jeff',
+    REJECT_NAMES = _OWNER_REJECT | {
+        # Generic single-name common-noise tokens — keep these
+        # tenant-agnostic; they reject any "First-name only" raw cp.
         'kevin','tim','dan','david','brian','joey','andrew','mike','john','matt',
         'chris','tom','paul','bob','rob','steve','sam','pete','will','greg',
         'gideon','powell','ian','ryan','max','joe','adam','alex','ben','ed',
         'frank','gary','henry','james','kate','laura','lisa','molly','nate',
-        'oscar','peter','rick','scott','ted','victor','walter','mark saxe',
-        'tanmay kumar','sydney mcconathy','andrew brannan','sarah graziano',
+        'oscar','peter','rick','scott','ted','victor','walter',
     }
     if low in REJECT_NAMES:
         return False
@@ -947,7 +1032,7 @@ def _auto_promote_origination(existing_deals, followups, envelope_items, today_s
                     if len(tok) >= 5 and tok not in _DEAL_STOPWORDS:
                         tokens.add(tok)
         for fu in followups or []:
-            if fu.get('workstream') != 'tomac': continue
+            if not _is_deal_ws(fu.get('workstream')): continue
             if _item_mentions_deal(fu, tokens):
                 clusters[cp].append(('fu', fu))
 
@@ -1498,8 +1583,10 @@ def parse_recent_activity(briefing_data, followups, recruiting, tomac_list, toda
             who  = fu.get('who', '')
             what = fu.get('what', '')
             ws   = fu.get('workstream', '')
-            cat  = 'New Follow-up · Tomac' if ws == 'tomac' else 'New Follow-up · Recruiting' if ws == 'job' else 'New Follow-up'
-            color = 'green' if ws == 'tomac' else 'blue' if ws == 'job' else 'amber'
+            cat  = ('New Follow-up · Deals' if _is_deal_ws(ws)
+                    else 'New Follow-up · Recruiting' if ws == 'job'
+                    else 'New Follow-up')
+            color = 'green' if _is_deal_ws(ws) else 'blue' if ws == 'job' else 'amber'
             title = f"{who} — {what[:60]}" if who else what[:80]
             entries.append({'type': 'followup', 'category': cat, 'workstream': ws or 'all',
                             'date': added, 'dateLabel': date_label(added),
@@ -1530,7 +1617,7 @@ def parse_recent_activity(briefing_data, followups, recruiting, tomac_list, toda
             matching = [n for n in notes_list if isinstance(n, dict) and n.get('date', '') == test_date]
             if matching:
                 summary_text = matching[0].get('text', '')[:150].strip()
-                entries.append({'type': 'deal', 'category': 'Deal Activity', 'workstream': 'tomac',
+                entries.append({'type': 'deal', 'category': 'Deal Activity', 'workstream': 'deals',
                                 'date': test_date, 'dateLabel': date_label(test_date),
                                 'title': f"{d.get('name', 'Deal')} — {d.get('stage', '')}",
                                 'summary': summary_text, 'color': 'green'})
@@ -1654,23 +1741,12 @@ def get_calendar(cal_svc):
             for a in ev.get('attendees', [])
         ).lower()
         hay = tl + ' ' + attendee_blob
-        # Tomac / deal-activity keywords. Expanded to cover LPs, partner firms,
-        # and named deals so that deal calls aren't misclassified as recruiting.
-        TOMAC_KEYS = [
-            'tomac','tcup','tcip','fit ventures','thunderhead','mark saxe','saxe',
-            'pacific fleet','black bayou','hudson bay','sander gerber','wafra',
-            'castleton','reinova','gideon','kurt alme','brian falik','jon jovanovic',
-            'nik ','lp ','fundrais','deal','pipeline','co-invest','term sheet',
-            'i squared','stonepeak','ecp','quantum','brookfield','arclight',
-        ]
-        # Recruiting keywords — search firm names, specific interviews, HH contacts.
-        JOB_KEYS = [
-            'piper maddox','ares','korn ferry','one search','interview','recruiter',
-            'russell reynolds','charlie watson','george allen','bennet cogden',
-            'headhunter','resume review','job search',
-        ]
-        # Tomac wins ties — deal activity is the priority classification.
-        ws = ('tomac' if any(k in hay for k in TOMAC_KEYS)
+        # Deal-activity keywords from firm_config (was hardcoded TOMAC_KEYS).
+        # Recruiting keywords from firm_config (was hardcoded JOB_KEYS).
+        DEAL_KEYS = _DEAL_KEYS
+        JOB_KEYS  = _RECRUIT_KEYS
+        # Deals win ties — investment activity is the priority classification.
+        ws = ('deals' if any(k in hay for k in DEAL_KEYS)
               else 'job' if any(k in hay for k in JOB_KEYS)
               else 'personal')
 
@@ -1794,13 +1870,13 @@ def main(dry_run: bool = False):
     with ThreadPoolExecutor(max_workers=6) as ex:
         fu_f  = ex.submit(_fetch_doc_worker, DOC_IDS['followups'],    doc_cache)
         rec_f = ex.submit(_fetch_doc_worker, DOC_IDS['recruiting'],   doc_cache)
-        tom_f = ex.submit(_fetch_doc_worker, DOC_IDS['tomac'],        doc_cache)
+        deal_f = ex.submit(_fetch_doc_worker, DOC_IDS['deal_pipeline'], doc_cache)
         log_f = ex.submit(_fetch_doc_worker, DOC_IDS['briefing_log'], doc_cache)
         mkt_f = ex.submit(_fetch_doc_worker, DOC_IDS['daily_market'], doc_cache)
         cal_f = ex.submit(get_calendar, cal_svc)
         followups_text      = fu_f.result()
         recruiting_text     = rec_f.result()
-        tomac_text          = tom_f.result()
+        deal_pipeline_text  = deal_f.result()
         log_text            = log_f.result()
         market_text         = mkt_f.result()
         calendar, upcoming  = cal_f.result()
@@ -1813,9 +1889,9 @@ def main(dry_run: bool = False):
     print('cos-dashboard-fetch: parsing...', file=sys.stderr)
     followups, awaiting_from_doc = parse_followups(followups_text)
     recruiting           = parse_recruiting(recruiting_text)
-    tomac                = parse_tomac(tomac_text)
-    lp_data              = parse_lp_data(tomac_text)
-    fundraising_strategy = parse_fundraising_strategy(tomac_text)
+    deals                = parse_deal_pipeline(deal_pipeline_text)
+    lp_data              = parse_lp_data(deal_pipeline_text)
+    fundraising_strategy = parse_fundraising_strategy(deal_pipeline_text)
     briefing_data        = parse_briefing_log(log_text)
     market_entries       = parse_market_commentary(market_text)
 
@@ -1855,7 +1931,7 @@ def main(dry_run: bool = False):
         print(f'cos-dashboard-fetch: {_resolved_count} item(s) marked [RESOLVED] via email-resolutions')
 
     recent_activity      = parse_recent_activity(
-        briefing_data, followups, recruiting, tomac,
+        briefing_data, followups, recruiting, deals,
         t0.strftime('%Y-%m-%d'),
         market_entries=market_entries,
     )
@@ -1912,7 +1988,7 @@ def main(dry_run: bool = False):
     # Written by dashboard UI as: dashboard-data.json._stageOverrides = { "deal_name": "newStage" }
     stage_overrides = state.get('_stageOverrides', {})
     if stage_overrides:
-        for deal in tomac:
+        for deal in deals:
             if deal.get('name') in stage_overrides:
                 deal['stage'] = stage_overrides[deal['name']]
         for rec in recruiting:
@@ -2009,8 +2085,8 @@ def main(dry_run: bool = False):
     # When a counterparty not in the Tomac doc shows up with follow-ups or
     # envelope items containing explicit fundraising signals, synthesize a
     # Tomac entry so the deal surfaces before a manual doc edit.
-    _tomac_envelope = state.get('awaitingExternal', []) + state.get('dealIntel', []) + state.get('originationInbox', []) + state.get('statusUpdates', [])
-    tomac, _promoted = _auto_promote_origination(tomac, followups, _tomac_envelope, today_str, lp_names=lp_data)
+    _deals_envelope = state.get('awaitingExternal', []) + state.get('dealIntel', []) + state.get('originationInbox', []) + state.get('statusUpdates', [])
+    deals, _promoted = _auto_promote_origination(deals, followups, _deals_envelope, today_str, lp_names=lp_data)
     if _promoted:
         print(f'cos-dashboard-fetch: auto-promoted {len(_promoted)} origination→tomac: {", ".join(_promoted)}', file=sys.stderr)
 
@@ -2022,7 +2098,7 @@ def main(dry_run: bool = False):
     # signal is fresher than the doc version, overlay it. Always expose the
     # doc version as `nextStepDoc` and the freshness flag as `freshSignal`
     # so the UI can badge "updated today".
-    tomac = _overlay_freshest_signal(tomac, followups, _tomac_envelope, today_str)
+    deals = _overlay_freshest_signal(deals, followups, _deals_envelope, today_str)
 
     # ── Per-section last_refreshed tracking ───────────────────────────────
     # For each major section, record the timestamp of the most recent fetch
@@ -2041,7 +2117,10 @@ def main(dry_run: bool = False):
     section_timestamps = {
         'followUps':        _ts('followUps',        followups),
         'upcomingCalls':    _ts('upcomingCalls',    upcoming),
-        'tomac':            _ts('tomac',            tomac),
+        'deals':            _ts('deals',            deals),
+        # Back-compat — write 'tomac' as a duplicate timestamp for 1 release
+        # so consumers still on the old key see fresh data. Remove next release.
+        'tomac':            _ts('deals',            deals),
         'recruiting':       _ts('recruiting',       recruiting),
         'calendar':         _ts('calendar',         calendar),
         'briefingSynopsis': _ts('briefingSynopsis', briefing_data),
@@ -2062,7 +2141,9 @@ def main(dry_run: bool = False):
         'threeDays':        (now + timedelta(days=3)).strftime('%Y-%m-%d'),
         'upcomingCalls':    upcoming,
         'followUps':        followups,
-        'tomac':            tomac,
+        'deals':            deals,
+        # Back-compat duplicate (read-only mirror) — remove next release.
+        'tomac':            deals,
         'recruiting': {
             'active':   recruiting,
             'archived': state.get('recruiting', {}).get('archived', []),
@@ -2109,6 +2190,25 @@ def main(dry_run: bool = False):
                   f'{p.get("total_deals","?")} deals, health {p.get("avg_health","?")}', file=sys.stderr)
         except Exception as _e:
             print(f'cos-dashboard-fetch: deal portfolio embed failed: {_e}', file=sys.stderr)
+
+    # ── Embed costs/quota rollup (Track G) ────────────────────────────────────
+    # Reads ~/cos-pipeline/data-<tenant>/costs/*.jsonl. Pure local I/O, ~1ms.
+    # Tile shape consumed by renderCostsTile(data) in cos-dashboard.template.html.
+    if _costs_mod is not None:
+        try:
+            _tenant = os.environ.get('COS_TENANT', 'tomac')
+            _agg = _costs_mod.aggregate_costs(_tenant, lookback_days=30)
+            live_data['costs'] = _costs_mod.format_for_tile(_agg, top_n=5)
+            print(f'cos-dashboard-fetch: costs tile — '
+                  f'${_agg["total_usd"]:.2f} over {_agg["lines_read"]} calls '
+                  f'({_agg["jsonl_files_seen"]} files)', file=sys.stderr)
+        except Exception as _e:
+            print(f'cos-dashboard-fetch: costs tile embed failed: {_e}', file=sys.stderr)
+            live_data['costs'] = {
+                'summary': 'cost data unavailable', 'totalUsd': 0.0, 'lookbackDays': 30,
+                'topModels': [], 'topPasses': [], 'topRoutines': [], 'dailyChart': [],
+                'filesSeen': 0, 'linesRead': 0,
+            }
 
     # Merge: live data wins over stale cached values; curated fields from state are preserved.
     # CRITICAL: never overwrite manual override maps — they are written by the dashboard UI

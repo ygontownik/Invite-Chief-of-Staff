@@ -336,9 +336,15 @@ def write_firm_config_json(path: Path, existing: dict, firm_short: str):
 
 def main():
     parser = argparse.ArgumentParser(description="COS Pipeline — New Firm Setup")
+    _default_cfg = (
+        os.environ.get("COS_CONFIG_DIR")
+        or (str(Path.home() / "cos-pipeline-config-tomac")
+            if (Path.home() / "cos-pipeline-config-tomac").is_dir()
+            else str(Path.home() / "cos-pipeline-config"))
+    )
     parser.add_argument("--config",
-                        default=os.environ.get("COS_CONFIG_DIR", str(Path.home() / "cos-pipeline-config")),
-                        help="Path to config directory (default: $COS_CONFIG_DIR or ~/cos-pipeline-config)")
+                        default=_default_cfg,
+                        help="Path to config directory (default: $COS_CONFIG_DIR, then ~/cos-pipeline-config-tomac/, then ~/cos-pipeline-config/)")
     parser.add_argument("--force",   action="store_true",
                         help="Refresh folder/doc IDs in place even if root folder already exists")
     parser.add_argument("--dry-run", action="store_true",

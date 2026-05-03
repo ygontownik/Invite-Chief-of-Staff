@@ -29,6 +29,10 @@ YONI_CONTEXT.md
 # Ignore generated dashboard HTML but allow docs/ reference HTML
 *.html
 !docs/*.html
+# Render artifacts (data-injected) — explicitly never committed.
+*.rendered.html
+# Clean templates (no DATA block) — these ARE committed for public repo.
+!*.template.html
 
 # ── RUNTIME STATE ─────────────────────────────────────────────────────────────
 __pycache__/
@@ -56,3 +60,56 @@ dashboard/netlify.toml
 output/pass1-log-*.txt
 output/pass2-log-*.txt
 output/weekly-scan-*.md
+
+# ── CLASP / APPS SCRIPT TOOLING (per-user node_modules + cloned sources) ──────
+# .tools/ holds a per-user clasp install (not committed; node_modules is huge).
+.tools/
+# Substack-sync source contains an unrotated RBN credential — NEVER COMMIT.
+# Block live source files (Code.gs) and any sibling *-clasped variants.
+# Re-include only the sanitized template + docs.
+google-scripts/substack-sync*/Code.gs
+google-scripts/substack-sync*/Code.js
+google-scripts/substack-sync*/appsscript.json
+google-scripts/substack-sync*/.clasp.json
+google-scripts/substack-sync-clasped/
+google-scripts/substack-sync-clasped*/
+# Any *-clasped working dir holds raw clasp output; treat as untrusted (may
+# contain secrets or env-coupled IDs we substitute at deploy time).
+google-scripts/*-clasped/
+google-scripts/*-clasped*/
+.clasp.json
+.clasprc.json
+
+# ── SESSION-INTERNAL HANDOFFS (contain third-party emails, working-tree paths,
+#    decision-log timestamps; not meant for the public repo). Local only.
+HANDOFF.md
+HANDOFF_v2.md
+HANDOFF_v3.md
+DECISIONS.md
+CONTRADICTION_FOUND.md
+MORNING_REPORT*.md
+RUN2_BRIEF.md
+PLAN_v3.*.md
+PHASE2_*.md
+PRIVACY_*.md
+SETUP_DIFF.md
+SETUP_TEST_PLAN.md
+SETUP_NEW_FIRM_NOTES.md
+SKILL_TREE_RESOLUTION.md
+APPS_SCRIPTS_INVENTORY.md
+BIDX_DIFF.md
+BRIEFING_COMPARISON.md
+CONFIG_INVENTORY.md
+CONFIG_SPLIT_RUN2.md
+CSPIKE_PLAN.md
+DASHBOARDS_INVENTORY.md
+DUP_RESOLUTION.md
+GITHUB_MANIFEST.md
+J_SETUP.md
+DAEMONS.md
+HEARTBEAT.md
+HTML_STRIP_RUNBOOK.md
+MIGRATION_B7.md
+PATH_TOPOLOGY.md
+Q*_*.next.md
+*.bak-*

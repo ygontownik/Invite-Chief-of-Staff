@@ -9,14 +9,38 @@ Built as two packages that can be deployed independently:
 
 | Package | What it does |
 |---------|-------------|
-| **Package B — Operations** | Triages Gmail, processes Otter AI + call transcripts, extracts action items and deal intel, writes to Follow-ups / Pipeline / Recruiting / People docs |
+| **Package B — Operations** | Triages Gmail, processes Otter AI + call transcripts, extracts action items and deal intel, writes to Follow-ups / Pipeline / People docs (job-search / Recruiting doc are opt-in via `firm_context.yaml :: features.job_search: true`) |
 | **Package A — Market Intelligence** | Transcribes podcasts, processes Jefferies/GS/RBN research PDFs, generates IC memos and deal ideas via a 3-pass pipeline |
 
 The dashboard (always full) shows all tiles. Tabs without an active package display an empty state.
 
 ---
 
-## Quick Start — New Firm Setup
+## Quick Start — New Tenant Setup
+
+> **For end-to-end install instructions see [INSTALL.md](INSTALL.md).** It covers prereqs, the install command, the 8 setup steps, first-run, daily/weekly cadence, re-validation, uninstall, and troubleshooting. The summary below is the 30-second version.
+
+```bash
+git clone <your-public-cos-pipeline-url> ~/cos-pipeline
+cd ~/cos-pipeline
+./setup.sh --instance=<slug> --domain=<infra-pe|real-estate|generic-dealmaker>
+```
+
+`<slug>` is a 2–16 char lowercase identifier for your tenant (e.g. `tomac`, `re-dev`). The script walks 8 interactive steps. After Step 8 you'll have:
+- A web dashboard at `http://localhost:<port>/` (port allocated automatically per `multi_tenant.slug_to_port`; tomac=7777, re-dev=7778, others 7779+)
+- A private config repo at `~/cos-pipeline-config-<slug>/`
+- LaunchAgents installed under prefix `com.cos.<slug>.*`
+- API keys stored in macOS Keychain under prefix `cos-pipeline-<slug>/<KEY>` for `$USER`
+
+To re-validate without changes: `./setup.sh --instance=<slug> --validate` (target output: `═══ VALIDATE: PASS (<slug>) ═══`).
+
+To uninstall (slug-isolated; idempotent): `./setup.sh --instance=<slug> --uninstall` (add `--purge-data --purge-config --yes` to also remove dirs).
+
+To re-consent OAuth after token expiry: `./oauth_bootstrap.sh --scope=<full|drive|gmail-read|gmail-compose|all> --force`.
+
+---
+
+## Manual install (legacy — kept for reference; the Quick Start above supersedes this)
 
 ### 1. Copy and fill in the identity configs
 
@@ -127,15 +151,16 @@ The pipeline **only** reads the specific folder IDs listed in `transcript_source
 
 ## File Map — What Goes Where
 
-### Firm-specific (fill these in, never committed to git)
+### Tenant-specific (lives in your private per-tenant config repo, never committed to the public code repo)
 
 | File | Purpose | Location |
 |------|---------|----------|
-| `firm_context.yaml` | Principal identity, team, investment focus, peer firms | `~/tomac-cove-pipeline/` |
-| `firm_config.json` | Email keywords, Google Doc IDs, active packages | `~/tomac-cove-pipeline/` |
-| `drive-docs.yaml` | Registry of all Drive doc/folder IDs | `~/dashboards/config/` |
-| `~/credentials/*.pickle` | Google OAuth tokens | `~/credentials/` |
-| `~/credentials/*.json` | OAuth client credentials | `~/credentials/` |
+| `firm_context.yaml` | Principal identity, team, investment focus, peer firms | `~/cos-pipeline-config-<slug>/` (canonical for tomac since session 4) |
+| `firm_config.json` | `keychain_service_prefix`, email/research-sender config | `~/cos-pipeline-config-<slug>/` |
+| `drive-docs.yaml` | Canonical registry of all Drive doc/folder IDs (per C8) | `~/cos-pipeline-config-<slug>/` |
+| `~/credentials/*.pickle` | Google OAuth tokens (drive, gmail, gmail-mini) | `~/credentials/` |
+| `~/credentials/*.json` | OAuth client + token.json (full-scope) | `~/credentials/` |
+| Keychain `cos-pipeline-<slug>/<KEY>` for `$USER` | API keys (ANTHROPIC, ASSEMBLYAI, …) | macOS Keychain |
 
 ### Templates (committed — copy these to produce the above)
 
@@ -149,7 +174,7 @@ The pipeline **only** reads the specific folder IDs listed in `transcript_source
 
 | Script | What it does | Schedule |
 |--------|-------------|---------|
-| `cos_gmail_mini_v2.py` | Gmail triage — Haiku classifies all, Sonnet enriches DEAL/RECRUIT | Every 2h, Mon–Fri |
+| `cos_gmail_mini_v2.py` | Gmail triage — Haiku classifies all, Sonnet enriches DEAL (RECRUIT only when features.job_search is on) | Every 2h, Mon–Fri |
 | `cos_otter_backfill.py` | Otter AI + call transcript processor — Sonnet memo, Opus deal extraction | Daily |
 | `cos_transcript_hook.py` | Real-time hook triggered after each new recording | Post-call |
 
@@ -200,7 +225,7 @@ _firm_context.py → build_memo_header()       → MEMO_PREAMBLE
 | Pass | Script | Model | Rationale |
 |------|--------|-------|-----------|
 | Email triage | `cos_gmail_mini_v2.py` | `claude-haiku-4-5-20251001` | Fast, cheap — every email |
-| Email enrich | `cos_gmail_mini_v2.py` | `claude-sonnet-4-6` | DEAL/RECRUIT only |
+| Email enrich | `cos_gmail_mini_v2.py` | `claude-sonnet-4-6` | DEAL (RECRUIT only when features.job_search is on) only |
 | Transcript memo | `cos_otter_backfill.py` | `claude-sonnet-4-6` | Format-constrained prose |
 | Deal extraction | `cos_otter_backfill.py` | `claude-opus-4-7` | Multi-hop deal/LP inference |
 | Real-time hook | `cos_transcript_hook.py` | `claude-sonnet-4-6` | Fast, runs post-call |

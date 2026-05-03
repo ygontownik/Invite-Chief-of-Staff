@@ -50,19 +50,40 @@ try:
 except Exception:
     def log_usage(*_a, **_kw): return
 
+import _firm_context as _fc  # noqa: E402
+import _secrets  # noqa: E402
+
 # ── Constants ─────────────────────────────────────────────────────────────────
-ANTHROPIC_API_KEY  = os.environ.get("ANTHROPIC_API_KEY", "")
+# Resolves through keychain (Mac default) then env-var fallback per BOOTSTRAP_PLAN #2.
+ANTHROPIC_API_KEY  = _secrets.load_secret("ANTHROPIC_API_KEY", "")
 ANTHROPIC_URL      = "https://api.anthropic.com/v1/messages"
 MODEL              = "claude-sonnet-4-6"
 MAX_TOKENS         = 2048
 DASHBOARD_WARMUP   = "http://localhost:7777/warmup"
 GOOGLE_DOCS_URL    = "https://docs.googleapis.com/v1/documents"
 
-DOC_FOLLOWUPS      = "10leX26u8n3XkoCHzg7SDwLUodVX2CqKjvXcSJ-KAsCY"
-DOC_RECRUITING     = "1ZnTCVoA0ID7XTDFy27yDnrEVhBqx75kaTg_QXFq4eXA"
-DOC_TOMAC_PIPELINE = "1LHorixPs8ppwSvQzGfA_B6609YZA8dSpR4rmppENzpc"
-DOC_MARKET_UPDATE  = "1UZ1t4bhgzll5VcAuP3Mj1CyYb-4xjgmbUK1xg6oUS_k"
-DOC_BRIEFING_LOG   = "14wE3L6ZRsjhhx2psRKbaHS5i0kgEoteWYZusqETiAZ0"
+# ── Drive doc IDs (B1: ID excision) ───────────────────────────────────────────
+# Loaded from drive-docs.yaml in the firm config repo via _fc.load_drive_docs().
+# Required keys: followups, recruiting, tomac_pipeline (deal pipeline narrative),
+# daily_market_update, briefing_log. Fail loud if any are missing — no silent
+# fallback to legacy hardcoded IDs.
+_DOCS = _fc.load_drive_docs()
+
+def _require_doc(key: str) -> str:
+    val = _DOCS.get(key, "")
+    if not val:
+        raise RuntimeError(
+            f"drive-docs.yaml missing required doc id '{key}'. "
+            f"Populate ~/cos-pipeline-config-<slug>/drive-docs.yaml or "
+            f"set $COS_CONFIG_DIR to your tenant config directory."
+        )
+    return val
+
+DOC_FOLLOWUPS      = _require_doc("followups")
+DOC_RECRUITING     = _require_doc("recruiting")
+DOC_TOMAC_PIPELINE = _require_doc("tomac_pipeline")
+DOC_MARKET_UPDATE  = _require_doc("daily_market_update")
+DOC_BRIEFING_LOG   = _require_doc("briefing_log")
 
 # ── Google auth ───────────────────────────────────────────────────────────────
 
@@ -151,13 +172,34 @@ def append_to_doc(token: str, doc_id: str, text: str) -> None:
     with urllib.request.urlopen(req, timeout=30) as r:
         r.read()
 
-# ── System prompt (static — will be prompt-cached) ────────────────────────────
+# ── System prompt (built dynamically from firm_context.yaml) ──────────────────
+# Identity (principal name, firm name, deal-lead name, deal section header)
+# is loaded from firm_context.yaml so the prompt is tenant-neutral.
 
-_SYSTEM = """You are the Chief of Staff AI generating the daily personal briefing for Yoni Gontownik — senior infrastructure PE professional co-founding Tomac Cove Infrastructure Partners with Mark Saxe.
+def _build_system_prompt() -> str:
+    ctx = _fc.load_firm_context()
+    p = ctx.get("principal", {}) or {}
+    f = ctx.get("firm", {}) or {}
+    p_name = p.get("name", "Principal")
+    p_role = p.get("role", "senior investor")
+    f_name = f.get("name", "the firm")
+
+    # Deal-lead name (for "Mark's status" style attribution in deal section)
+    dl = _fc._deal_lead(ctx)  # internal helper — fall back to "the deal lead"
+    dl_first = (dl.get("name", "Deal lead") or "Deal lead").split()[0]
+
+    # Deal section header from workstream_categories.deal — falls back to firm name
+    deal_section = (
+        ctx.get("workstream_categories", {}).get("deal")
+        or f.get("short_name")
+        or f_name
+    )
+
+    return f"""You are the Chief of Staff AI generating the daily personal briefing for {p_name} — {p_role}, co-founding {f_name} with {dl.get('name', 'the deal lead')}.
 
 You will be given the current content of four Google Docs and the tail of the Personal Briefing Log. Generate the full briefing with EXACTLY this structure and nothing else:
 
-## Personal Briefing — {TODAY} ({DAY_OF_WEEK})
+## Personal Briefing — {{TODAY}} ({{DAY_OF_WEEK}})
 
 ### Today's Priorities
 All follow-up rows with due date = today, sorted by urgency (explicitly promised > inferred).
@@ -173,9 +215,9 @@ For each active opportunity (stage ≠ Closed), one line:
 **[Firm]** · [Role] · [Stage] → [Next step] _(deadline if set)_
 If none active: "No active recruiting opportunities."
 
-### Tomac Cove
+### {deal_section}
 Active deals (stage ≠ Closed/Pass), one line each:
-**[Company]** · [Stage] → [Next step] _(Mark's status if noted)_
+**[Company]** · [Stage] → [Next step] _({dl_first}'s status if noted)_
 If none: "No active deals."
 
 ### Market Intelligence
@@ -191,10 +233,12 @@ One paragraph (3–5 sentences) summarizing what the capture pipeline added sinc
 If no Capture Summary found: "No capture summary available."
 
 RULES:
-- Replace {TODAY} and {DAY_OF_WEEK} with the actual date and day provided in the user message.
+- Replace {{TODAY}} and {{DAY_OF_WEEK}} with the actual date and day provided in the user message.
 - Output ONLY the briefing markdown. No preamble, no closing remarks.
 - Be specific: named people, firms, dates, deal stages. Never vague summaries.
 - Today's Priorities and Coming Up draw exclusively from the Follow-ups doc — do not invent items."""
+
+_SYSTEM = _build_system_prompt()
 
 # ── Claude call ───────────────────────────────────────────────────────────────
 

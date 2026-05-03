@@ -11,7 +11,7 @@ Your Gmail or Outlook inbox is scanned every 2 hours on weekdays.
 
 - **What's captured:** Every inbound email received since the last run
 - **What's skipped:** Emails already processed (tracked in `~/credentials/processed_emails.json`)
-- **Where results go:** Follow-ups Doc (action items), Pipeline Doc (deal threads), Recruiting Doc (job search threads)
+- **Where results go:** Follow-ups Doc (action items), Pipeline Doc (deal threads), People Doc (contact rollup). Recruiting Doc (job-search threads) only when `features.job_search` is enabled.
 - **You don't save anything** — the pipeline reads directly from your inbox via OAuth
 
 ### Podcasts and blogs
@@ -83,7 +83,7 @@ transcript_sources:
     name: "Beside AI"                         # shown in logs and memo headers
     folder_ids:
       - "YOUR_BESIDE_AI_FOLDER_ID"            # from your Beside AI Drive sync settings
-    category_hint: "auto"                     # or "Recruiting" / "Deal" / "Other"
+    category_hint: "auto"                     # or "Deal" / "Personal" / "Other"
 ```
 
 Then configure the recording service to sync to that folder. No code changes needed.

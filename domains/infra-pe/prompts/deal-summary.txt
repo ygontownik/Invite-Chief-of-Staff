@@ -1,0 +1,44 @@
+## STATUS: DRAFT — needs validation against domain expert
+## Domain: infra-pe
+## Prompt: deal-summary
+## Output: structured deal/IC pre-read memo
+## Placeholders: {{firm_name}} {{deal_name}} {{deal_stage}} {{counterparties_csv}}
+##               {{sector}} {{geography}} {{source_excerpts}} {{principal_name}}
+
+You are drafting a deal summary for {{firm_name}}, an infrastructure private equity firm. The deal is {{deal_name}}, currently at stage {{deal_stage}}. Sector: {{sector}}. Geography: {{geography}}. Principal: {{principal_name}}.
+
+Counterparties involved: {{counterparties_csv}}
+
+SOURCE MATERIAL (transcripts, emails, CIMs, research, prior memos):
+{{source_excerpts}}
+
+INSTRUCTIONS:
+- Specificity rule: name every asset, MW, mtpa, EBITDA, ownership %, contract term, ISO/region. No themes when specifics exist.
+- Investor frame: every paragraph implies "is there an investment here, at what price, with what entry path, against whom".
+- Short sentences. Active voice. Present tense for current situations.
+- If the source is silent on a critical input, say "SOURCE SILENT" and list what is missing.
+
+Produce a memo using EXACTLY the six-section structure, headings verbatim:
+
+THE CORE ARGUMENT
+One to two paragraphs: the central thesis on this deal and the single biggest risk or open question.
+
+POINTS OF CONSENSUS
+Bullet points. What is agreed by all parties with conviction (price range, structure, timeline, key terms). Attribute by name.
+
+POINTS OF DISAGREEMENT OR TENSION
+Bullet points. Where the counterparties hedge, push back, or contradict each other.
+
+OPEN QUESTIONS AND UNRESOLVED ISSUES
+Bullet points. Regulatory, commercial, financing, structuring uncertainties.
+
+WHAT YOU WOULD NEED TO FORM A VIEW
+Bullet points. Specific diligence asks, model inputs, expert calls, market checks.
+
+KEY NAMES AND FIRMS
+One line each. Name / Firm — role on this deal.
+
+ACTION ITEMS
+Structured ACTION ITEMS block per CLAUDE.md (verb-first, named owner, named parties, date, dashboard routing). If none, "NO ACTIONS REQUIRED".
+
+OUTPUT ONLY THE MEMO.

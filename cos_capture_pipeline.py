@@ -61,7 +61,28 @@ from typing import Optional
 # ── Paths and config ─────────────────────────────────────────────────────────
 _HERE = Path(__file__).parent
 _CREDS = Path.home() / "credentials"
-_LOG_DIR = Path.home() / "tomac-cove-pipeline" / "logs"
+
+# B3 (ID excision): per-tenant log path. Slug comes from
+# firm_context.yaml :: tenant_slug (or firm.short_name lowercased as fallback).
+# Defaults to "tomac" for backwards compatibility. The directory
+# ~/cos-pipeline/logs-<slug>/ replaces the legacy ~/tomac-cove-pipeline/logs.
+# setup.py's --check command will offer to symlink the legacy path forward.
+def _resolve_log_dir() -> Path:
+    try:
+        sys.path.insert(0, str(_HERE))
+        import _firm_context as _fc_local  # noqa: E402
+        ctx = _fc_local.load_firm_context()
+    except Exception:
+        ctx = {}
+    slug = (
+        ctx.get("tenant_slug")
+        or (ctx.get("firm", {}) or {}).get("short_name", "")
+        or "tomac"
+    )
+    slug = str(slug).strip().lower().replace(" ", "-") or "tomac"
+    return Path.home() / "cos-pipeline" / f"logs-{slug}"
+
+_LOG_DIR = _resolve_log_dir()
 _LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 logging.basicConfig(
@@ -77,6 +98,7 @@ log = logging.getLogger("cos_capture")
 sys.path.insert(0, str(_HERE))
 
 import _firm_context as _fc  # noqa: E402
+import _secrets  # noqa: E402
 try:
     from _usage import log_usage
 except Exception:
@@ -91,7 +113,8 @@ from _email_provider import (  # noqa: E402
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+# Resolves through keychain (Mac default) then env-var fallback per BOOTSTRAP_PLAN #2.
+ANTHROPIC_API_KEY = _secrets.load_secret("ANTHROPIC_API_KEY", "")
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 MODEL = "claude-sonnet-4-6"
 MAX_TOKENS = 8192

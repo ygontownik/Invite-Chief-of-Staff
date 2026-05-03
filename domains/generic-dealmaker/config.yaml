@@ -1,0 +1,67 @@
+# domains/generic-dealmaker/config.yaml
+# Domain-neutral bundle for any dealmaker (sales, BD, M&A advisor, solo operator).
+# Loaded when firm_context.yaml :: domain == "generic-dealmaker".
+# Track M-MIN.2 — schema defined in PLAN_v3.1.md.
+
+domain: generic-dealmaker
+
+pipeline_stages:
+  - Sourcing
+  - Active Conversation
+  - Diligence
+  - Negotiation
+  - Closed
+  - Dead
+
+counterparty_types:
+  - counterparty
+  - advisor
+  - internal-team
+
+deal_keywords:
+  # Minimal, sector-agnostic.
+  - LOI
+  - term sheet
+  - NDA
+  - signed
+  - proposal
+  - contract
+  - close
+  - kickoff
+
+email_triage_rules:
+  high_priority_senders_role:
+    - counterparty (active deal)
+  auto_archive_keywords:
+    - newsletter
+    - unsubscribe
+  flag_for_followup_keywords:
+    - signed
+    - LOI
+    - proposal
+    - next steps
+  research_routing_keywords: []
+
+default_research_vendors: []
+
+promote_owners_default: []
+
+memo_section_names:
+  # Lean structure; adapt per-tenant if desired.
+  - SUMMARY
+  - WHAT IS AGREED
+  - WHAT IS OPEN
+  - NEXT STEPS
+  - KEY PEOPLE
+  - ACTION ITEMS
+
+model_routing:
+  pass1_source_scanner:
+    model: claude-sonnet-4-6
+    max_tokens: 2048
+  pass2_pipeline_analyst:
+    model: claude-sonnet-4-6
+    max_tokens: 2048
+  pass3_ic_memo:
+    model: claude-sonnet-4-6
+    max_tokens: 2048

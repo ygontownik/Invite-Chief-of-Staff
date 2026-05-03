@@ -41,10 +41,11 @@ _PIPELINE_DIR = Path(__file__).parent
 def _find_config_dir() -> Path:
     """Return the directory that contains firm_context.yaml.
 
-    Search order:
+    Search order (per DECISIONS C3 + C4):
       1. $COS_CONFIG_DIR env var (explicit override — set in ~/.zshrc)
-      2. ~/cos-pipeline-config/   (default team config repo location)
-      3. <pipeline_dir>/          (legacy: config living alongside code)
+      2. ~/cos-pipeline-config-tomac/ (canonical: slug-suffixed per C3)
+      3. ~/cos-pipeline-config/       (legacy: pre-C3 default; symlinked to -tomac/)
+      4. <pipeline_dir>/              (legacy: config living alongside code)
     """
     env = os.environ.get("COS_CONFIG_DIR")
     if env:
@@ -52,9 +53,13 @@ def _find_config_dir() -> Path:
         if p.is_dir():
             return p
 
-    default_team = Path.home() / "cos-pipeline-config"
-    if default_team.is_dir() and (default_team / "firm_context.yaml").exists():
-        return default_team
+    canonical_tomac = Path.home() / "cos-pipeline-config-tomac"
+    if canonical_tomac.is_dir() and (canonical_tomac / "firm_context.yaml").exists():
+        return canonical_tomac
+
+    legacy_team = Path.home() / "cos-pipeline-config"
+    if legacy_team.is_dir() and (legacy_team / "firm_context.yaml").exists():
+        return legacy_team
 
     return _PIPELINE_DIR  # legacy fallback
 
@@ -195,6 +200,61 @@ def load_active_packages(firm_config_path=None) -> list:
     """
     cfg = load_firm_config(firm_config_path)
     return cfg.get("packages", ["market_intelligence", "operations"])
+
+
+# ── Features (scope A — per-tenant + per-user toggles) ───────────────────────
+
+# Default values for known features. Conservative: every feature off by default
+# so a brand-new tenant gets a clean stripped-down dashboard. Tomac and other
+# established tenants override via firm_context.yaml :: features.
+_FEATURE_DEFAULTS = {
+    "job_search":            False,
+    "call_recording":        False,
+    "podcast_transcription": False,
+    "research_pdfs":         False,
+    "fundraising":           False,
+}
+
+
+def get_features(ctx: dict, user: dict | None = None) -> dict:
+    """Resolve features for the current request: tenant default ⊕ user override.
+
+    Lookup chain (per session-4 scope A):
+      1. _FEATURE_DEFAULTS (every feature off)
+      2. ctx['features'] (tenant defaults from firm_context.yaml)
+      3. user['features'] (per-user override from users.json :: users[N].features)
+
+    Each layer merges over the previous; later layers win per-key.
+    Returns a dict with the full known-feature set populated.
+    """
+    out = dict(_FEATURE_DEFAULTS)
+    out.update((ctx or {}).get("features") or {})
+    out.update((user or {}).get("features") or {})
+    return out
+
+
+def feature_enabled(ctx: dict, name: str, user: dict | None = None) -> bool:
+    """Convenience: True iff feature `name` is enabled for the user/tenant."""
+    return bool(get_features(ctx, user).get(name, False))
+
+
+def get_tile_label(ctx: dict, tile_id: str, default: str = "") -> str:
+    """Per-tenant tile label override from firm_context.yaml :: tile_labels.
+
+    Returns the override if present, else the supplied default (typically
+    dashboard-tiles.yaml :: title).
+    """
+    labels = (ctx or {}).get("tile_labels") or {}
+    return str(labels.get(tile_id, default))
+
+
+def is_read_only(ctx: dict) -> bool:
+    """True if this install should skip write pipelines (per scope A read_only).
+
+    Use to gate write-side daemons (capture, gmail-mini, otter-backfill) on
+    partner/secondary tomac installs that share the primary's Drive.
+    """
+    return bool((ctx or {}).get("read_only", False))
 
 
 # ── Internal accessors ────────────────────────────────────────────────────────

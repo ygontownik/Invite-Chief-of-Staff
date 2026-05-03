@@ -48,17 +48,23 @@ def section(title: str):
 def _config_target_dir() -> Path:
     """Return the directory where firm config files should live.
 
-    Respects COS_CONFIG_DIR and ~/cos-pipeline-config/ so --fix and
-    --create-docs write to the team config repo, not the code directory.
+    Search order (per DECISIONS C3):
+      1. $COS_CONFIG_DIR
+      2. ~/cos-pipeline-config-tomac/  (canonical: slug-suffixed)
+      3. ~/cos-pipeline-config/        (legacy; symlinked to -tomac/ as of session 4)
+      4. <pipeline_dir>/               (legacy: config alongside code)
     """
     env = os.environ.get("COS_CONFIG_DIR")
     if env:
         p = Path(env).expanduser()
         if p.is_dir():
             return p
-    team_cfg = Path.home() / "cos-pipeline-config"
-    if team_cfg.is_dir():
-        return team_cfg
+    canonical = Path.home() / "cos-pipeline-config-tomac"
+    if canonical.is_dir():
+        return canonical
+    legacy = Path.home() / "cos-pipeline-config"
+    if legacy.is_dir():
+        return legacy
     return _HERE  # legacy: config alongside code
 
 
@@ -221,12 +227,14 @@ def _check_schema():
         print(f"  {FAIL}  PyYAML not installed — run: pip3 install pyyaml")
         return
 
-    # Find config dir (respects COS_CONFIG_DIR and ~/cos-pipeline-config/)
+    # Find config dir (per DECISIONS C3: prefer -tomac/ over /, both fall back to here)
     import os
     config_dir = None
     env = os.environ.get("COS_CONFIG_DIR")
     if env and Path(env).expanduser().is_dir():
         config_dir = Path(env).expanduser()
+    elif (Path.home() / "cos-pipeline-config-tomac" / "firm_context.yaml").exists():
+        config_dir = Path.home() / "cos-pipeline-config-tomac"
     elif (Path.home() / "cos-pipeline-config" / "firm_context.yaml").exists():
         config_dir = Path.home() / "cos-pipeline-config"
     else:

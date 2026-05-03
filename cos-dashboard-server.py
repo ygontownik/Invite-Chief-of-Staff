@@ -160,27 +160,74 @@ def _load_tiles():
 
 def _tiles_for(user):
     """Return tiles visible to the given user. Handles owner/partner tiers,
-    per-user entries from config/users.json, and package-gating from firm_config.json.
+    per-user entries from config/users.json, package-gating from firm_config.json,
+    AND per-tenant feature gating + per-tenant tile-label overrides (session-4 scope A).
 
-    Tiles with requires_package are always shown but annotated with
-    package_active=False when the required package is not in firm_config["packages"].
-    This lets the dashboard render empty states rather than hiding tiles entirely —
-    the full dashboard structure is always visible regardless of package config.
+    Layers applied:
+      1. Annotate package_active from firm_config :: packages (existing).
+      2. Apply per-tenant tile_labels override from firm_context.yaml (overrides title).
+      3. Drop tiles whose `requires_feature` is OFF for the user/tenant.
+      4. For surviving tiles, drop sub-tabs whose `requires_feature` is OFF.
+      5. Filter by user.tiles allowlist (existing) or `allowed` tier.
     """
     active_pkgs = _load_active_packages()
     all_tiles = _load_tiles()
 
-    # Annotate each tile with package_active flag
+    # 1. Package gating annotation (existing behavior).
     for t in all_tiles:
         req = t.get('requires_package', '')
         t['package_active'] = (not req) or (req in active_pkgs)
 
+    # 2-4. Tenant tile_labels + feature gating. Lazy-import to avoid circular
+    # imports at module load and to keep _firm_context as the single config gate.
+    try:
+        import _firm_context as _fc
+        ctx = _fc.load_firm_context()
+    except Exception:
+        ctx = {}
+
     u = _get_user(user)
+    features_user_dict = u if isinstance(u, dict) else None
+
+    filtered = []
+    for t in all_tiles:
+        # 2. Apply per-tenant tile_labels (override title only).
+        try:
+            t['title'] = _fc.get_tile_label(ctx, t.get('id', ''), t.get('title', ''))
+        except Exception:
+            pass
+
+        # 3. Drop tile if its requires_feature is OFF.
+        tile_req = t.get('requires_feature')
+        if tile_req:
+            try:
+                if not _fc.feature_enabled(ctx, tile_req, features_user_dict):
+                    continue
+            except Exception:
+                pass  # if feature resolution fails, fail open (show the tile)
+
+        # 4. Drop sub-tabs whose requires_feature is OFF.
+        if t.get('tabs'):
+            kept_tabs = []
+            for tab in t['tabs']:
+                tab_req = tab.get('requires_feature') if isinstance(tab, dict) else None
+                if tab_req:
+                    try:
+                        if not _fc.feature_enabled(ctx, tab_req, features_user_dict):
+                            continue
+                    except Exception:
+                        pass
+                kept_tabs.append(tab)
+            t['tabs'] = kept_tabs
+
+        filtered.append(t)
+
+    # 5. Final allowlist filter (existing behavior).
     if u:
         allowed_urls = set(u.get('tiles') or [])
-        return [t for t in all_tiles if (t.get('url') or '').rstrip('/') + '/' in
+        return [t for t in filtered if (t.get('url') or '').rstrip('/') + '/' in
                 {u.rstrip('/') + '/' for u in allowed_urls}]
-    return [t for t in all_tiles if user in (t.get('allowed') or [])]
+    return [t for t in filtered if user in (t.get('allowed') or [])]
 
 
 # ── User store helpers ─────────────────────────────────────────────────────────
@@ -377,7 +424,33 @@ def _save_order(data):
             pass
 
 _RECRUIT_CONFIG_PATH = Path(__file__).parent.parent / 'config' / 'recruit-config.yaml'
-_TOMAC_CONFIG_PATH   = Path(__file__).parent.parent / 'config' / 'tomac-config.yaml'
+
+# Per-tenant deal config — primary source is the per-tenant config repo
+# (~/cos-pipeline-config-<slug>/config/deal-config.yaml), with one-release
+# fallback to the legacy ~/dashboards/config/tomac-config.yaml file.
+def _resolve_deal_config_path():
+    import os
+    env = os.environ.get('COS_CONFIG_DIR')
+    candidates = []
+    if env:
+        candidates.append(Path(env).expanduser() / 'config' / 'deal-config.yaml')
+        candidates.append(Path(env).expanduser() / 'deal-config.yaml')
+    candidates.append(Path.home() / 'cos-pipeline-config-tomac' / 'config' / 'deal-config.yaml')
+    candidates.append(Path(__file__).parent.parent / 'config' / 'deal-config.yaml')
+    # Legacy fallback (one-release back-compat — remove next major release)
+    candidates.append(Path(__file__).parent.parent / 'config' / 'tomac-config.yaml')
+    for p in candidates:
+        try:
+            if p.exists():
+                return p
+        except Exception:
+            continue
+    return candidates[-1]   # may not exist; loader will catch the error
+
+_DEAL_CONFIG_PATH = _resolve_deal_config_path()
+# Back-compat alias — legacy callers may still reference _TOMAC_CONFIG_PATH.
+# Will be removed in the release after this one.
+_TOMAC_CONFIG_PATH = _DEAL_CONFIG_PATH
 
 def _load_recruit_config() -> dict:
     """Load config/recruit-config.yaml and return as a plain dict for JSON injection."""
@@ -396,20 +469,25 @@ def _load_recruit_config() -> dict:
         print(f'[recruit-config] load failed: {e}', flush=True)
         return {'priorityTargets': {'inDiscussion': [], 'waitingToHear': [], 'doIChase': []}, 'recruiters': []}
 
-def _load_tomac_config() -> dict:
-    """Load config/tomac-config.yaml and return as a plain dict for JSON injection."""
+def _load_deal_config() -> dict:
+    """Load config/deal-config.yaml and return as a plain dict for JSON injection.
+    Renamed from _load_tomac_config in PLAN E1.4. Falls back to the legacy
+    tomac-config.yaml path for one release; see _resolve_deal_config_path()."""
     try:
         import yaml as _yaml
-        raw = _yaml.safe_load(_TOMAC_CONFIG_PATH.read_text()) or {}
+        raw = _yaml.safe_load(_DEAL_CONFIG_PATH.read_text()) or {}
         return {
-            'liveDeals':             raw.get('liveDeals', []),
-            'dealOrigination':       raw.get('dealOrigination', []),
-            'capitalRaisingAdvisors':raw.get('capitalRaisingAdvisors', []),
-            'prospectiveInvestors':  raw.get('prospectiveInvestors', []),
+            'liveDeals':              raw.get('liveDeals', []),
+            'dealOrigination':        raw.get('dealOrigination', []),
+            'capitalRaisingAdvisors': raw.get('capitalRaisingAdvisors', []),
+            'prospectiveInvestors':   raw.get('prospectiveInvestors', []),
         }
     except Exception as e:
-        print(f'[tomac-config] load failed: {e}', flush=True)
+        print(f'[deal-config] load failed: {e}', flush=True)
         return {'liveDeals': [], 'dealOrigination': [], 'capitalRaisingAdvisors': [], 'prospectiveInvestors': []}
+
+# Back-compat alias — remove in next major release.
+_load_tomac_config = _load_deal_config
 
 # ── Fundraising user-state ──────────────────────────────────────────────
 # Buckets schema (2026-04-28): direct_lps / gp_stakes / placement_agents /
@@ -654,14 +732,32 @@ def _is_partner_path(path: str) -> bool:
     return False
 
 PORT                = 7777
-_HERE               = Path(__file__).parent  # ~/dashboards/app/
-_ROOT               = _HERE.parent                   # ~/dashboards/
+_HERE               = Path(__file__).parent  # ~/dashboards/app/ (via symlink — do NOT .resolve())
+_ROOT               = _HERE.parent           # ~/dashboards/
+
+# Firm context — load once at server startup for server-side injections
+sys.path.insert(0, str(Path.home() / 'cos-pipeline'))
+try:
+    import _firm_context as _fc_srv
+    _FC_CTX = _fc_srv.load_firm_context()
+except Exception as _e:
+    _fc_srv = None
+    _FC_CTX = {}
 REFRESH_SCRIPT      = str(_HERE / 'cos-dashboard-refresh.py')
 FETCH_SCRIPT        = str(_HERE / 'cos-dashboard-fetch.py')
 STATE_PATH          = _ROOT / 'data' / 'compiled' / 'dashboard-data.json'
-COS_DASHBOARD       = _HERE / 'templates' / 'cos-dashboard.html'
-DEALS_DASHBOARD     = _HERE / 'templates' / 'deal-dashboard.html'
-TOMAC_DATA          = _ROOT / 'data' / 'compiled' / 'deal-pipeline-data.json'  # legacy /tomac/data.json endpoint
+COS_DASHBOARD_RENDERED   = _HERE / 'templates' / 'cos-dashboard.rendered.html'
+COS_DASHBOARD_TEMPLATE   = _HERE / 'templates' / 'cos-dashboard.template.html'
+DEALS_DASHBOARD_RENDERED = _HERE / 'templates' / 'deal-dashboard.rendered.html'
+DEALS_DASHBOARD_TEMPLATE = _HERE / 'templates' / 'deal-dashboard.template.html'
+# Backwards-compat aliases — server reads from .rendered.html (data-injected,
+# gitignored). Legacy .html mirror is still kept fresh by refresh.py during
+# the transition window; it will be retired in a follow-up release.
+COS_DASHBOARD       = COS_DASHBOARD_RENDERED
+DEALS_DASHBOARD     = DEALS_DASHBOARD_RENDERED
+DEAL_PIPELINE_DATA  = _ROOT / 'data' / 'compiled' / 'deal-pipeline-data.json'
+# Back-compat alias — remove next release after callers migrate.
+TOMAC_DATA          = DEAL_PIPELINE_DATA
 BRIEFING_DASHBOARD  = _HERE / 'templates' / 'briefing-dashboard.html'
 BRIEFING_MD         = _ROOT / 'data' / 'compiled' / 'deal-briefing-latest.md'
 ALL_DASHBOARD       = _HERE / 'templates' / 'all-dashboard.html'
@@ -690,6 +786,93 @@ OTTER_SCRIPT         = str(_ROOT / 'routines' / 'process' / 'cos_otter_backfill.
 RESOLVER_SCRIPT      = str(_ROOT / 'routines' / 'process' / 'cos_email_resolver.py')
 SWEEP_SCRIPT         = str(_ROOT / 'routines' / 'process' / '_resolved_row_sweep.py')
 WARMUP_INTERVAL_MIN  = 10   # auto-fetch every N minutes in background
+
+# ── per-user JSON filter (F-now.3, feature-flagged) ─────────────────
+# When PER_USER_FILTER_ENABLED is true, /data responses for non-owner users are
+# filtered against ~/cos-pipeline-config-<TENANT>/users/<email>/preferences.json
+# before being returned. Owner sees the full payload. If prefs file missing,
+# behavior falls back to the legacy tier-based filter (no harm).
+PER_USER_FILTER_ENABLED = os.environ.get('PER_USER_FILTER_ENABLED', '0') == '1'
+COS_TENANT_SLUG         = os.environ.get('COS_TENANT_SLUG', 'tomac')
+COS_CONFIG_ROOT         = Path(os.environ.get(
+    'COS_CONFIG_ROOT',
+    str(Path.home() / f'cos-pipeline-config-{COS_TENANT_SLUG}')))
+
+# Sections always stripped for non-owner users (privacy: recruiting + personal +
+# briefing log are owner-only by policy, regardless of preferences).
+_NON_OWNER_FORBIDDEN_KEYS = ('recruiting', 'personalActions', 'briefingLog')
+
+
+def _load_user_prefs(email: str) -> dict:
+    """Read preferences.json for a user. Returns {} if missing/malformed."""
+    if not email:
+        return {}
+    p = COS_CONFIG_ROOT / 'users' / email / 'preferences.json'
+    try:
+        return json.loads(p.read_text())
+    except Exception:
+        return {}
+
+
+def _email_for_user(username: str) -> str:
+    """Resolve username -> email via _get_user(). Returns '' if not found."""
+    if username == 'owner':
+        return ''
+    u = _get_user(username) or {}
+    return u.get('email') or ''
+
+
+def _filter_data_for_user(data: dict, user: str) -> dict:
+    """Apply per-user prefs to /data response. Owner short-circuits to identity.
+    NEVER mutates `data` — returns a new dict.
+    """
+    if user == 'owner' or not PER_USER_FILTER_ENABLED:
+        return data
+    out = dict(data)
+    # 1. Hard policy strip
+    for k in _NON_OWNER_FORBIDDEN_KEYS:
+        out.pop(k, None)
+    # 2. Per-user tilesVisible strip (if set)
+    email = _email_for_user(user)
+    prefs = _load_user_prefs(email)
+    visible = prefs.get('tilesVisible') or []
+    if visible:
+        # Tile → data-key map sourced from dashboard-tiles.yaml :: tiles[].data_keys
+        # (single source of truth — same registry the renderer reads). Per Q10
+        # decision 2026-05-03, this replaces the prior hardcoded dict so adding a
+        # tile is config-only. _load_tiles() is the existing loader at
+        # cos-dashboard-server.py used by _is_partner_path().
+        TILE_TO_KEYS = {
+            t.get('id'): list(t.get('data_keys') or [])
+            for t in _load_tiles()
+            if t.get('id')
+        }
+        keep_keys: set = set()
+        for tile_id in visible:
+            keep_keys.update(TILE_TO_KEYS.get(tile_id, []))
+        # Always keep envelope fields used by the renderer.
+        keep_keys.update(['today', 'threeDays', 'generatedAt', 'cacheAgeMin'])
+        out = {k: v for k, v in out.items() if k in keep_keys}
+    # 3. hiddenItems filter (drop matching IDs from list-typed sections).
+    hidden = set(prefs.get('hiddenItems') or [])
+    if hidden:
+        # Map list key in /data payload -> hiddenItems ID prefix in prefs.
+        LIST_TO_PREFIX = {
+            'followUps':              'followUp',
+            'upcomingCalls':          'upcomingCall',
+            'emailQueue':             'emailQueue',
+            'unprocessedTranscripts': 'transcript',
+        }
+        for list_key, prefix in LIST_TO_PREFIX.items():
+            v = out.get(list_key)
+            if isinstance(v, list):
+                out[list_key] = [
+                    x for x in v
+                    if not (isinstance(x, dict) and
+                            f"{prefix}:{x.get('id', '')}" in hidden)
+                ]
+    return out
+
 
 # ── Shared design-system chrome injector ───────────────────
 _DS_LINK = '<link rel="stylesheet" href="/static/design-system.css">'
@@ -899,9 +1082,13 @@ def _deletions_script() -> str:
     except Exception:
         recruit_config = {'priorityTargets': {'inDiscussion': [], 'waitingToHear': [], 'doIChase': []}, 'recruiters': []}
     try:
-        tomac_config = _load_tomac_config()
+        deal_config = _load_deal_config()
     except Exception:
-        tomac_config = {'liveDeals': [], 'dealOrigination': [], 'capitalRaisingAdvisors': [], 'prospectiveInvestors': []}
+        deal_config = {'liveDeals': [], 'dealOrigination': [], 'capitalRaisingAdvisors': [], 'prospectiveInvestors': []}
+    try:
+        cp_aliases = _fc_srv.cp_aliases(_FC_CTX) if _fc_srv else []
+    except Exception:
+        cp_aliases = []
     return (
         '<script>'
         '(function(){'
@@ -910,7 +1097,13 @@ def _deletions_script() -> str:
         'window.__BUILD_BACKLOG_INITIAL__ = ' + json.dumps(build_backlog_initial) + ';'
         'window.__PERSONAL_ITEMS_INITIAL__ = ' + json.dumps(personal_items_initial) + ';'
         'window.__RECRUIT_CONFIG__ = ' + json.dumps(recruit_config) + ';'
-        'window.__TOMAC_CONFIG__ = ' + json.dumps(tomac_config) + ';'
+        # Canonical name — JS bundles should read window.__DEAL_CONFIG__.
+        'window.__DEAL_CONFIG__ = ' + json.dumps(deal_config) + ';'
+        # Back-compat alias — pre-rename React bundle still references
+        # window.__TOMAC_CONFIG__. Leave for one release; remove after the
+        # bundle in ~/dashboards/app/templates/* is rebuilt against __DEAL_CONFIG__.
+        'window.__TOMAC_CONFIG__ = window.__DEAL_CONFIG__;'
+        'window.__CP_ALIASES__ = ' + json.dumps(cp_aliases) + ';'
         'window.__DELETIONS__ = new Set(' + json.dumps(ids) + ');'
         'window.__itemId = function(source, content){'
         '  var s = String(source||"") + "|" + String(content||"").slice(0,60).trim();'
@@ -1627,7 +1820,8 @@ class Handler(BaseHTTPRequestHandler):
             allowed_prefixes.update(['/static', '/dashboard-data.json'])
         # /deals/ deps
         if any('/deals' in t for t in (u.get('tiles') or [])):
-            allowed_prefixes.update(['/deals', '/deals/', '/data', '/tomac/data.json'])
+            allowed_prefixes.update(['/deals', '/deals/', '/data',
+                                     '/deals/data.json', '/tomac/data.json'])
         return any(p == b or p.startswith(b + '/') for b in allowed_prefixes)
 
     def _send_401(self):
@@ -1714,6 +1908,14 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
         elif self.path == '/deals/':
             self._serve_html_template(DEALS_DASHBOARD, user)
+        elif self.path == '/deals/data.json':
+            # Canonical data endpoint — same payload as /tomac/data.json.
+            # Must precede the /deals/ static-file fallback below or it gets
+            # masked by the prefix match.
+            if TOMAC_DATA.exists():
+                self._serve_file(TOMAC_DATA, 'application/json')
+            else:
+                self.send_json(404, {'error': 'deal-pipeline-data.json not yet generated'})
         elif self.path.startswith('/deals/'):
             deals_dir = DEALS_DASHBOARD.parent
             rel = self.path[len('/deals/'):].split('?')[0]
@@ -1725,11 +1927,13 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self.send_response(404); self.end_headers()
         elif self.path == '/tomac' or self.path == '/tomac/':
-            # Legacy "Firm Pipeline" view retired 2026-04-27 — superseded by
-            # /tomac-cove/ (live portfolio) and /deals/ (sourcing funnel).
+            # Legacy route — kept as 301 for one release per PLAN E1.6.
+            # Routes to consolidated /deals/ view (sourcing + pipeline).
+            # Remove this elif in the release after this one.
             self.send_response(301)
-            self.send_header('Location', '/tomac-cove/')
+            self.send_header('Location', '/deals/')
             self.end_headers()
+        # TODO(E1, next release): remove /tomac/data.json — use /deals/data.json.
         elif self.path == '/tomac/data.json':
             # Backward-compat data endpoint — same payload now read from /deals/.
             if TOMAC_DATA.exists():
@@ -1750,7 +1954,7 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 self.send_json(404, {'error': 'deal-briefing-latest.md not yet generated'})
         elif self.path == '/data':
-            self._handle_data()
+            self._handle_data(user=user)
         elif self.path == '/cache-status':
             # Quick endpoint to check how fresh the cache is. Also surfaces
             # per-section age so the UI can flag stale tiles even when the
@@ -1803,6 +2007,15 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception:
                     days = 7
                 self._handle_admin_spend(days=days)
+                return
+            if parsed.path in ('/admin/heartbeat', '/admin/heartbeat/'):
+                # owner-only: heartbeat exposes routine identifiers + scheduling
+                # internals; partners and per-user logins should not see them.
+                # (Tile-level allowlist already blocks Admin tile, but the
+                # endpoint is reachable by direct URL — guard explicitly.)
+                if user != 'owner':
+                    self._send_403(); return
+                self._handle_admin_heartbeat()
                 return
             flash = None
             if 'ftype' in qs and 'fmsg' in qs:
@@ -1932,6 +2145,66 @@ class Handler(BaseHTTPRequestHandler):
         {'id': 'calls',    'title': 'Call History'},
         {'id': 'status',   'title': 'Dashboard Status'},
     ]
+
+    def _handle_admin_heartbeat(self):
+        """Owner-only: serve cached heartbeat JSON for the active tenant.
+
+        Cache: ~/cos-pipeline/data-<tenant>/heartbeat.json (per DECISION C1).
+        Tenant slug derived from listening port (DECISION C6).
+        Read-only; never mutates the cache file. Auth already enforced by the
+        /admin gate above (see do_GET ~line 1809).
+        """
+        import json as _json
+        import time as _time
+        from pathlib import Path as _Path
+        # Tenant from server port. Default tomac (port 7777).
+        port = getattr(self.server, 'server_port', 7777)
+        tenant = {7777: 'tomac', 7778: 're-dev'}.get(port, 'tomac')
+        cache = _Path.home() / 'cos-pipeline' / f'data-{tenant}' / 'heartbeat.json'
+        if not cache.exists():
+            payload = {
+                'status': 'uninitialized',
+                'hint': 'run heartbeat.py --write-state',
+                'tenant': tenant,
+            }
+            body = _json.dumps(payload).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body)))
+            self.send_header('Cache-Control', 'no-store')
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        try:
+            raw = cache.read_bytes()
+            payload = _json.loads(raw)
+        except Exception as exc:
+            err = _json.dumps({
+                'status': 'cache-error',
+                'tenant': tenant,
+                'error': f'{type(exc).__name__}: {exc}',
+            }).encode('utf-8')
+            self.send_response(500)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(err)))
+            self.send_header('Cache-Control', 'no-store')
+            self.end_headers()
+            self.wfile.write(err)
+            return
+        # Staleness annotation (heartbeat plist runs every 600s; 40min = 4x).
+        try:
+            age_h = (_time.time() - cache.stat().st_mtime) / 3600.0
+            if age_h > (40.0 / 60.0):
+                payload['warning'] = f'cache stale ({age_h:.1f}h)'
+        except Exception:
+            pass
+        body = _json.dumps(payload).encode('utf-8')
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(body)))
+        self.send_header('Cache-Control', 'no-store')
+        self.end_headers()
+        self.wfile.write(body)
 
     def _handle_admin_spend(self, days: int = 7):
         """Owner-only Anthropic API spend dashboard.
@@ -2295,10 +2568,15 @@ class Handler(BaseHTTPRequestHandler):
                     .replace('{{DELETIONS_PANEL}}', deletions_panel))
         self._serve_html(html, inject_chrome=True, user='owner')
 
-    def _handle_data(self):
+    def _handle_data(self, user: str = 'owner'):
         """GET /data — returns the slim dashboard data JSON used by in-place refresh.
         Same fields as cos-dashboard-refresh.py injects into the HTML, so the browser
         can update window.DATA in-place without a full page reload.
+
+        When PER_USER_FILTER_ENABLED is on and `user` != 'owner', the response is
+        filtered through `_filter_data_for_user()` (drops recruiting / personal /
+        briefing-log sections plus tilesVisible-restricted keys, and removes
+        hiddenItems IDs from list sections). See server-data-filter.delta.md.
         """
         state = {}
         if STATE_PATH.exists():
@@ -2376,7 +2654,10 @@ class Handler(BaseHTTPRequestHandler):
             'gmailScanned':           state.get('gmailScanned',           ''),
             # Deal system portfolio (compiled by deal-system-compile.py)
             'dealPortfolio':          state.get('dealPortfolio',          {}),
+            # Track G — costs/quota tile (populated by costs_aggregator via fetch.py)
+            'costs':                  state.get('costs',                  {}),
         }
+        data = _filter_data_for_user(data, user)
         self.send_json(200, data)
 
     def _handle_sse(self):
@@ -2668,11 +2949,23 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _serve_html_template(self, path, user: str = 'owner'):
-        """Read an HTML template off disk, inject shared chrome, serve."""
+        """Read an HTML template off disk, inject shared chrome, serve.
+
+        For dashboard paths (cos / deals), `path` is the .rendered.html.
+        If rendered is missing (first-run before any refresh), fall back
+        to the .template.html sibling so the server doesn't 404 on cold
+        start. The fallback shows an empty data block — UI degrades to
+        empty-state placeholders rather than a broken page.
+        """
         try:
             html = path.read_text()
         except FileNotFoundError:
-            self.send_response(404); self.end_headers(); return
+            # Try .template.html sibling
+            tmpl = path.parent / path.name.replace('.rendered.html', '.template.html')
+            if tmpl.exists() and tmpl != path:
+                html = tmpl.read_text()
+            else:
+                self.send_response(404); self.end_headers(); return
         self._serve_html(html, inject_chrome=True, user=user)
 
     def do_POST(self):

@@ -25,15 +25,31 @@ LAUNCH_DIR="$HOME/Library/LaunchAgents"
 LOG_DIR="$HOME/dashboards/logs/claude-tasks"
 SECRETS_HELPER="$HOME/.cos-pipeline-load-secrets.sh"
 
-# Resolve keychain service prefix from firm_config.json (default: cos-pipeline)
-# This is what setup_keychain.sh writes secrets under and what the load-secrets
-# helper reads from. Firm 2 sets keychain_service_prefix in their firm_config.json.
-_KCS_CFG="${COS_CONFIG_DIR:-$REPO}/firm_config.json"
-[ ! -f "$_KCS_CFG" ] && _KCS_CFG="$REPO/firm_config.json"
-KCS_PREFIX="cos-pipeline"
-if [ -f "$_KCS_CFG" ]; then
-  _p=$(python3 -c "import json; d=json.load(open('$_KCS_CFG')); print(d.get('keychain_service_prefix','cos-pipeline'))" 2>/dev/null)
-  [ -n "$_p" ] && KCS_PREFIX="$_p"
+# B6 (ID excision): keychain_service_prefix is REQUIRED in firm_config.json.
+# Per DECISIONS.md C11, the canonical format is `cos-pipeline-<slug>` (e.g.
+# cos-pipeline-tomac, cos-pipeline-re-dev). Search order matches setup_keychain.sh:
+#   1. $COS_CONFIG_DIR/firm_config.json
+#   2. ~/cos-pipeline-config/firm_config.json
+#   3. ~/cos-pipeline-config-tomac/firm_config.json (default tenant)
+#   4. ~/cos-pipeline/firm_config.json (legacy)
+# Falls back to "cos-pipeline" with a stderr warning so installers don't blow up.
+KCS_PREFIX=""
+for _KCS_CFG in \
+    "${COS_CONFIG_DIR:+$COS_CONFIG_DIR/firm_config.json}" \
+    "$HOME/cos-pipeline-config/firm_config.json" \
+    "$HOME/cos-pipeline-config-tomac/firm_config.json" \
+    "$REPO/firm_config.json"; do
+  if [ -n "$_KCS_CFG" ] && [ -f "$_KCS_CFG" ]; then
+    _p=$(python3 -c "import json; d=json.load(open('$_KCS_CFG')); print(d.get('keychain_service_prefix',''))" 2>/dev/null)
+    if [ -n "$_p" ]; then
+      KCS_PREFIX="$_p"
+      break
+    fi
+  fi
+done
+if [ -z "$KCS_PREFIX" ]; then
+  echo "[setup_launchagents] WARNING: keychain_service_prefix not set in any firm_config.json — defaulting to 'cos-pipeline'." >&2
+  KCS_PREFIX="cos-pipeline"
 fi
 
 mkdir -p "$LAUNCH_DIR" "$LOG_DIR"
@@ -41,7 +57,7 @@ mkdir -p "$LAUNCH_DIR" "$LOG_DIR"
 # Helper — write a plist that runs a shell command
 write_plist() {
   local name="$1"
-  local label="com.cos-pipeline.$name"
+  local label="${LAUNCH_LABEL_PREFIX:-com.cos-pipeline.}$name"
   local plist="$LAUNCH_DIR/$label.plist"
   local schedule_xml="$2"
   local cmd="$3"
@@ -98,7 +114,8 @@ install_dashboard() {
   echo ""
   echo "── Installing cos-dashboard-server (always-on HTTP :7777) ──"
   local sched=""  # No schedule — KeepAlive=true
-  local cmd="source $SECRETS_HELPER 2>/dev/null || true; cd $REPO && python3 cos-dashboard-server.py"
+  # DASH_PORT is consumed by cos-dashboard-server.py via $COS_DASHBOARD_PORT env or default 7777.
+  local cmd="source $SECRETS_HELPER 2>/dev/null || true; export COS_DASHBOARD_PORT=${DASH_PORT:-7777}; cd $REPO && python3 cos-dashboard-server.py"
   write_plist "dashboard-server" "$sched" "$cmd" "true" "true"
 }
 
@@ -137,7 +154,7 @@ install_gmail() {
 
 uninstall_all() {
   for name in dashboard-server capture-pipeline gmail-mini; do
-    local plist="$LAUNCH_DIR/com.cos-pipeline.$name.plist"
+    local plist="$LAUNCH_DIR/${LAUNCH_LABEL_PREFIX:-com.cos-pipeline.}$name.plist"
     if [ -f "$plist" ]; then
       launchctl unload "$plist" 2>/dev/null || true
       rm "$plist"
@@ -176,11 +193,11 @@ esac
 echo ""
 echo "═══════════════════════════════════════════════════════════════"
 echo "  Done. Check status with:"
-echo "    launchctl list | grep cos-pipeline"
+echo "    launchctl list | grep ${LAUNCH_LABEL_PREFIX:-com.cos-pipeline.}"
 echo ""
 echo "  Logs at:"
 echo "    $LOG_DIR/{dashboard-server,capture-pipeline,gmail-mini}.{stdout,stderr}.log"
 echo ""
 echo "  Dashboard:"
-echo "    http://localhost:7777"
+echo "    http://localhost:${DASH_PORT:-7777}"
 echo "═══════════════════════════════════════════════════════════════"

@@ -75,27 +75,20 @@ log = logging.getLogger(__name__)
 # DEFAULT FIRM CONFIG (overridden by firm_config.json)
 # ────────────────────────────────────────────────────────────────────
 
+# B2 (ID excision): firm_name, docs, and research_senders are no longer hardcoded.
+# They MUST be supplied by firm_config.json (loaded via load_config below) — the
+# script fails loud if `docs` is missing the required keys. firm_name is read
+# from firm_config.json :: firm_name (or, if absent, firm_context.yaml :: firm.name).
+
 DEFAULT_CONFIG = {
-    "firm_name": "Tomac Cove Infrastructure Partners",
-    "email_provider": "gmail",          # "gmail" or "outlook"
+    "firm_name": "",                     # required: firm_config.json :: firm_name
+    "email_provider": "gmail",           # "gmail" or "outlook"
 
-    # Google Drive doc IDs to write to
-    "docs": {
-        "followups":  "10leX26u8n3XkoCHzg7SDwLUodVX2CqKjvXcSJ-KAsCY",
-        "pipeline":   "1LHorixPs8ppwSvQzGfA_B6609YZA8dSpR4rmppENzpc",
-        "people":     "1ZCKnZlQgKD13dLsQNxCM_nRsTjz2DVitjeUWowUur0Y",
-        "recruiting": "1ZnTCVoA0ID7XTDFy27yDnrEVhBqx75kaTg_QXFq4eXA",
-    },
+    # Required: firm_config.json :: docs — keys followups/pipeline/people/recruiting
+    "docs": {},
 
-    # Research senders → route to their source doc (Haiku only, no Sonnet)
-    # Format: "sender_domain_or_email": "google_doc_id"
-    "research_senders": {
-        "capstonedc.com":  "1pcdaBhrkEAbPmRcE9LE3EsV1HhsHbff8Dl-CuTHEzas",
-        "bankstreet.com":  "1LoeiC6Z6xFXnnCelm7j6MgkduUOvrEcgYhQizfy-NJc",
-        "jefferies.com":   "1sLTPtueXMp0a80ZHiGWqT-wD0QvubUy5WtS4OMCqefE",
-        "rbn.com":         "1N6mqhMJn1IJP-5EwByYccEb0uaoBeUDXKRNT8BUbfW4",
-        "fvrenergy.com":   "1Jg_-LamIsKVKXBrWlZICZGrQTkOoXBeAT2U2rNldLoA",
-    },
+    # Required: firm_config.json :: research_senders — may be {} if no routing.
+    "research_senders": {},
 
     # Keywords that signal DEAL classification in subject/sender
     "deal_keywords": [
@@ -121,22 +114,114 @@ DEFAULT_CONFIG = {
 }
 
 
+def _load_domain_bundle(ctx: dict) -> dict:
+    """Load ~/cos-pipeline/domains/<domain>/config.yaml for the active tenant.
+
+    Returns {} if firm_context lacks `domain`, the bundle dir is missing, or
+    the YAML can't be parsed. Read-only, no side effects.
+    """
+    domain = (ctx or {}).get("domain")
+    if not domain:
+        return {}
+    bundle_path = _HERE / "domains" / domain / "config.yaml"
+    if not bundle_path.exists():
+        return {}
+    try:
+        import yaml
+        with open(bundle_path) as f:
+            return yaml.safe_load(f) or {}
+    except Exception as e:
+        log.warning(f"Could not load domain bundle {bundle_path}: {e}")
+        return {}
+
+
 def load_config():
-    """Load firm_config.json, fall back to defaults."""
-    if CONFIG_FILE.exists():
+    """Load firm_config.json. Fail loud if docs / firm_name missing (B2 contract).
+
+    Sourcing precedence:
+      1. firm_config.json (per-tenant, in COS_CONFIG_DIR or ~/cos-pipeline-config-<slug>/)
+      2. firm_context.yaml :: firm.name as a fallback for firm_name only
+      3. drive-docs.yaml as a fallback for `docs` (keys: followups, pipeline,
+         people_crm→people, recruiting, tomac_pipeline→pipeline)
+    """
+    # Try to source firm_config.json from the team config repo first
+    try:
+        sys.path.insert(0, str(_HERE))
+        import _firm_context as _fc  # noqa: E402
+        user_config = _fc.load_firm_config()
+        ctx = _fc.load_firm_context()
+        drive_docs = _fc.load_drive_docs()
+    except Exception as e:
+        log.warning(f"Could not load firm_context loader: {e}")
+        user_config, ctx, drive_docs = {}, {}, {}
+
+    # Legacy direct-file fallback (preserves original CONFIG_FILE behavior)
+    if not user_config and CONFIG_FILE.exists():
         with open(CONFIG_FILE) as f:
             user_config = json.load(f)
-        # Deep merge: user config overrides defaults
-        config = {**DEFAULT_CONFIG, **user_config}
-        config["docs"] = {**DEFAULT_CONFIG["docs"], **user_config.get("docs", {})}
-        config["research_senders"] = {**DEFAULT_CONFIG["research_senders"],
-                                       **user_config.get("research_senders", {})}
-        config["deal_keywords"]    = user_config.get("deal_keywords",    DEFAULT_CONFIG["deal_keywords"])
-        config["recruit_keywords"] = user_config.get("recruit_keywords", DEFAULT_CONFIG["recruit_keywords"])
-        log.info(f"Loaded firm config: {config['firm_name']}")
-    else:
-        config = DEFAULT_CONFIG
-        log.warning(f"No firm_config.json found at {CONFIG_FILE} — using defaults")
+
+    if not user_config:
+        raise RuntimeError(
+            "No firm config available. Populate firm_config.json in your "
+            "tenant config repo (COS_CONFIG_DIR or ~/cos-pipeline-config-<slug>/)."
+        )
+
+    # Deep merge: user config overrides defaults
+    config = {**DEFAULT_CONFIG, **user_config}
+
+    # docs: prefer firm_config.json :: docs, fall back to drive-docs.yaml entries
+    cfg_docs = user_config.get("docs", {}) or {}
+    if not cfg_docs and drive_docs:
+        # Map drive-docs.yaml canonical keys to gmail-mini's expected keys
+        cfg_docs = {
+            "followups":  drive_docs.get("followups", ""),
+            "pipeline":   drive_docs.get("tomac_pipeline", ""),
+            "people":     drive_docs.get("people_crm", ""),
+            "recruiting": drive_docs.get("recruiting", ""),
+        }
+    missing = [k for k in ("followups", "pipeline", "people", "recruiting")
+               if not cfg_docs.get(k)]
+    if missing:
+        raise RuntimeError(
+            f"firm_config.json :: docs missing required key(s): {missing}. "
+            f"Populate them per-tenant; legacy hardcoded fallbacks were removed in B2."
+        )
+    config["docs"] = cfg_docs
+
+    # research_senders: optional; default empty dict if absent
+    config["research_senders"] = user_config.get("research_senders", {}) or {}
+
+    # firm_name: legacy field; fall back to firm_context.yaml :: firm.name
+    if not config.get("firm_name"):
+        config["firm_name"] = (ctx.get("firm", {}) or {}).get("name", "")
+    if not config.get("firm_name"):
+        raise RuntimeError(
+            "firm_name is required. Set firm_config.json :: firm_name or "
+            "firm_context.yaml :: firm.name."
+        )
+
+    # Keyword lists — precedence per C13 + session-4 robustness pass:
+    #   1. Per-tenant firm_config.json :: deal_keywords (highest — tenant override wins)
+    #   2. Domain bundle ~/cos-pipeline/domains/<domain>/config.yaml :: deal_keywords
+    #   3. DEFAULT_CONFIG (lowest — hardcoded last-resort, originally tomac terms)
+    # Without #2, P (real-estate tenant) would fall through to tomac's hardcoded
+    # asset names (cholla, gideon, …) until they manually populated firm_config.
+    domain_cfg = _load_domain_bundle(ctx)
+    for keyword_field in ("deal_keywords", "recruit_keywords"):
+        if keyword_field in user_config:
+            config[keyword_field] = user_config[keyword_field]
+        elif keyword_field in domain_cfg:
+            config[keyword_field] = domain_cfg[keyword_field]
+        else:
+            config[keyword_field] = DEFAULT_CONFIG[keyword_field]
+
+    # Stamp tenant-level features for downstream gating (scope A). Daemon-level
+    # behavior reads these; per-user overrides apply only to dashboard tile
+    # visibility (resolved server-side per request).
+    tenant_features = (ctx or {}).get("features") or {}
+    config["_features_job_search"] = bool(tenant_features.get("job_search", True))
+
+    log.info(f"Loaded firm config: {config['firm_name']}")
     return config
 
 
@@ -445,6 +530,11 @@ def keyword_prefilter(email: dict, config: dict) -> str | None:
     """
     Fast keyword scan of subject + snippet before API call.
     Returns 'DEAL', 'RECRUIT', or None (needs Haiku triage).
+
+    RECRUIT scan is skipped when features.job_search is OFF (scope A) — tenant
+    isn't doing job search, so recruit-keyword false positives would mislabel
+    real deals. RECRUIT classification is also remapped to IGNORE in the Haiku
+    triage post-step.
     """
     text = (email.get("subject", "") + " " + email.get("body", "")[:500]).lower()
 
@@ -452,9 +542,10 @@ def keyword_prefilter(email: dict, config: dict) -> str | None:
         if kw in text:
             return "DEAL"
 
-    for kw in config.get("recruit_keywords", []):
-        if kw in text:
-            return "RECRUIT"
+    if config.get("_features_job_search", True):
+        for kw in config.get("recruit_keywords", []):
+            if kw in text:
+                return "RECRUIT"
 
     return None
 
@@ -497,7 +588,8 @@ def haiku_triage(email: dict) -> dict:
     """
     import anthropic
 
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    import _secrets
+    client = anthropic.Anthropic(api_key=_secrets.load_secret("ANTHROPIC_API_KEY"))
 
     prompt = (
         f"From: {email['from']}\n"
@@ -586,7 +678,8 @@ def sonnet_enrich(email: dict, category: str) -> dict:
     """
     import anthropic
 
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    import _secrets
+    client = anthropic.Anthropic(api_key=_secrets.load_secret("ANTHROPIC_API_KEY"))
 
     if category == "DEAL":
         system = DEAL_ENRICHMENT_SYSTEM
@@ -960,6 +1053,14 @@ def process_emails(emails: list, config: dict, state: dict, args) -> dict:
             category   = triage["category"]
             confidence = triage["confidence"]
             one_liner  = triage.get("one_liner", "")
+
+            # Scope A: when features.job_search is OFF, drop any RECRUIT
+            # classification (Haiku doesn't know about features). Mapping to
+            # IGNORE skips the Recruiting Doc write and the Sonnet escalation.
+            if category == "RECRUIT" and not config.get("_features_job_search", True):
+                log.info(f"RECRUIT → IGNORE (job_search feature off): {subject[:60]}")
+                category = "IGNORE"
+                triage["category"] = "IGNORE"
 
             log.info(f"[{category} {confidence:.2f}] {subject[:60]} | {one_liner[:50]}")
 
