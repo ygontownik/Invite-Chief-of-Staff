@@ -1,0 +1,24 @@
+{
+  "_status": "example",
+  "_comment": "Populated example for ~/cos-pipeline-config-tomac/users/ygontownik@gmail.com/preferences.json. Placeholder values — do NOT copy into the live config tree without review.",
+  "pinnedItems": [
+    "followUp:abc123",
+    "deal:cholla",
+    "recruiting:stonepeak-md-role"
+  ],
+  "hiddenItems": [
+    "followUp:legacy-2025-q4-noise",
+    "emailQueue:promo-recap-001"
+  ],
+  "tilesVisible": [
+    "today",
+    "tomac-cove",
+    "recruiting",
+    "personal",
+    "briefing-log"
+  ],
+  "defaultLanding": "/",
+  "theme": "paper",
+  "notificationsMuted": false,
+  "lastUpdated": "2026-05-03T07:00:00Z"
+}

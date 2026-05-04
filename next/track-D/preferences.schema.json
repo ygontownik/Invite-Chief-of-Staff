@@ -1,0 +1,54 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://tomac-cove.local/schemas/cos/preferences.schema.json",
+  "title": "CosUserPreferences",
+  "description": "Per-user dashboard preferences. Stored at ~/cos-pipeline-config-<tenant-slug>/users/<email>/preferences.json. One file per user, never co-mingled with shared/compiled data. Owned by the dashboard server; written via /admin or /pin/hide endpoints.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["pinnedItems", "hiddenItems", "tilesVisible", "lastUpdated"],
+  "properties": {
+    "pinnedItems": {
+      "type": "array",
+      "description": "Stable item IDs the user has pinned to the top of their feed (followUps, deals, recruiting items, etc.). Order = display order.",
+      "items": { "type": "string", "minLength": 1, "maxLength": 256 },
+      "uniqueItems": true,
+      "default": []
+    },
+    "hiddenItems": {
+      "type": "array",
+      "description": "Stable item IDs the user has dismissed/hidden from their feed. Server filters these from the /data response before returning.",
+      "items": { "type": "string", "minLength": 1, "maxLength": 256 },
+      "uniqueItems": true,
+      "default": []
+    },
+    "tilesVisible": {
+      "type": "array",
+      "description": "Tile IDs (matches dashboard-tiles.yaml id field) the user has chosen to render. Empty list = render all tiles allowed by their tier.",
+      "items": { "type": "string", "minLength": 1, "maxLength": 64 },
+      "uniqueItems": true,
+      "default": []
+    },
+    "defaultLanding": {
+      "type": "string",
+      "description": "URL path the user lands on after login. Must be a path the user is allowed to view per users.json.tiles.",
+      "pattern": "^/[A-Za-z0-9_\\-/]*$",
+      "default": "/"
+    },
+    "theme": {
+      "type": "string",
+      "description": "Visual theme. Per global rule: light backgrounds only — dark themes are NOT supported.",
+      "enum": ["paper", "cream", "high-contrast"],
+      "default": "paper"
+    },
+    "notificationsMuted": {
+      "type": "boolean",
+      "description": "If true, server suppresses email/push notifications for this user (digest, follow-up nudges). Pipeline still runs; just skips delivery.",
+      "default": false
+    },
+    "lastUpdated": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of last write. Server stamps this on every save."
+    }
+  }
+}

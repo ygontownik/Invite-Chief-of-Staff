@@ -1,0 +1,40 @@
+## STATUS: TEMPLATE — populate per tenant, do not commit live values.
+## Live tenant copy lives at: ~/cos-pipeline-config-<slug>/recruit-config.yaml
+##
+# recruit-config.yaml — Recruiting pipeline config for the personal tab.
+#
+# Single source of truth for RECRUIT_CONFIG. The server reads it at serve
+# time and injects it as window.__RECRUIT_CONFIG__. Edit here — never edit
+# the hardcoded block in the template HTML.
+#
+# Schema:
+#   priorityTargets:
+#     <bucketKey>:                     # e.g. inDiscussion, dormant, archived
+#       - name: "<Firm Name>"
+#         contact: "<Person>"
+#         lastAction: "YYYY-MM-DD"
+#         nextTouchBase: "YYYY-MM-DD or empty string"
+#         nextStep: "<free-form prose>"
+#         myAction: "<free-form prose>"
+#         task: "<short label>"
+#         taskUrl: "<optional URL>"
+#
+#   recruiters:
+#     - firm: "<Firm Name>"
+#       employers: "<who they place at>"
+#       nextStep: "<free-form prose>"
+#       myAction: "<free-form prose>"
+#       task: "<short label>"
+#       lastAction: "YYYY-MM-DD"
+#       nextTouchBase: "YYYY-MM-DD"
+#       taskUrl: "<optional URL>"
+#       individuals:
+#         - name: "<Person>"
+#           role: "<Role>"
+
+priorityTargets:
+  inDiscussion: []
+  dormant: []
+  archived: []
+
+recruiters: []

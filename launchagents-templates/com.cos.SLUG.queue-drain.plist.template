@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  com.cos.<SLUG>.queue-drain.plist.template
+
+  Template for the subscription rate-limit queue-drain daemon. Fires
+  every 30 minutes; the daemon is a no-op when queue.jsonl is empty
+  or every row's queue_until is still in the future, so the cron cost
+  is negligible.
+
+  Subscription dispatch (mode='subscription' in routines.yaml) writes
+  TIME_INSENSITIVE failures to ~/cos-pipeline/data-<SLUG>/queue.jsonl
+  when the 5-hour Claude window is exhausted; this LaunchAgent is the
+  cron wakeup that picks them back up after the window resets.
+
+  PLACEHOLDER SUBSTITUTION (done at install time by setup.sh, NOT in
+  this raw file):
+    <SLUG>      → tenant slug (lowercase, e.g. tomac, re-dev)
+    <PYTHON>    → /opt/homebrew/bin/python3 for subscription tenants
+                  (Python ≥3.10 required by claude_agent_sdk).
+
+  COST OF RUNNING:
+    Every 30 min × 24h × 365 = 17,520 fires/year. Each fire is a
+    single Python process invocation (~50ms when queue is empty).
+    No Claude calls unless queue.jsonl has due rows.
+
+  DISABLING:
+    launchctl unload ~/Library/LaunchAgents/com.cos.<SLUG>.queue-drain.plist
+  PURGE:
+    setup.sh --instance=<SLUG> --uninstall  removes this LaunchAgent
+    via _scheduler.unregister().
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.cos.<SLUG>.queue-drain</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string><PYTHON></string>
+        <string>/Users/ygontownik/cos-pipeline/_subscription_queue.py</string>
+        <string>--tenant=<SLUG></string>
+    </array>
+
+    <key>StartInterval</key>
+    <integer>1800</integer>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/ygontownik/cos-pipeline/logs-<SLUG>/queue-drain.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/ygontownik/cos-pipeline/logs-<SLUG>/queue-drain.err.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/ygontownik/cos-pipeline</string>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

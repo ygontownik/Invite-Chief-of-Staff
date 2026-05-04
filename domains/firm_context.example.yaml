@@ -97,3 +97,19 @@ keychain_service_prefix: "cos-pipeline-tomac"
 #   pass2_pipeline_analyst:
 #     model: claude-opus-4-7
 #     max_tokens: 8192
+
+# ── AUTH MODE (Run 6 addition) ────────────────────────────────────────────────
+# Picks how _model_router dispatches Claude calls.
+#   "api"          — anthropic SDK with the per-tenant ANTHROPIC_API_KEY in
+#                    the keychain. Pay per token. Default; preserved for
+#                    every pre-Run-6 tenant.
+#   "subscription" — claude_agent_sdk.query() against your Claude Pro/Max
+#                    OAuth. $0 marginal per call; bills against your 5-hour
+#                    rate window. Requires Python >= 3.10 and four
+#                    Claude.ai Projects provisioned by setup.sh.subscription.next.
+# Omitting the field is backward compatible: routine.mode in routines.yaml
+# wins, exactly as in the pre-Run-6 path. Setting it acts as a HARD tenant-
+# level override that forces every non-daemon routine to that mode.
+auth_mode: api
+# fallback_api_enabled: false   # honored only when auth_mode=subscription
+                                # AND --add-fallback-api-key was passed at install

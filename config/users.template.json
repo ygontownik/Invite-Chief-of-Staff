@@ -1,0 +1,17 @@
+{
+  "_status": "TEMPLATE — populate per tenant, do not commit live values.",
+  "_live_path": "~/cos-pipeline-config-<slug>/users.json",
+  "_schema_note": "Managed via /admin/ — do not hand-edit while server is running. Passwords stored in plaintext today; planned rotation to keychain-backed hash. Never commit a populated copy to a public repo.",
+  "users": [
+    {
+      "username": "__USERNAME__",
+      "password": "__REDACTED__",
+      "name": "__DISPLAY_NAME__",
+      "email": "__EMAIL__",
+      "tiles": [
+        "/"
+      ],
+      "created_at": "__ISO_TIMESTAMP__"
+    }
+  ]
+}

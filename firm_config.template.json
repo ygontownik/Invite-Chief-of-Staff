@@ -63,5 +63,13 @@
   },
 
   "_comment_podcast_folder": "Google Drive folder ID where per-show summary Docs live. The pipeline auto-creates one Doc per show inside this folder.",
-  "podcast_summary_folder_id": "GOOGLE_DRIVE_FOLDER_ID"
+  "podcast_summary_folder_id": "GOOGLE_DRIVE_FOLDER_ID",
+
+  "_comment_claude_projects": "Subscription-mode only (firm_context.yaml :: auth_mode=subscription). One Claude.ai Project ID per package — set during install (./setup.sh --auth-mode=subscription walks you through provisioning four projects). Empty/missing dict is fine for api-mode tenants and for subscription-mode v1 (preamble inlined per call). Per-package model assignments (Sonnet for briefing/capture/research, Opus for deals) are defined in the project itself, not here.",
+  "claude_projects": {
+    "briefing": "",
+    "capture":  "",
+    "research": "",
+    "deals":    ""
+  }
 }

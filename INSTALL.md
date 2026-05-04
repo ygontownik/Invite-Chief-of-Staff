@@ -47,6 +47,36 @@ The `--domain` argument picks a domain bundle of prompts and templates. Choose:
 
 The script walks you through 8 steps interactively. Each step prints what it's about to do and asks for confirmation. You can stop and resume with `--resume` later.
 
+### Auth mode — pick at install time
+
+> **⚠ Principal authorization required for `subscription` mode.** Subscription
+> mode bills against the principal's Claude Pro/Max 5-hour rate window, which
+> is shared with interactive Claude Code use. **Do not pass
+> `--auth-mode=subscription` unless the principal has explicitly authorized
+> this deployment for that path.** When in doubt, default to `api`.
+
+Pass `--auth-mode=<subscription|api>` to `setup.sh` to skip the post-install prompt:
+
+```bash
+# api mode (default if omitted) — Anthropic per-token, billed to your API key
+./setup.sh --instance=<slug> --domain=<domain> --auth-mode=api
+
+# subscription mode — uses your Claude Pro/Max OAuth, $0 marginal per call
+./setup.sh --instance=<slug> --domain=<domain> --auth-mode=subscription
+```
+
+When `--auth-mode=subscription` is set, the installer chains
+`setup.sh.subscription.next` after Step 8 — it walks the four-project
+Claude.ai provisioning, writes `auth_mode: subscription` to your
+firm_context.yaml, stages the queue-drain + subscription-health
+LaunchAgents for review, and points you at preflight. Full walkthrough
+in **[INSTALL_SUBSCRIPTION.md](INSTALL_SUBSCRIPTION.md)**. Existing
+api-mode tenants who want to flip later: see **[MIGRATE_TO_SUBSCRIPTION.md](MIGRATE_TO_SUBSCRIPTION.md)**.
+
+Optional flag: `--add-fallback-api-key` (subscription mode only) — also
+prompts for an Anthropic API key, used as a fallback when the 5-hour
+subscription window is exhausted.
+
 ## What the script does
 
 | Step | What | Time |

@@ -1,0 +1,58 @@
+## STATUS: TEMPLATE — populate per tenant, do not commit live values.
+## Live tenant copy lives at: ~/cos-pipeline-config-<slug>/email-capture.yaml
+##
+# email-capture.yaml — Configuration for cos_email_backfill.py
+#
+# Three ways email flows into the dashboard, evaluated in order:
+#
+#   1. capture_label     — manual opt-in via Gmail label. User tags a thread
+#                          with a capture label and the next run ingests it.
+#                          Use for one-offs and sensitive threads to review
+#                          before routing.
+#
+#   2. capture_queries   — broad auto-ingest via Gmail search queries. Each
+#                          query runs every poll; the union of matched threads
+#                          feeds the same envelope extractor. Use for known
+#                          counterparties, tracked domains, deal keyword hits.
+#
+#   3. parent_hints      — once a thread is ingested, these map its sub-label
+#                          to a parent_id so the extractor anchors items to
+#                          a specific deal/LP/workstream without guessing.
+#
+# Budget guardrail: max_threads_per_run caps total across labels + queries.
+
+capture_label: dashboard-capture
+
+# Gmail search queries — each evaluated on every poll; union processed.
+# Syntax: https://support.google.com/mail/answer/7190
+# Keep narrow enough that noise <20% of hits — the envelope extractor is
+# the real filter. Start conservative; broaden as routing earns trust.
+# `newer_than:Nd` scoping is applied at runtime — do not include here.
+capture_queries: []
+  # Example structures (uncomment and fill per tenant):
+  # - 'from:<co-founder-email>'
+  # - 'subject:(<DealNameA> OR "<Deal Name B>" OR <DealNameC>)'
+  # - 'from:(@<lp-firm-domain>.com OR @<counterparty-domain>.com)'
+  # - 'from:(@<recruiter-firm>.com)'
+  # - 'subject:(<TitleA> OR "<Title B>") <vertical>'
+
+# Sub-label convention: "<capture_label>/<parent_slug>". Script strips
+# the prefix and uses the suffix as parent_id hint. Discovered dynamically
+# from Gmail Labels API — list below is illustrative.
+parent_hints: []
+  # - label: <capture_label>/<deal-slug>
+  #   parent_id: <deal-slug>
+  #   workstream: <Workstream Name>
+
+# Historical backfill window for first run (no dedup entries).
+# After first run, dedup takes over and this is ignored.
+first_run_lookback_days: 180
+
+# Per-run poll window for capture_queries (label hits ignore this).
+# Tight by design — poller runs every 15 min; 2d gives catch-up buffer
+# without re-scanning the archive every cycle.
+poll_lookback_days: 2
+
+# Processing limits — guardrail against runaway query.
+max_threads_per_run: 20
+max_body_chars: 12000

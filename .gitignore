@@ -64,6 +64,9 @@ output/weekly-scan-*.md
 # ── CLASP / APPS SCRIPT TOOLING (per-user node_modules + cloned sources) ──────
 # .tools/ holds a per-user clasp install (not committed; node_modules is huge).
 .tools/
+# .sandbox/ holds Track C-spike scratch (sandbox SKILL, plists, runners, probe logs).
+# All throwaway; never committed to the public repo.
+.sandbox/
 # Substack-sync source contains an unrotated RBN credential — NEVER COMMIT.
 # Block live source files (Code.gs) and any sibling *-clasped variants.
 # Re-include only the sanitized template + docs.
@@ -102,6 +105,8 @@ BRIEFING_COMPARISON.md
 CONFIG_INVENTORY.md
 CONFIG_SPLIT_RUN2.md
 CSPIKE_PLAN.md
+SUBSCRIPTION_INSTALL.md
+SUBSCRIPTION_SCHEDULE.md
 DASHBOARDS_INVENTORY.md
 DUP_RESOLUTION.md
 GITHUB_MANIFEST.md
@@ -113,3 +118,19 @@ MIGRATION_B7.md
 PATH_TOPOLOGY.md
 Q*_*.next.md
 *.bak-*
+NEXT_SESSION_PROMPT.md
+NEXT_SESSION_PROMPT_RUN6.md
+HANDOFF_RUN6.md
+HANDOFF_RUN7.md
+P_ONBOARDING_BRIEFING.md
+
+# ── STAGING/DRAFT FILES (work-in-progress, not deployed) ──────────────────────
+*.next
+*.pre-migration-bak
+
+# ── SESSION BACKUP DIRECTORIES ────────────────────────────────────────────────
+.run6-cutover-bak-*/
+
+# ── TENANT RUNTIME DATA (compiled outputs, logs — not version-controlled) ─────
+data-*/
+logs-*/

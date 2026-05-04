@@ -1,0 +1,14 @@
+{
+  "_status": "TEMPLATE — populate per tenant, do not commit live values.",
+  "_live_path": "~/cos-pipeline-config-<slug>/deal-buckets.json",
+  "_schema_note": "rules[].keywords matched against capture text → bucket label. owner_prefixes routes by speaker prefix.",
+  "rules": [
+    {"keywords": ["<deal-keyword-1>", "<alias>"], "bucket": "<Deal/Bucket Name>"},
+    {"keywords": ["recruit"], "workstream": "job", "bucket": "Job Search"}
+  ],
+  "default_bucket": "General / Other",
+  "default_owner": "__PRINCIPAL_NAME__",
+  "owner_prefixes": [
+    {"prefix": "<teammate-name-lower>", "tag": "[<teammate-name-lower>]", "owner": "<Teammate Display>"}
+  ]
+}

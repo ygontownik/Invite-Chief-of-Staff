@@ -1,0 +1,26 @@
+## STATUS: TEMPLATE — populate per tenant, do not commit live values.
+## Live tenant copy lives at: ~/cos-pipeline-config-<slug>/deal-config.yaml
+## Old name: tomac-config.yaml. Renamed under E1.4 (PLAN v3.1).
+##
+# deal-config.yaml — Live deal activity config for the Status / Personal tabs.
+#
+# Single source of truth for DEAL_CONFIG (renamed from TOMAC_CONFIG).
+# Server reads at serve time and injects as window.__DEAL_CONFIG__.
+# Edit here — never edit the hardcoded block in the template.
+#
+# Fields per liveDeals[]:
+#   name, contact, lastAction (YYYY-MM-DD or ""),
+#   nextTouchBase (YYYY-MM-DD or ""), takeaway, nextStep,
+#   owner (one of firm_context.team[].name + principal.name),
+#   myAction, task, taskUrl (optional)
+
+liveDeals: []
+  # - name: "<Deal Name>"
+  #   contact: "<Person / Firm>"
+  #   lastAction: "YYYY-MM-DD"
+  #   nextTouchBase: "YYYY-MM-DD"
+  #   takeaway: "<one-line state>"
+  #   nextStep: "<imperative next step>"
+  #   owner: "<Yoni|Mark|...>"
+  #   myAction: "<short verb-first action>"
+  #   task: "<icon + label>"

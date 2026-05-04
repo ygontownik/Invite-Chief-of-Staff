@@ -295,3 +295,27 @@ personal:
       - "calls_today"           # calls scheduled today (from calendar)
       - "market_updates"        # blog/RSS items from content_feeds.blogs
       - "cost_summary"          # weekly API spend (Fridays only)
+
+# ── AUTH MODE ─────────────────────────────────────────────────────────────────
+# Picks the dispatch path the pipeline uses to call Claude.
+#
+#   "api"          — anthropic SDK with a per-tenant ANTHROPIC_API_KEY
+#                    in the keychain. Pay-per-token. The default and only
+#                    path for tenants who haven't picked subscription mode.
+#   "subscription" — claude_agent_sdk.query() against your existing Claude
+#                    Pro/Max OAuth (via the `claude` CLI). Zero per-token
+#                    cost; charges against your 5-hour subscription window.
+#                    Requires Python ≥ 3.10 in the launchd runner and four
+#                    pre-provisioned Claude.ai Projects (see
+#                    SUBSCRIPTION_INSTALL.md and firm_config.json ::
+#                    claude_projects). Picked at install time via
+#                    `./setup.sh --instance=<slug> --auth-mode=subscription`.
+#
+# Omitting the field is equivalent to `auth_mode: api`. Existing tenants
+# who don't update their config see no behavior change.
+#
+# auth_mode: api
+#
+# Optional: opt-in fallback to the API path when subscription is rate-
+# limited (only honored when --add-fallback-api-key was passed at install).
+# fallback_api_enabled: false

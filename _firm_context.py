@@ -202,6 +202,49 @@ def load_active_packages(firm_config_path=None) -> list:
     return cfg.get("packages", ["market_intelligence", "operations"])
 
 
+# ── Subscription-mode accessors (added Run 6 pass 3) ─────────────────────────
+
+def load_auth_mode():
+    """Return firm_context.yaml :: auth_mode, or None if absent.
+
+    Values: 'subscription' | 'api' | None.
+
+    The model router treats 'subscription' / 'api' as a HARD tenant-level
+    override that forces all non-daemon routines to that mode regardless
+    of routines.yaml :: mode. None preserves the routine.mode (backward
+    compatible — no behavior change for existing tenants).
+
+    Falls back to None on any read error (missing file, bad YAML, unset
+    field) so the router stays usable.
+    """
+    try:
+        ctx = load_firm_context()
+    except (FileNotFoundError, OSError):
+        return None
+    val = ctx.get("auth_mode") if isinstance(ctx, dict) else None
+    if val in ("subscription", "api"):
+        return val
+    return None
+
+
+def load_claude_projects(firm_config_path=None) -> dict:
+    """Return firm_config.json :: claude_projects (or {}).
+
+    A {package_name: project_id} dict. Set by the subscription installer
+    (setup.sh.subscription.next, S3) when a tenant picks subscription
+    mode and provisions four Claude.ai Projects (one per package:
+    briefing, capture, research, deals).
+
+    Empty values within the dict are valid — the dispatcher treats them
+    as "no project assigned, inline preamble" (v1 fallback). When v2
+    ships project targeting (CSPIKE_PLAN.md Probe 5), the dispatcher
+    will pass any non-empty project_id to ClaudeAgentOptions.
+    """
+    cfg = load_firm_config(firm_config_path)
+    cp = cfg.get("claude_projects")
+    return cp if isinstance(cp, dict) else {}
+
+
 # ── Features (scope A — per-tenant + per-user toggles) ───────────────────────
 
 # Default values for known features. Conservative: every feature off by default

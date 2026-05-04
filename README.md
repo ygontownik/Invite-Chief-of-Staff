@@ -38,6 +38,26 @@ To uninstall (slug-isolated; idempotent): `./setup.sh --instance=<slug> --uninst
 
 To re-consent OAuth after token expiry: `./oauth_bootstrap.sh --scope=<full|drive|gmail-read|gmail-compose|all> --force`.
 
+### Auth mode — your own Claude account or a per-tenant API key
+
+> **⚠ Principal authorization required for `subscription` mode.** Subscription
+> mode shares the principal's 5-hour Claude Pro/Max rate window with their
+> interactive Claude Code use. Tenant operators must obtain explicit principal
+> sign-off before picking `subscription`. When unsure, install with `api`.
+
+Each tenant picks one of two dispatch paths:
+
+| Mode | Who pays | When to pick |
+|---|---|---|
+| **api** (default today) | Anthropic per-token, billed to the tenant's API key | Predictable per-call cost, no rate window, simpler ops |
+| **subscription** | Tenant's own Claude Pro/Max subscription — $0 marginal per call | Tenant already pays for Pro/Max; wants zero pipeline-side API spend |
+
+Subscription mode requires Python ≥ 3.10, the `claude_agent_sdk` package, and a one-time provisioning of four Claude.ai Projects (one per package: briefing, capture, research, deals). Calls bill against the tenant's own 5-hour Claude window; rate-limited time-insensitive routines auto-queue and re-fire after the window resets (see `_subscription_queue.py`).
+
+- **New tenants** picking subscription: see [INSTALL_SUBSCRIPTION.md](INSTALL_SUBSCRIPTION.md) for the eight-step install.
+- **Existing api-mode tenants** flipping to subscription: see [MIGRATE_TO_SUBSCRIPTION.md](MIGRATE_TO_SUBSCRIPTION.md).
+- **Read-only preflight** before any flip: `./scripts/preflight_subscription.sh --instance=<slug>` (no Claude calls; checks every prerequisite end-to-end).
+
 ---
 
 ## Manual install (legacy — kept for reference; the Quick Start above supersedes this)

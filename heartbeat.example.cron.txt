@@ -1,0 +1,87 @@
+heartbeat — example schedule (REFERENCE ONLY)
+=============================================
+
+Per HARD RULES tonight: DO NOT install or enable any LaunchAgent.
+This file documents the intended trigger so a future merge can apply it
+deliberately, with the user in the loop.
+
+────────────────────────────────────────────────────────────────────
+Option A — LaunchAgent plist (recommended for macOS, matches existing pattern)
+────────────────────────────────────────────────────────────────────
+
+Proposed label (per DECISIONS C7): com.cos.tomac.heartbeat
+Proposed path: ~/Library/LaunchAgents/com.cos.tomac.heartbeat.plist
+
+Cadence: daily at 06:50 (10 minutes before briefing-morning at 07:00)
+plus a second pass at 19:00 to catch evening regressions before bed.
+
+Two-step pipeline:
+  1. heartbeat.py --tenant tomac --out json --write-state
+  2. heartbeat_email.py --to ygontownik@gmail.com --dry-run
+
+A wrapper shell script keeps the plist simple. While we cannot install
+the plist tonight, the literal content (for future reference) is:
+
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.cos.tomac.heartbeat</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>/usr/bin/python3 ~/cos-pipeline/heartbeat.py --tenant tomac --out json --write-state &amp;&amp; /usr/bin/python3 ~/cos-pipeline/heartbeat_email.py --to ygontownik@gmail.com --dry-run</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict>
+      <key>Hour</key><integer>6</integer>
+      <key>Minute</key><integer>50</integer>
+    </dict>
+    <dict>
+      <key>Hour</key><integer>19</integer>
+      <key>Minute</key><integer>0</integer>
+    </dict>
+  </array>
+  <key>StandardOutPath</key>
+  <string>/Users/ygontownik/dashboards/logs/heartbeat.stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/ygontownik/dashboards/logs/heartbeat.stderr.log</string>
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>
+
+After the user reviews this, they would run (NOT tonight):
+
+  launchctl load   ~/Library/LaunchAgents/com.cos.tomac.heartbeat.plist
+  launchctl start  com.cos.tomac.heartbeat   # smoke test
+
+To unload:
+
+  launchctl unload ~/Library/LaunchAgents/com.cos.tomac.heartbeat.plist
+
+
+────────────────────────────────────────────────────────────────────
+Option B — cron (only if user prefers cron over launchd)
+────────────────────────────────────────────────────────────────────
+
+# m  h  dom mon dow  command
+50  6  *   *   *    /usr/bin/python3 ~/cos-pipeline/heartbeat.py --tenant tomac --out json --write-state >> ~/dashboards/logs/heartbeat.cron.log 2>&1
+55  6  *   *   *    /usr/bin/python3 ~/cos-pipeline/heartbeat_email.py --to ygontownik@gmail.com --dry-run >> ~/dashboards/logs/heartbeat.cron.log 2>&1
+ 0 19  *   *   *    /usr/bin/python3 ~/cos-pipeline/heartbeat.py --tenant tomac --out json --write-state >> ~/dashboards/logs/heartbeat.cron.log 2>&1
+ 5 19  *   *   *    /usr/bin/python3 ~/cos-pipeline/heartbeat_email.py --to ygontownik@gmail.com --dry-run >> ~/dashboards/logs/heartbeat.cron.log 2>&1
+
+
+Multi-tenant note (per DECISION C1, C6):
+Once a second tenant is onboarded (slug `re-dev` per C5), add a parallel pair:
+
+  /usr/bin/python3 ~/cos-pipeline/heartbeat.py --tenant re-dev --out json --write-state
+  /usr/bin/python3 ~/cos-pipeline/heartbeat_email.py --to <re-dev-email> --dry-run
+
+`heartbeat_email.py` will automatically pick up every `data-*/heartbeat.json`
+under `~/cos-pipeline/`, so the email step does NOT need per-tenant invocation
+unless recipients differ.

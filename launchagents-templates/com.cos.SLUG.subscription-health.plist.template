@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  com.cos.<SLUG>.subscription-health.plist.template
+
+  Template for the subscription-health snapshot daemon. Fires every
+  hour, runs `_subscription_health.py --tenant=<SLUG> --json` and
+  writes the output to data-<SLUG>/subscription-health.json so the
+  dashboard server can render a real-time tile without doing the
+  aggregation on each request.
+
+  This file is read-only and only consumed by tenants that picked
+  auth_mode=subscription at install time. API-mode tenants don't
+  need it (no rate-limit window, no queue).
+
+  PLACEHOLDER SUBSTITUTION:
+    <SLUG>     → tenant slug
+    <PYTHON>   → /opt/homebrew/bin/python3 (or first ≥3.10 found)
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.cos.<SLUG>.subscription-health</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/sh</string>
+        <string>-c</string>
+        <string><PYTHON> /Users/ygontownik/cos-pipeline/_subscription_health.py --tenant=<SLUG> --json &gt; /Users/ygontownik/cos-pipeline/data-<SLUG>/subscription-health.json.tmp &amp;&amp; mv /Users/ygontownik/cos-pipeline/data-<SLUG>/subscription-health.json.tmp /Users/ygontownik/cos-pipeline/data-<SLUG>/subscription-health.json</string>
+    </array>
+
+    <key>StartInterval</key>
+    <integer>3600</integer>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/ygontownik/cos-pipeline/logs-<SLUG>/subscription-health.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/ygontownik/cos-pipeline/logs-<SLUG>/subscription-health.err.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/ygontownik/cos-pipeline</string>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

@@ -1,0 +1,54 @@
+## STATUS: TEMPLATE — populate per tenant, do not commit live values.
+## Live tenant copy lives at: ~/cos-pipeline-config-<slug>/strings.yaml
+##
+# strings.yaml — Single source of truth for UI strings in the shared chrome.
+# Templates pull from here via server-side placeholder substitution rather
+# than hard-coding.
+#
+# Convention:
+#   strings.topnav.<key>                 — topnav-specific
+#   strings.buttons.<key>.label          — button text
+#   strings.buttons.<key>.tooltip        — hover tooltip (full sentence)
+#   strings.buttons.<key>.aria           — screen-reader label
+#
+# Templates use {{STR:topnav.brand}} etc. at serve time. Unfilled
+# placeholders fall back to the literal in the template, so strings.yaml
+# is additive.
+
+topnav:
+  brand: "{{FIRM_NAME}}"
+  live_label: "Live"
+  fresh_label: "Fresh"
+  syncing_label: "Syncing"
+  stale_label: "Stale"
+  refreshing_label: "Refreshing…"
+  compiled_prefix: "Compiled"
+
+buttons:
+  sync_all:
+    label: "Pull Fresh Data"
+    tooltip: "Processes any new transcripts, then pulls latest from all Google Docs."
+    aria: "Pull Fresh Data — Processes new transcripts and re-reads all Google Docs."
+  refresh_view:
+    label: "Refresh View"
+    tooltip: "Re-renders this page from the last compiled data. Instant."
+    aria: "Refresh View — Re-renders this page from the last compiled data. Instant."
+  topics_save:
+    label: "Save Topics"
+    tooltip: "Saves the watchlist server-side. Persists across devices."
+  recover_deleted:
+    label: "Recover Deleted"
+    tooltip: "Un-tombstone an item previously dismissed. Restores it on next refresh."
+
+settings:
+  # 'gmail' | 'outlook' | 'native'
+  preferred_email: "gmail"
+
+routes:
+  "/":            "STATUS"
+  "/deals/":      "DEAL IDEAS"
+  "/briefing/":   "BRIEFING"
+  "/personal/":   "PERSONAL"
+  "/all":         "ALL VIEWS"
+  "/all/":        "ALL VIEWS"
+  "/admin":       "ADMIN"
