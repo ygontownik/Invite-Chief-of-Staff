@@ -217,14 +217,24 @@ From the Daily Market Update doc, find the most recent entry (today or yesterday
 If no entry from the last 48h exists: "No new market update today."
 This section is parsed by the dashboard — copy it exactly from the doc, do not paraphrase.
 
+### Podcast Intelligence
+From the Personal Briefing Log, find any podcast episode memos added in the last 48 hours.
+For each episode found, write one entry:
+**[Show Name] — "[Episode Title]"**
+- THE CORE ARGUMENT: [one sentence verbatim or close paraphrase]
+- KEY INVESTMENT ANGLE: [the single most actionable insight — named asset, firm, deal structure, or regulatory position. 1-2 sentences.]
+- NAMES: [comma-separated list of named people and firms from that episode]
+If no podcast memos in last 48h: "No new episodes processed."
+
 ### Captured Overnight
-One paragraph (3–5 sentences) summarizing what the capture pipeline added since yesterday, based on the most recent Capture Summary entry in the Personal Briefing Log tail.
+One paragraph (3–5 sentences) covering what else the capture pipeline added since yesterday — emails, calls, non-podcast captures. Exclude podcasts (covered above).
 If no Capture Summary found: "No capture summary available."
 
 RULES:
 - Output ONLY the briefing markdown. No preamble, no closing remarks.
 - Be specific: named people, firms, dates, deal stages. Never vague summaries.
-- Today's Priorities and Coming Up draw exclusively from the Follow-ups doc — do not invent items."""
+- Today's Priorities and Coming Up draw exclusively from the Follow-ups doc — do not invent items.
+- Podcast Intelligence draws exclusively from the Briefing Log — do not invent episodes."""
 
 
 # ── Claude call via cached_client ─────────────────────────────────────────────
