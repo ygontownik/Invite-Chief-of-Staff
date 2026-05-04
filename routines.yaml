@@ -56,9 +56,9 @@ skills:
     rename_to: capture-phone-notes
     notes: "Only present in ~/.claude/, not ~/dashboards/. Asymmetric. Pulls Beside.com phone notes."
 
-  - name: cos-capture-pipeline
+  - name: inbox-capture
     kind: skill
-    wrapper_label: com.yoni.claude-task.cos-capture-pipeline
+    wrapper_label: com.yoni.claude-task.inbox-capture
     schedule: "(check plist)"
     package: capture
     mode: subscription
@@ -132,36 +132,36 @@ skills:
     rename_to: "(merge into capture-call-transcripts)"
 
   # — Briefing pipeline —
-  - name: cos-personal-briefing
+  - name: morning-briefing
     kind: skill
-    wrapper_label: com.yoni.claude-task.cos-personal-briefing
+    wrapper_label: com.yoni.claude-task.morning-briefing
     schedule: "(daily, see plist)"
     package: briefing
     mode: subscription
     confidentiality: tenant
     rename_to: briefing-morning
 
-  - name: notebooklm-daily-briefing
+  - name: daily-intelligence-digest
     kind: skill
-    wrapper_label: com.yoni.claude-task.notebooklm-daily-briefing
+    wrapper_label: com.yoni.claude-task.daily-intelligence-digest
     schedule: "(daily, Tue–Fri)"
     package: briefing
     mode: subscription
     confidentiality: tenant
     rename_to: "(replaced by briefing-morning if Track G validates)"
 
-  - name: notebooklm-sunday-weekly-briefing
+  - name: weekly-intelligence-digest
     kind: skill
-    wrapper_label: com.yoni.claude-task.notebooklm-sunday-weekly-briefing
+    wrapper_label: com.yoni.claude-task.weekly-intelligence-digest
     schedule: "Sunday"
     package: briefing
     mode: subscription
     confidentiality: tenant
     rename_to: "(merge into briefing-weekly)"
 
-  - name: sunday-weekly-email
+  - name: weekly-summary-email
     kind: skill
-    wrapper_label: com.yoni.claude-task.sunday-weekly-email
+    wrapper_label: com.yoni.claude-task.weekly-summary-email
     schedule: "Sunday"
     package: briefing
     mode: subscription
@@ -178,18 +178,18 @@ skills:
     rename_to: briefing-market-update
 
   # — Deals pipeline —
-  - name: tomac-cove-weekly-pipeline
+  - name: deal-pipeline-scan
     kind: skill
-    wrapper_label: com.yoni.claude-task.tomac-cove-weekly-pipeline
+    wrapper_label: com.yoni.claude-task.deal-pipeline-scan
     schedule: "weekly"
     package: deals
     mode: subscription
     confidentiality: tenant
     rename_to: deals-weekly-scan
 
-  - name: tomac-deal-compile
+  - name: deal-dashboard-compile
     kind: skill
-    wrapper_label: com.yoni.claude-task.tomac-deal-compile
+    wrapper_label: com.yoni.claude-task.deal-dashboard-compile
     schedule: "(see plist)"
     package: deals
     mode: subscription
@@ -197,9 +197,9 @@ skills:
     rename_to: deals-compile
 
   # — Research pipeline (Track H consolidates these into one parameterized SKILL) —
-  - name: gs-research-daily-download
+  - name: gs-research-fetch
     kind: skill
-    wrapper_label: com.yoni.claude-task.gs-research-daily-download
+    wrapper_label: com.yoni.claude-task.gs-research-fetch
     schedule: "daily"
     package: research
     mode: subscription
@@ -207,54 +207,54 @@ skills:
     rename_to: research-fetch-gs
     notes: "Interim name — Track H builds a single research-fetch SKILL parameterized by --vendor."
 
-  - name: gs-research-pdf-processor
+  - name: gs-research-process
     kind: skill
-    wrapper_label: com.yoni.claude-task.gs-research-pdf-processor
+    wrapper_label: com.yoni.claude-task.gs-research-process
     schedule: "daily (after fetch)"
     package: research
     mode: subscription
     confidentiality: tenant
     rename_to: research-process-gs
 
-  - name: jefferies-pdf-downloader
+  - name: jefferies-research-fetch
     kind: skill
-    wrapper_label: com.yoni.claude-task.jefferies-pdf-downloader
+    wrapper_label: com.yoni.claude-task.jefferies-research-fetch
     schedule: "weekly"
     package: research
     mode: subscription
     confidentiality: tenant
     rename_to: research-fetch-jefferies
 
-  - name: jefferies-pdf-processor
+  - name: jefferies-research-process
     kind: skill
-    wrapper_label: com.yoni.claude-task.jefferies-pdf-processor
+    wrapper_label: com.yoni.claude-task.jefferies-research-process
     schedule: "weekly (after fetch)"
     package: research
     mode: subscription
     confidentiality: tenant
     rename_to: research-process-jefferies
 
-  - name: rbn-daily-sync
+  - name: rbn-energy-daily
     kind: skill
-    wrapper_label: com.yoni.claude-task.rbn-daily-sync
+    wrapper_label: com.yoni.claude-task.rbn-energy-daily
     schedule: "daily"
     package: research
     mode: subscription
     confidentiality: tenant
     rename_to: research-fetch-rbn
 
-  - name: peakload-weekly-sync
+  - name: peakload-weekly
     kind: skill
-    wrapper_label: com.yoni.claude-task.peakload-weekly-sync
+    wrapper_label: com.yoni.claude-task.peakload-weekly
     schedule: "weekly"
     package: research
     mode: subscription
     confidentiality: tenant
     rename_to: research-fetch-peakload
 
-  - name: run-syncall-gas
+  - name: substack-sync
     kind: skill
-    wrapper_label: com.yoni.claude-task.run-syncall-gas
+    wrapper_label: com.yoni.claude-task.substack-sync
     schedule: "(orchestrator)"
     package: research
     mode: subscription
@@ -262,9 +262,9 @@ skills:
     rename_to: research-fetch-all
 
   # — Podcasts —
-  - name: podcast-transcribe-daily
+  - name: podcast-processing
     kind: skill
-    wrapper_label: com.yoni.claude-task.podcast-transcribe-daily
+    wrapper_label: com.yoni.claude-task.podcast-processing
     schedule: "daily"
     package: capture
     mode: api

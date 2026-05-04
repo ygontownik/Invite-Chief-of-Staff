@@ -1178,7 +1178,7 @@ def _find_claude_bin():
 
 CLAUDE_BIN    = _find_claude_bin()
 PIPELINE_LOG  = '/tmp/cos-pipeline-manual-run.log'
-SKILL_MD_PATH = Path.home() / '.claude/scheduled-tasks/cos-capture-pipeline/SKILL.md'
+SKILL_MD_PATH = Path.home() / '.claude/scheduled-tasks/inbox-capture/SKILL.md'
 CWD_CLAUDE    = str(Path.home() / 'Documents/Claude Code')
 
 # ── Locks ──────────────────────────────────────────────────
@@ -1431,12 +1431,34 @@ ROUTINES_LABEL_PREFIX = 'com.yoni.claude-task.'
 # Tier 2: depend on Claude_in_Chrome MCP (gone since desktop-app uninstall).
 # Their failures are expected, not actionable, until that MCP is restored.
 ROUTINES_TIER2 = {
-    'rbn-daily-sync',
-    'run-syncall-gas',
-    'gs-research-daily-download',
-    'notebooklm-daily-briefing',
-    'notebooklm-sunday-weekly-briefing',
+    'rbn-energy-daily',
+    'substack-sync',
+    'gs-research-fetch',
+    'daily-intelligence-digest',
+    'weekly-intelligence-digest',
 }
+# Human-readable labels for the admin routines tab.
+# Keys are the plist slug (after stripping ROUTINES_LABEL_PREFIX + .plist).
+# Unlisted slugs fall back to the raw slug (title-cased dashes → spaces).
+ROUTINE_LABELS: dict[str, str] = {
+    'morning-briefing':          'Morning Briefing',
+    'inbox-capture':             'Inbox Capture',
+    'rbn-energy-daily':          'RBN Energy Daily',
+    'substack-sync':             'Substack Sync',
+    'daily-intelligence-digest': 'Daily Intelligence Digest',
+    'weekly-intelligence-digest': 'Weekly Intelligence Digest',
+    'podcast-processing':        'Podcast Processing',
+    'gs-research-fetch':         'GS Research — Fetch',
+    'gs-research-process':       'GS Research — Process',
+    'jefferies-research-fetch':  'Jefferies Research — Fetch',
+    'jefferies-research-process': 'Jefferies Research — Process',
+    'peakload-weekly':           'PeakLoad Weekly',
+    'weekly-summary-email':      'Weekly Summary Email',
+    'deal-pipeline-scan':        'Deal Pipeline Scan',
+    'deal-dashboard-compile':    'Deal Dashboard Compile',
+    'phone-notes-capture':       'Phone Notes Capture',
+}
+
 # Strict task-name validator: lowercase alnum + dashes, 2-65 chars.
 # Used as a shell-injection barrier on /routines/<task>/kickstart.
 ROUTINES_TASK_RE = re.compile(r'^[a-z0-9][a-z0-9-]{1,64}$')
@@ -1635,6 +1657,7 @@ def _routines_data():
                     'runtime_s': r.get('runtime_s')} for r in runs[-7:]]
         item = {
             'task':              name,
+            'label':             ROUTINE_LABELS.get(name, name),
             'schedule_human':    meta['schedule_human'],
             'next_run':          meta['next_run'],
             'tier':              2 if name in ROUTINES_TIER2 else 1,

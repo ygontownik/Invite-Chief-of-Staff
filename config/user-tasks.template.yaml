@@ -15,8 +15,8 @@
 # Keep this file in lockstep with `~/cos-pipeline/routines.yaml`.
 
 # ── Core COS pipeline ──────────────────────────────────────────────
-cos-personal-briefing: true
-cos-capture-pipeline: true
+morning-briefing: true
+inbox-capture: true
 cos-gmail-mini: false               # Replaced by com.<tenant>.gmail-mini daemon
 cos-otter-transcripts: false        # Replaced by com.<tenant>.otter-backfill daemon
 cos-otter-transcripts-midday: false
@@ -27,18 +27,18 @@ cos-email-resolver-evening: false
 master-daily-update: false          # Disabled — sub-tasks run individually
 
 # ── Research pipelines (toggle per source) ─────────────────────────
-rbn-daily-sync: true
-run-syncall-gas: true
-notebooklm-daily-briefing: true
-notebooklm-sunday-weekly-briefing: true
-podcast-transcribe-daily: true
-gs-research-daily-download: true
-gs-research-pdf-processor: true
-jefferies-pdf-downloader: true
-jefferies-pdf-processor: true
-peakload-weekly-sync: true
+rbn-energy-daily: true
+substack-sync: true
+daily-intelligence-digest: true
+weekly-intelligence-digest: true
+podcast-processing: true
+gs-research-fetch: true
+gs-research-process: true
+jefferies-research-fetch: true
+jefferies-research-process: true
+peakload-weekly: true
 
 # ── Weekly / deal tasks ────────────────────────────────────────────
-sunday-weekly-email: true
-tomac-cove-weekly-pipeline: true    # Renames to <tenant>-weekly-pipeline post-A-fast.7
-tomac-deal-compile: true            # Renames to deal-compile post-A-fast.7
+weekly-summary-email: true
+deal-pipeline-scan: true    # Renames to <tenant>-weekly-pipeline post-A-fast.7
+deal-dashboard-compile: true            # Renames to deal-compile post-A-fast.7

@@ -3,11 +3,11 @@
 #
 # Generates 3 essential LaunchAgent plists, installs them, and starts them:
 #   1. cos-dashboard-server   — always-on HTTP server on port 7777
-#   2. cos-capture-pipeline   — daily 7:22am capture + reconciliation + drafts
+#   2. inbox-capture   — daily 7:22am capture + reconciliation + drafts
 #   3. cos-gmail-mini         — every 2h email triage on weekdays
 #
 # These are the minimum viable scheduled tasks for Package B. The full
-# Claude Code SKILL-based pipelines (cos-otter-transcripts, cos-personal-briefing,
+# Claude Code SKILL-based pipelines (cos-otter-transcripts, morning-briefing,
 # etc.) require Claude Code to be installed separately and SKILL.md files copied
 # into ~/.claude/scheduled-tasks/. See docs/PACKAGE_B.md for those.
 #
@@ -121,7 +121,7 @@ install_dashboard() {
 
 install_capture() {
   echo ""
-  echo "── Installing cos-capture-pipeline (daily 7:22am Mon-Fri) ──"
+  echo "── Installing inbox-capture (daily 7:22am Mon-Fri) ──"
   local sched=$(cat <<'XML'
     <key>StartCalendarInterval</key>
     <array>

@@ -88,18 +88,23 @@ _FIRM_CONTEXT  = _PIPELINE_ROOT / "firm_context.yaml"
 
 TIME_INSENSITIVE_TASKS = {
     # Briefing pipeline — daily/weekly digests; +1h delay tolerable.
-    "cos-personal-briefing", "briefing-morning",
+    "morning-briefing", "cos-personal-briefing", "briefing-morning",
+    "daily-intelligence-digest", "weekly-intelligence-digest",
     "notebooklm-daily-briefing", "notebooklm-sunday-weekly-briefing",
-    "sunday-weekly-email", "briefing-weekly", "master-daily-update",
+    "weekly-summary-email", "sunday-weekly-email", "briefing-weekly", "master-daily-update",
     # Podcast transcription — overnight batch.
-    "podcast-transcribe-daily", "podcasts-transcribe",
+    "podcast-processing", "podcast-transcribe-daily", "podcasts-transcribe",
     # Deal pipeline — weekly cadence; queue safe.
-    "tomac-cove-weekly-pipeline", "deals-weekly-scan",
-    "tomac-deal-compile", "deals-compile",
+    "deal-pipeline-scan", "tomac-cove-weekly-pipeline", "deals-weekly-scan",
+    "deal-dashboard-compile", "tomac-deal-compile", "deals-compile",
     # Research feeds — daily / weekly batches.
+    "gs-research-fetch", "gs-research-process",
     "gs-research-daily-download", "gs-research-pdf-processor",
+    "jefferies-research-fetch", "jefferies-research-process",
     "jefferies-pdf-downloader", "jefferies-pdf-processor",
-    "rbn-daily-sync", "peakload-weekly-sync",
+    "rbn-energy-daily", "rbn-daily-sync",
+    "substack-sync", "run-syncall-gas",
+    "peakload-weekly", "peakload-weekly-sync",
 }
 
 TIME_SENSITIVE_TASKS = {
@@ -110,7 +115,7 @@ TIME_SENSITIVE_TASKS = {
     # inbox responsiveness; next fire retries.
     "cos-gmail-mini", "capture-email-triage", "gmail-mini",
     # Capture pipeline — morning fire only; can't queue past breakfast.
-    "cos-capture-pipeline", "capture-inbox",
+    "inbox-capture", "cos-capture-pipeline", "capture-inbox",
 }
 
 
@@ -1050,10 +1055,10 @@ _KNOWN_TASK_TYPES = [
     # routines.yaml package keys
     "capture", "briefing", "research", "deals", "server", "infra",
     # routine names / rename_to keys (from routines.yaml)
-    "cos-personal-briefing", "briefing-morning",
-    "tomac-deal-compile",    "deals-compile",
-    "podcast-transcribe-daily", "podcasts-transcribe",
-    "cos-capture-pipeline",  "capture-inbox",
+    "morning-briefing", "cos-personal-briefing", "briefing-morning",
+    "deal-dashboard-compile", "tomac-deal-compile", "deals-compile",
+    "podcast-processing", "podcast-transcribe-daily", "podcasts-transcribe",
+    "inbox-capture", "cos-capture-pipeline", "capture-inbox",
     # unknown — should fall back to overall default
     "totally-made-up-task",
 ]
