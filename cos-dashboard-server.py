@@ -1141,6 +1141,14 @@ def _inject_shared_chrome(html: str, user: str = 'owner') -> str:
     return html
 
 
+def _page_fetched_at() -> str:
+    """Return the fetchedAt ISO string from the current compiled state, or ''."""
+    try:
+        return json.loads(STATE_PATH.read_text()).get('fetchedAt', '') or ''
+    except Exception:
+        return ''
+
+
 def _deletions_script() -> str:
     """Inline <script> that exposes window.__DELETIONS__, window.__itemId,
     window.__isDeleted, window.__deleteItem. Client-side computes stable IDs
@@ -1193,6 +1201,7 @@ def _deletions_script() -> str:
         # bundle in ~/dashboards/app/templates/* is rebuilt against __DEAL_CONFIG__.
         'window.__TOMAC_CONFIG__ = window.__DEAL_CONFIG__;'
         'window.__CP_ALIASES__ = ' + json.dumps(cp_aliases) + ';'
+        'window.__PAGE_FETCHED_AT__ = ' + json.dumps(_page_fetched_at()) + ';'
         'window.__DELETIONS__ = new Set(' + json.dumps(ids) + ');'
         'window.__itemId = function(source, content){'
         '  var s = String(source||"") + "|" + String(content||"").slice(0,60).trim();'
