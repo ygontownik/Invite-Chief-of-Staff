@@ -757,7 +757,29 @@ Previously `_is_localhost()` returned True only for `127.0.0.1`/`::1`/`localhost
 
 **Sub-finding (unfixed)**: only 12 of 15 plists were loaded in launchctl at session start — `inbox-capture`, `morning-briefing`, `podcast-processing` were missing. Loaded all three via `launchctl bootstrap gui/$UID <plist>`. Going forward, a routines health-check should fail loudly when a plist exists on disk but is not loaded — silent missing = silent broken pipeline.
 
-**Sub-finding (unfixed, separate)**: most last-runs were May 1; today is May 4. Weekday-scheduled tasks did not catch up after Mac wake. macOS launchd doesn't run missed `StartCalendarInterval` events on wake. If routines must catch up after sleep, switch to `StartInterval` or add a wake-time `RunAtLoad` reconciliation script. Captured here for the next session.
+**Sub-finding (FIXED 2026-05-04 in same session)**: most last-runs were May 1; today is May 4. Weekday-scheduled tasks did not catch up after Mac wake — macOS launchd doesn't run missed `StartCalendarInterval` events on wake.
+
+**Fix shipped**: `~/dashboards/scripts/routines-catchup.py` + `com.yoni.routines-catchup` LaunchAgent (`StartInterval: 3600`, `RunAtLoad: true`). The script:
+
+1. Iterates all `com.yoni.claude-task.*.plist` files.
+2. For each, computes the most-recent expected fire time from `StartCalendarInterval`.
+3. Skips tasks in `OPT_OUT` (non-idempotent: weekly-summary-email, daily/weekly-intelligence-digest, morning-briefing).
+4. Skips tasks whose most-recent fire is >48h ago (stale window — running yesterday's daily today would re-do old work).
+5. Skips tasks with a successful run after the last fire (i.e. already ran).
+6. Skips tasks currently running (PID != "-" in `launchctl list`).
+7. Skips tasks kicked within the last 30 min (`KICK_COOLDOWN`).
+8. Otherwise: `launchctl kickstart gui/$UID/com.yoni.claude-task.<name>`.
+
+Logs to `~/dashboards/logs/claude-tasks/routines-catchup.{run,stdout,stderr}.log`. Maintains `~/dashboards/data/user-state/routines-catchup-stamps.json` for the cooldown.
+
+**`StartInterval` advantage**: unlike `StartCalendarInterval`, macOS DOES catch up missed `StartInterval` events on wake from sleep. So the catch-up agent reliably runs within ~hour of any wake.
+
+**Adding a new routine — checklist**:
+1. If the routine is non-idempotent (sends email, posts to Drive with date-stamped content, etc.), add its task name to `OPT_OUT` in `routines-catchup.py`.
+2. If idempotent (data extraction, dedup'd processing), no opt-out needed.
+3. Routine SHOULD use canonical `<task>.stdout.log` log path. Existing legacy stems are tolerated by the registry's stem lookup but are tech debt.
+
+**Rule for the registry log-path resolution**: read all three candidate log files when computing run history — `<task>.run.log` (where the wrapper writes BEGIN/END regardless of plist StandardOutPath), `<stem>.run.log` (legacy fallback), `<stem>.stdout.log` (legacy stdout). Concatenate, dedupe by (start, end), sort. The wrapper (`run-claude-task.sh`) uses `$TASK.run.log` which is independent of `StandardOutPath`, so the canonical name is always the truth source for new runs.
 
 ### 2026-05-04 [SUPERSEDED] — Routines page reports `never_run` for everything; observability gap to investigate
 
