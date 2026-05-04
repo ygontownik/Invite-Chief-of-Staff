@@ -2,8 +2,8 @@
 
 This file is authoritative. Every non-trivial change to this repo walks
 through these steps before being considered complete. The goal is to
-catch drift (visual, behavioral, contractual) before it reaches Yoni's
-dashboard in the morning.
+catch drift (visual, behavioral, contractual) before it reaches the
+principal's dashboard in the morning.
 
 ---
 
@@ -19,8 +19,8 @@ dashboard in the morning.
 
 - [ ] Confirm the change is limited to what was asked. No drive-by refactors.
 - [ ] No new files unless necessary. Prefer editing existing modules.
-- [ ] No new dependencies without an explicit Yoni decision logged in
-      `DECISIONS.md`.
+- [ ] No new dependencies without an explicit principal decision logged
+      in `DECISIONS.md`.
 
 ## Step 3 — Data contract integrity
 

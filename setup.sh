@@ -775,6 +775,25 @@ else
   fi
 fi
 
+# ── Step 3e: Seed dashboard-tiles.yaml (tile registry) ──────────────────────
+step "[3e/8] Dashboard tile registry"
+
+# Public default tile registry lives at config/dashboard-tiles.template.yaml.
+# Copy to the tenant config dir on first install only — skip if tenant has
+# already customized their copy. The live tenant copy is what the server
+# reads (resolved via the synthetic ~/dashboards/config -> $CONFIG_DIR/config
+# symlink set up in Step 6d).
+TILES_SRC="$REPO/config/dashboard-tiles.template.yaml"
+TILES_DST="$CONFIG_DIR/config/dashboard-tiles.yaml"
+mkdir -p "$CONFIG_DIR/config"
+if [ -f "$TILES_DST" ]; then
+  info "Tile registry exists at $TILES_DST — keeping tenant customizations"
+elif [ -f "$TILES_SRC" ]; then
+  cp "$TILES_SRC" "$TILES_DST" && ok "Seeded tile registry → $TILES_DST"
+else
+  warn "Template missing: $TILES_SRC — server will fall back to built-in defaults"
+fi
+
 # ── Step 4: Transcripts source picker (D8) ──────────────────────────────────
 step "[4/8] Transcripts source"
 echo "    Pick which transcript app(s) feed this instance:"

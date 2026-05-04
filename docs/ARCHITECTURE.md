@@ -1,23 +1,24 @@
-# ARCHITECTURE.md — Current-state map of ~/dashboards/
+# ARCHITECTURE.md — Generic architecture map for the COS dashboard
 
-Last updated: 2026-05-01.
+This file describes the structural pattern of a COS dashboard install.
+Specific routine names, config doc IDs, and external services depend on
+your tenant configuration. Concrete examples in this doc are illustrative.
 
 ## Top-level flow
 
 ```
-  External sources           Ingest/Process routines        Compile routines         Serve
-  ─────────────────          ────────────────────────       ─────────────────        ─────
-  Jefferies PDFs ─────┐                                                              /cos
-  GS PDFs ────────────┤                                                              /deals
-  RBN blog ───────────┼─▶  routines/ingest/*  ──┐                                    /tomac
-  Substacks ──────────┤                         │                                    /briefing
-  Podcasts (RSS) ─────┘                         ▼                                    ▲
-  Otter transcripts ─────▶  routines/process/* ─┼─▶ data/compiled/*.json ─▶ app/ ────┘
-  Gmail (small slice) ──▶   routines/process/* ─┤     (dashboard-data.json,
-  Call recordings ──────▶   routines/process/* ─┘      deal-system-data.json,
-                                                       deal-pipeline-data.json,
-  Drive docs (CoS) ◀─────── routines/process/*          cos-run-state.json)
-  Drive docs (intel) ◀───── routines/brief/*
+  External sources              Ingest/Process routines      Compile routines       Serve
+  ─────────────────             ────────────────────────     ─────────────────      ─────
+  Research feeds (PDF) ─────┐                                                       /
+  Authenticated SPAs ───────┤                                                       /deals
+  Newsletter / blog feeds ──┼──▶  routines/ingest/*  ─┐                             /portfolio
+  Podcasts (RSS) ───────────┘                         ▼                             /briefing
+  Transcript sources ─────────▶  routines/process/*  ─┼─▶ data/compiled/*.json ─▶ app/
+  Email (small slice) ───────▶   routines/process/*  ─┤    (dashboard-data.json,
+  Call recordings ───────────▶   routines/process/*  ─┘     deal-system-data.json,
+                                                            deal-pipeline-data.json,
+  Drive docs (CoS) ◀───────── routines/process/*            cos-run-state.json)
+  Drive docs (intel) ◀─────── routines/brief/*
 ```
 
 ## Folder inventory
@@ -25,40 +26,41 @@ Last updated: 2026-05-01.
 | Folder | Purpose | Source of truth? |
 |---|---|---|
 | `app/` | `cos-dashboard-server.py`, `*-refresh.py`, `*-fetch.py`, `templates/*.html` | Yes — the live server |
-| `routines/ingest/` | jefferies_downloader, jefferies_processor, gs_processor, podcast_transcribe | No (reads external) |
-| `routines/process/` | cos_prefetch_drive, cos_batch_write (capture), otter transcripts | No (transforms) |
-| `routines/brief/` | notebooklm_doc_writer | No |
-| `routines/compile/` | deal-system-compile, compile-dashboard, cos-briefing | No (aggregates) |
-| `routines/send/` | sunday_weekly_email (planned) | No |
-| `data/deals/<TICKER>/` | deal.md, profit-model.xlsx, notes/ | **YES** — deal source of truth |
-| `data/compiled/` | dashboard-data.json, deal-system-data.json, deal-pipeline-data.json, cos-run-state.json, *.md | No — regenerable |
+| `routines/ingest/` | Research / newsletter / podcast ingestion scripts | No (reads external) |
+| `routines/process/` | Capture pipeline (Drive prefetch, batch write, transcript backfill) | No (transforms) |
+| `routines/brief/` | Briefing aggregators | No |
+| `routines/compile/` | Deal-system compile, dashboard compile, briefing | No (aggregates) |
+| `routines/send/` | Outbound email senders | No |
+| `data/deals/<TICKER>/` | `deal.md`, profit-model.xlsx, notes/ | **YES** — deal source of truth |
+| `data/compiled/` | `dashboard-data.json`, `deal-system-data.json`, `deal-pipeline-data.json`, `cos-run-state.json`, `*.md` | No — regenerable |
 | `config/schedule.yaml` | Master schedule | **YES** — schedule source |
 | `config/drive-docs.yaml` | Drive doc IDs, folder IDs, local state paths | **YES** — Drive registry |
 | `config/launchd-plists/` | Canonical LaunchAgent plists + generate.sh | **YES** — plist source |
-| `docs/` | CLAUDE.md, ARCHITECTURE.md, RUNBOOK.md, templates, CHANGELOG.md | Yes |
-| `scripts/` | verify-system.sh + one-shots | No |
+| `docs/` | `CLAUDE.md`, `ARCHITECTURE.md`, `RUNBOOK.md`, templates, CHANGELOG.md | Yes |
+| `scripts/` | `verify-system.sh` + one-shots | No |
 | `archive/` | Retired code, backups, snapshots | No (never imported) |
 | `logs/` | Routine stdout/stderr | No |
 
 ## Server architecture
 
 `app/cos-dashboard-server.py` is a single Python `ThreadingHTTPServer`
-with Basic Auth middleware and four views:
+with Basic Auth middleware. Route table is data-driven from
+`config/dashboard-tiles.yaml`:
 
-| Route | Tier | Source |
+| Route pattern | Tier | Source |
 |---|---|---|
 | `/` | owner | `templates/cos-dashboard.html` + `data/compiled/dashboard-data.json` |
-| `/deals/` | owner + partner | `templates/deal-dashboard.html` + `data/compiled/deal-system-data.json` |
-| `/tomac/` | owner + partner | (planned Step 3) firm/pipeline view |
-| `/briefing/` | owner only | (planned Step 4) mobile-friendly briefing |
+| `/deals/` | per `dashboard-tiles.yaml :: tiles[id=deals].allowed` | `templates/deal-dashboard.html` + `data/compiled/deal-system-data.json` |
+| Other tile routes | per `dashboard-tiles.yaml :: tiles[].allowed` | as configured per tile |
 | `POST /warmup` | localhost only | refreshes the cache |
 | `POST /refresh` | localhost only | HTML inject from cache (~2ms) |
 | `GET /cache-status` | owner | cache metadata |
 
-LaunchAgent: `com.yoni.cosdashboard` — `keep_alive: true`, env vars
-`OWNER_PASSWORD` / `PARTNER_PASSWORD` injected by plist.
+LaunchAgent label is tenant-specific (e.g. `com.cospipeline.<slug>.dashboard`).
+`keep_alive: true`, env vars `OWNER_PASSWORD` / `PARTNER_PASSWORD` injected
+by the plist.
 
-## Shared design system (deployed 2026-04-17)
+## Shared design system
 
 All dashboards render through a single shared visual language. Details live
 in `docs/DESIGN-SYSTEM.md`; the short version:
@@ -68,57 +70,43 @@ in `docs/DESIGN-SYSTEM.md`; the short version:
 | CSS tokens + component classes | `app/static/design-system.css` |
 | Shared top nav partial | `app/templates/_topnav.html` |
 | Injector (adds CSS link + topnav to every served HTML page) | `_inject_shared_chrome()` in `cos-dashboard-server.py` |
-| Static asset serving (cascades `app/static/` → `tomac-cove-build/static/`) | `/static/*` route in `do_GET` |
+| Static asset serving | `/static/*` route in `do_GET` |
 
-Every text/html route — `/`, `/deals/`, `/tomac/`, `/briefing/`,
-`/tomac-cove/`, `/all`, `/admin` — flows through the injector. Partner tier
-is allowed `/static/*` unconditionally so CSS loads even when partner access
-is restricted to `/deals/`.
+Every text/html route flows through the injector. The partner tier is
+allowed `/static/*` unconditionally so CSS loads even when partner access
+is restricted to a single tile's route.
 
 A page can opt out of the shared chrome by placing
 `<!-- NO_TC_CHROME -->` in its `<head>`.
 
-## The 17 active routines
+## Routines
 
-Grouped by cron order (see `config/schedule.yaml` for authoritative cron).
+The active routine set for any tenant is defined in `config/schedule.yaml`
+(generated from `config/schedule.template.yaml` at install time). See the
+template for the universal-core routines that every subscriber gets and
+the optional blocks that can be enabled.
 
-### Overnight (daily)
-1. **jefferies-pdf-downloader** — 02:10 — Chrome MCP → `folders.jefferies_pdfs`
-2. **jefferies-pdf-processor** — 03:08 — PDFs → `folders.sector_docs`
-3. **gs-research-daily-download** — 03:38 — Chrome MCP → `folders.gs_pdfs`
-4. **gs-research-pdf-processor** — 04:03 — PDFs → `docs.gs_energy`, `docs.gs_macro_market`
-5. **podcast-transcribe-daily** — 05:00 — RSS → `folders.podcasts`
-6. **tomac-deal-compile** — 07:09 — `data/deals/*` → `data/compiled/deal-system-data.json`
+Universal core: transcript backfill, inbox capture, personal briefing,
+Gmail mini-triage, podcast transcription, deal compile, weekly deal-pipeline
+scan.
 
-### Morning chain (M–F)
-7. **rbn-daily-sync** — 06:24 — Chrome MCP → `docs.rbn_archive`
-8. **run-syncall-gas** — 06:39 — Chrome MCP → Substack library
-9. **cos-otter-transcripts** — 07:07 — Otter → `docs.followups`, `docs.recruiting`, `docs.tomac_pipeline`
-10. **cos-capture-pipeline** — 07:22 — Gmail/Drive → same
-11. **notebooklm-daily-briefing** — 07:36 (→ 07:15 proposed) — NotebookLM → `docs.daily_market_update`
-12. **cos-personal-briefing** — 07:51 — → `docs.briefing_log` + dashboard refresh
-
-### Business hours (M–F)
-13. **cos-gmail-mini** — 08/10/12/14/16/18 — Gmail → `docs.followups`
-
-### Weekly
-14. **notebooklm-sunday-weekly-briefing** — Sun 18:07
-15. **tomac-cove-weekly-pipeline** — Sun 19:30 — 3-pass Sonnet/Opus/Sonnet → `docs.tomac_pipeline`, `docs.energy_pipeline_gemini`
-16. **sunday-weekly-email** — Sun 20:00 (planned Step 9)
-
-### On-demand
-17. **master-daily-update** — fallback orchestrator
+Optional / tenant-provided: research-PDF ingestion, authenticated-site
+scrapes, newsletter sync, intelligence-digest aggregators, weekly summary
+emails. The backing scripts for these are NOT shipped in the public repo —
+each tenant provides their own.
 
 ## Always-on daemons (launchd)
 
-| Label | Purpose |
+Labels are namespaced by tenant slug: `com.cospipeline.<slug>.<role>`. Common
+roles:
+
+| Role | Purpose |
 |---|---|
-| `com.yoni.cosdashboard` | The dashboard HTTP server |
-| `com.tomaccove.scheduler` | Call recorder scheduler |
-| `com.tomaccove.cloudflared` | Cloudflare tunnel for call webhook |
-| `com.tomaccove.ngrok` | ngrok (legacy) |
-| `com.tomaccove.recorder.menu` | Menu-bar call recorder UI |
-| `com.tomaccove.calendar.renew` | Re-registers push subscriptions every 2 days |
+| `dashboard` | The dashboard HTTP server |
+| `call-scheduler` | Call recorder scheduler (optional) |
+| `cloudflared` | Cloudflare tunnel for call webhook (optional) |
+| `recorder-menu` | Menu-bar call recorder UI (optional) |
+| `calendar-renew` | Re-registers push subscriptions every 2 days (optional) |
 
 ## Config map — where every piece of manually-curated data lives
 
@@ -129,12 +117,15 @@ right file here rather than searching the template.
 
 | File | What's inside | Injected as |
 |---|---|---|
-| `config/recruit-config.yaml` | Recruiting pipeline: `inDiscussion`, `waitingToHear`, `doIChase` buckets + recruiter firms | `window.__RECRUIT_CONFIG__` |
-| `config/tomac-config.yaml` | TC deal activity: `liveDeals`, `dealOrigination`, `capitalRaisingAdvisors`, `prospectiveInvestors` | `window.__TOMAC_CONFIG__` |
+| `config/recruit-config.yaml` | Recruiting pipeline buckets + recruiter firms | `window.__RECRUIT_CONFIG__` |
+| `config/deal-config.yaml` | Deal activity: `liveDeals`, `dealOrigination`, `capitalRaisingAdvisors`, `prospectiveInvestors`, `investors[]` | `window.__DEAL_CONFIG__` |
 | `config/strings.yaml` | All UI strings: button labels, tooltips, topnav text | `{{STR:dot.path}}` placeholder substitution |
 | `config/drive-docs.yaml` | Google Drive doc IDs and folder IDs used by pipeline scripts | Read directly by pipeline scripts |
-| `config/schedule.yaml` | Cron schedule for all 17 routines | Read by scheduler |
-| `config/dashboard-tiles.yaml` | Tile layout config for the deals dashboard | Read by server |
+| `config/schedule.yaml` | Cron schedule for all active routines | Read by scheduler |
+| `config/dashboard-tiles.yaml` | Tile registry for the unified landing page | Read by server |
+
+The server also injects firm identity (principal name, team, firm name,
+tile-label overrides) as `window.__FIRM_CONTEXT__` from `firm_context.yaml`.
 
 ### User-state files (never edit directly — written by server endpoints)
 
@@ -154,9 +145,9 @@ them; client JS reads them via `window.__*` injection at page load.
 
 | File | What's inside | Consumer |
 |---|---|---|
-| `data/compiled/dashboard-data.json` | Follow-ups, awaitingExternal, upcoming calls, pipeline status | `/` CoS view |
-| `data/compiled/deal-system-data.json` | All deals with health scores, actions, profit models | `/deals/` |
-| `data/compiled/deal-pipeline-data.json` | Weekly pipeline targets + IC memos | `/tomac-cove/` |
+| `data/compiled/dashboard-data.json` | Follow-ups, awaitingExternal, upcoming calls, pipeline status | CoS view |
+| `data/compiled/deal-system-data.json` | All deals with health scores, actions, profit models | Deals view |
+| `data/compiled/deal-pipeline-data.json` | Weekly pipeline targets + IC memos | Portfolio view |
 | `data/compiled/cos-run-state.json` | Capture chain state: lastFullRunAt, lastMiniRunAt, lastFetchAt | Freshness badge |
 
 ### How config YAML reaches the browser
@@ -164,13 +155,13 @@ them; client JS reads them via `window.__*` injection at page load.
 ```
 config/*.yaml
     ↓
-_load_recruit_config() / _load_tomac_config()   ← server reads at request time
+_load_recruit_config() / _load_deal_config() / _load_firm_context_public()   ← server reads at request time
     ↓
-_deletions_script()                              ← injected into <head> as inline <script>
+_deletions_script()                                                           ← injected into <head> as inline <script>
     ↓
-window.__RECRUIT_CONFIG__ / window.__TOMAC_CONFIG__
+window.__RECRUIT_CONFIG__ / window.__DEAL_CONFIG__ / window.__FIRM_CONTEXT__
     ↓
-const RECRUIT_CONFIG = window.__RECRUIT_CONFIG__ || fallback   ← template one-liner
+const RECRUIT_CONFIG = window.__RECRUIT_CONFIG__ || fallback                 ← template one-liner
 ```
 
 Server fails gracefully: if a YAML file is missing or unparseable, the
@@ -179,25 +170,15 @@ dashboard renders with empty sections rather than crashing.
 
 ## Key data contracts
 
-- **`data/compiled/dashboard-data.json`** — CoS view payload.
-  Producer: `cos-dashboard-fetch.py`. Consumer: `/` + `/briefing/`.
+- **`data/compiled/dashboard-data.json`** — CoS view payload. Producer:
+  `cos-dashboard-fetch.py`. Consumer: `/` + `/briefing/`.
 - **`data/compiled/deal-system-data.json`** — all deals rollup with
-  health scores, actions, profit models. Producer:
-  `compile-dashboard.py`. Consumer: `/deals/` + `cos-briefing.py`.
+  health scores, actions, profit models. Producer: `deal-system-compile.py`.
+  Consumer: `/deals/`.
 - **`data/compiled/deal-pipeline-data.json`** — weekly pipeline targets
-  + IC memos. Producer: `tomac-cove-weekly-pipeline`. Consumer: `/tomac/`.
+  + IC memos. Producer: weekly pipeline scan. Consumer: `/portfolio/`.
 - **`data/compiled/cos-run-state.json`** — transient state for the
   capture chain (what was processed when).
-
-## Dependencies between routines
-
-```
-  run-syncall-gas ──▶ notebooklm-daily-briefing ──┐
-  cos-otter-transcripts ──▶ cos-capture-pipeline ─┼──▶ cos-personal-briefing
-                                                   ┘
-  tomac-deal-compile ─────▶ (reads from data/deals/) ──▶ /deals view
-  tomac-cove-weekly-pipeline ──▶ sunday-weekly-email
-```
 
 ## External systems referenced
 
@@ -205,13 +186,13 @@ dashboard renders with empty sections rather than crashing.
 - Microsoft Graph (Outlook) (`~/credentials/ms_token.json`)
 - Anthropic API (env: `ANTHROPIC_API_KEY`)
 - AssemblyAI (env: `ASSEMBLYAI_API_KEY`)
-- Twilio (call webhook via Cloudflare tunnel)
-- NotebookLM (web via Chrome MCP)
+- Twilio (call webhook via Cloudflare tunnel) — optional
+- Authenticated SPAs via Chrome MCP — optional
 
-## Not in ~/dashboards/ (out of scope)
+## Not in the dashboard tree (out of scope)
 
-- `~/tomac-cove-pipeline/` — call recorder stack (stays)
-- `~/recordings/` — raw call audio (stays)
-- `~/credentials/` — secrets (stays)
+- Call recorder stack (separate repo / install)
+- Raw call audio
+- `~/credentials/` — secrets (intentionally outside the tree)
 - `~/.claude/scheduled-tasks/` — SKILL.md definitions (stays, but
-  `calls:` paths point into `~/dashboards/`)
+  `calls:` paths point into the dashboard tree)

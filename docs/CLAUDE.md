@@ -53,7 +53,7 @@ When editing a routine:
    path pattern. `.resolve()` is critical — it follows the symlink
    compatibility shims so the script works whether invoked via the new
    path or an old symlinked path. Never introduce absolute paths like
-   `/Users/ygontownik/...`.
+   `/Users/<username>/...`.
 2. If you change a scheduled cron, update `config/schedule.yaml` first,
    then the plist (if launchd) or the Claude Code scheduled-tasks UI.
 3. If you rename a Drive doc, update `config/drive-docs.yaml` — routines
@@ -69,8 +69,9 @@ When editing a routine:
 - **No credentials in git-tracked files.** `~/credentials/` is
   intentionally outside the tree.
 - **Dashboard auth tiers**: owner gets everything; partner restricted to
-  `/deals/*` and `/tomac/*`. Localhost POSTs are unauthenticated (for
-  warmup); remote POSTs require owner.
+  the partner-allowed tile URLs declared in `config/dashboard-tiles.yaml`.
+  Localhost POSTs are unauthenticated (for warmup); remote POSTs require
+  owner.
 
 ## Verification rules
 

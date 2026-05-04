@@ -3,11 +3,9 @@
 # ─────────────────────────────────────────────────────────────
 ## STATUS: TEMPLATE — copied to ~/cos-pipeline-config-<slug>/config/schedule.yaml
 ## by setup.sh at install time. The live tenant copy is what generate.sh reads.
-## See ~/dashboards/config/schedule.yaml for Yoni's full live schedule with
-## all sources enabled.
 ##
 # Authoritative schedule for routines + always-on daemons. To change a
-# schedule: edit this file, then run:
+# schedule: edit the tenant copy of this file, then run
 #   ~/cos-pipeline-config-<slug>/config/launchd-plists/generate.sh
 # which regenerates the plist and copies it into ~/Library/LaunchAgents/.
 #
@@ -19,9 +17,12 @@
 #                   these directly.
 #
 # This template ships only the universal-core routines enabled. Optional
-# Yoni-specific blocks are commented out below — uncomment after wiring up
-# the relevant data source (e.g. a Jefferies subscription, a Substack RSS
-# feed, etc.).
+# blocks (research-PDF ingestion, authenticated-site scrapes, newsletter
+# sync, intelligence-digest aggregators, weekly summary email) are
+# commented out below — uncomment after wiring up the relevant data
+# source. The backing scripts for those optional routines are NOT
+# shipped in this public repo; each tenant provides their own
+# equivalents.
 # ─────────────────────────────────────────────────────────────
 
 claude_tasks:
@@ -30,46 +31,47 @@ claude_tasks:
   # UNIVERSAL CORE — every subscriber needs these
   # ─────────────────────────────────────────────────────────────
 
-  # Inbox + transcript capture (the COS pipeline's fundamental loop)
+  # Otter / Drive transcript ingest — every 15 min during business hours
   - id: cos-otter-transcripts
     cron: "*/15 8-17 * * 1-5"
     local_time: "Every 15min 8am–6pm ET M–F"
-    runner: ~/dashboards/scripts/otter-backfill-runner.sh
-    calls: (Python direct — Claude API only when actually processing transcripts)
+    calls: ~/cos-pipeline/cos_otter_backfill.py
     group: process
-    note: "com.tomaccove.otter-backfill LaunchAgent. No-op exits in <2s when nothing new."
+    note: "No-op exit in <2s when nothing new in the configured Drive folder."
 
+  # Inbox capture — daily 7:22 AM weekdays
   - id: inbox-capture
     cron: "22 7 * * 1-5"
     local_time: "07:22 M–F"
     skill: ~/.claude/scheduled-tasks/inbox-capture/SKILL.md
-    calls: ~/dashboards/routines/process/cos_prefetch_drive.py + cos_batch_write.py
+    calls: ~/cos-pipeline/cos_prefetch_drive.py + ~/cos-pipeline/cos_batch_write.py
     depends_on: [cos-otter-transcripts]
     group: process
 
+  # Personal briefing — daily 7:51 AM weekdays
   - id: morning-briefing
     cron: "51 7 * * 1-5"
     local_time: "07:51 M–F"
     skill: ~/.claude/scheduled-tasks/morning-briefing/SKILL.md
-    calls: (Claude skill)
+    calls: ~/cos-pipeline/cos_personal_briefing.py
     depends_on: [inbox-capture]
     group: brief
-    note: "Personal briefing — produces the daily PB log + dashboard refresh."
+    note: "Produces the daily PB log + dashboard refresh."
 
-  # Gmail mini-triage every 2h during business hours
+  # Gmail mini-triage — every 2h during business hours
   - id: cos-gmail-mini
     cron: "0 8,10,12,14,16,18 * * 1-5"
     local_time: "08/10/12/14/16/18 M–F"
     skill: ~/.claude/scheduled-tasks/cos-gmail-mini/SKILL.md
-    calls: (Gmail MCP + Drive API)
+    calls: ~/cos-pipeline/cos_gmail_mini_v2.py
     group: ingest
 
-  # Podcast transcription (the public/research feed loop)
+  # Podcast transcription — daily 5 AM
   - id: podcast-processing
     cron: "0 5 * * *"
     local_time: "05:00 daily"
     skill: ~/.claude/scheduled-tasks/podcast-processing/SKILL.md
-    calls: ~/dashboards/routines/ingest/podcast_transcribe.py
+    calls: ~/cos-pipeline/podcast_transcribe.py
     group: ingest
 
   # Compile deal data into the dashboard's JSON contract
@@ -77,7 +79,7 @@ claude_tasks:
     cron: "9 7 * * *"
     local_time: "07:09 daily"
     skill: ~/.claude/scheduled-tasks/deal-dashboard-compile/SKILL.md
-    calls: ~/dashboards/routines/compile/deal-system-compile.py
+    calls: ~/cos-pipeline/deal-system-compile.py
     group: compile
 
   # Weekly 3-pass deal pipeline scan (the core deal-ideation feature)
@@ -85,89 +87,71 @@ claude_tasks:
     cron: "30 19 * * 0"
     local_time: "19:30 Sun"
     skill: ~/.claude/scheduled-tasks/deal-pipeline-scan/SKILL.md
-    calls: ~/dashboards/routines/compile/  (Claude skill, 3-pass)
+    calls: (Claude skill, 3-pass)
     group: compile
 
-  # Nightly UI-correction proposer — scans CHANGELOG for repeatable bugs
-  - id: dash-corrections-proposer
-    cron: "0 22 * * *"
-    local_time: "22:00 daily"
-    skill: (none — pure Python)
-    calls: ~/dashboards/routines/process/dash_corrections_proposer.py
-    launchd: com.tomaccove.dash-corrections
-    group: process
-    status: active
-
   # ─────────────────────────────────────────────────────────────
-  # OPTIONAL — uncomment after wiring up the matching data source
+  # OPTIONAL — these routines are NOT shipped in the public repo.
+  # Uncomment a block only after providing your own backing script.
   # ─────────────────────────────────────────────────────────────
 
-  # ── Jefferies research (requires Jefferies subscription + Drive folder) ──
-  # - id: jefferies-research-fetch
+  # ── Nightly UI-correction proposer ────────────────────────────────────────
+  # Scans a CHANGELOG/log file for repeatable UI-correction patterns and
+  # proposes additions to dash_corrections.md. Backing script not in public.
+  # - id: dash-corrections-proposer
+  #   cron: "0 22 * * *"
+  #   local_time: "22:00 daily"
+  #   calls: <provide your own script>
+  #   group: process
+
+  # ── Research-feed ingestion (PDF subscription required) ──────────────────
+  # Pattern: download daily PDFs from a research provider, process to memos.
+  # - id: research-fetch
   #   cron: "10 2 * * *"
   #   local_time: "02:10 daily"
-  #   skill: ~/.claude/scheduled-tasks/jefferies-research-fetch/SKILL.md
-  #   calls: ~/dashboards/routines/ingest/jefferies_downloader.py
+  #   calls: <provide your own downloader>
   #   group: ingest
   #
-  # - id: jefferies-research-process
+  # - id: research-process
   #   cron: "8 3 * * *"
   #   local_time: "03:08 daily"
-  #   skill: ~/.claude/scheduled-tasks/jefferies-research-process/SKILL.md
-  #   calls: ~/dashboards/routines/ingest/jefferies_processor.py
+  #   calls: <provide your own processor>
   #   group: ingest
 
-  # ── Goldman Sachs research (requires GS Marquee access + Chrome MCP) ─────
-  # - id: gs-research-fetch
-  #   cron: "38 3 * * *"
-  #   local_time: "03:38 daily"
-  #   skill: ~/.claude/scheduled-tasks/gs-research-fetch/SKILL.md
-  #   calls: (Chrome MCP automation)
-  #   group: ingest
-  #
-  # - id: gs-research-process
-  #   cron: "3 4 * * *"
-  #   local_time: "04:03 daily"
-  #   skill: ~/.claude/scheduled-tasks/gs-research-process/SKILL.md
-  #   calls: ~/dashboards/routines/ingest/gs_processor.py
-  #   group: ingest
-
-  # ── RBN Energy daily (requires RBN subscription) ─────────────────────────
-  # - id: rbn-energy-daily
+  # ── Authenticated-site daily scrape (Chrome MCP) ─────────────────────────
+  # Pattern: navigate authenticated SPA, extract content, write to Drive Doc.
+  # - id: site-daily
   #   cron: "24 6 * * 1-5"
   #   local_time: "06:24 M–F"
-  #   skill: ~/.claude/scheduled-tasks/rbn-energy-daily/SKILL.md
-  #   calls: (Chrome MCP + Google Docs API)
+  #   calls: (Chrome MCP automation)
   #   group: ingest
 
-  # ── Substack research sync (requires Substack subscriptions configured) ──
-  # - id: substack-sync
+  # ── Newsletter / blog feed sync ──────────────────────────────────────────
+  # Pattern: pull a list of RSS/Atom feeds, transcribe new items.
+  # - id: newsletter-sync
   #   cron: "39 6 * * 1-5"
   #   local_time: "06:39 M–F"
-  #   skill: ~/.claude/scheduled-tasks/substack-sync/SKILL.md
-  #   calls: (Chrome MCP → Google Apps Script)
+  #   calls: <provide your own fetcher>
   #   group: ingest
 
-  # ── NotebookLM daily intelligence digest (requires NotebookLM project) ───
+  # ── Daily intelligence digest (briefing-style aggregator) ───────────────
   # - id: daily-intelligence-digest
   #   cron: "15 7 * * 1-5"
   #   local_time: "07:15 M–F"
-  #   skill: ~/.claude/scheduled-tasks/daily-intelligence-digest/SKILL.md
-  #   calls: ~/dashboards/routines/brief/notebooklm_doc_writer.py
-  #   depends_on: [substack-sync]
+  #   calls: <provide your own aggregator>
+  #   depends_on: [newsletter-sync]
   #   group: brief
 
   # ── Weekly intelligence digest + Sunday summary email ────────────────────
   # - id: weekly-intelligence-digest
   #   cron: "7 18 * * 0"
   #   local_time: "18:07 Sun"
-  #   skill: ~/.claude/scheduled-tasks/weekly-intelligence-digest/SKILL.md
   #   group: brief
   #
   # - id: weekly-summary-email
   #   cron: "0 20 * * 0"
   #   local_time: "20:00 Sun"
-  #   calls: ~/dashboards/routines/send/sunday_weekly_email.py
+  #   calls: <provide your own sender>
   #   depends_on: [deal-pipeline-scan]
   #   group: send
 
@@ -175,7 +159,6 @@ claude_tasks:
   # - id: master-daily-update
   #   cron: null
   #   local_time: "manual"
-  #   skill: ~/.claude/scheduled-tasks/master-daily-update/SKILL.md
   #   group: ingest
   #   status: on_demand
 
@@ -187,53 +170,53 @@ launchd:
   # ─────────────────────────────────────────────────────────────
 
   # Always-on dashboard server (the web UI at http://localhost:7777/)
-  - label: com.cospipeline.dashboard
+  - label: com.cospipeline.${slug}.dashboard
     program: /opt/homebrew/bin/python3
     args: [~/dashboards/app/cos-dashboard-server.py]
     keep_alive: true
     run_at_load: true
     env: [OWNER_PASSWORD, PARTNER_PASSWORD]
     log: /tmp/cos-dashboard.log
-    plist: ~/Library/LaunchAgents/com.cospipeline.dashboard.plist
+    plist: ~/Library/LaunchAgents/com.cospipeline.${slug}.dashboard.plist
 
   # ─────────────────────────────────────────────────────────────
   # OPTIONAL — uncomment if using the corresponding feature
   # ─────────────────────────────────────────────────────────────
 
   # ── Call-recording stack (requires Twilio + Cloudflared + ngrok setup) ───
-  # - label: com.cospipeline.call-scheduler
+  # - label: com.cospipeline.${slug}.call-scheduler
   #   program: /opt/homebrew/bin/python3
   #   args: [~/cos-pipeline/scripts/call_scheduler.py, run]
   #   keep_alive: true
   #   run_at_load: true
   #
-  # - label: com.cospipeline.cloudflared
+  # - label: com.cospipeline.${slug}.cloudflared
   #   program: /opt/homebrew/bin/cloudflared
   #   args: [tunnel, run, call-scheduler]
   #   keep_alive: true
   #
-  # - label: com.cospipeline.ngrok
+  # - label: com.cospipeline.${slug}.ngrok
   #   program: /opt/homebrew/bin/ngrok
   #   args: [http, "8765"]
   #   keep_alive: true
   #
-  # - label: com.cospipeline.recorder-menu
+  # - label: com.cospipeline.${slug}.recorder-menu
   #   program: ~/cos-pipeline/.venv/bin/python3
   #   args: [~/cos-pipeline/scripts/call_recorder_menu.py]
   #   keep_alive: true
   #
-  # - label: com.cospipeline.calendar-renew
+  # - label: com.cospipeline.${slug}.calendar-renew
   #   program: /opt/homebrew/bin/python3
   #   args: [~/cos-pipeline/scripts/call_scheduler.py, register]
   #   start_interval: 172800
   #   note: "Re-registers Outlook/Google Calendar push subscriptions (2-day expiry)"
 
   # ── Dedicated Chrome for headless MCP automation ─────────────────────────
-  # Only needed if you enable any of the GS / RBN / Substack scheduled tasks
-  # that require browser automation against authenticated sites.
-  # - label: com.cospipeline.chrome-mcp
+  # Only needed if you enable any of the optional Chrome-MCP-based scheduled
+  # tasks above. One-time manual setup: assign the Chrome window to a
+  # separate macOS Desktop, log into the relevant authenticated sites.
+  # - label: com.cospipeline.${slug}.chrome-mcp
   #   program: ~/cos-pipeline/scripts/run-chrome-mcp-daemon.sh
   #   keep_alive: true
   #   run_at_load: true
   #   throttle_interval: 10
-  #   note: "Dedicated Chrome on localhost:9222 with isolated profile (~/.chrome-mcp-profile). One-time manual setup: assign to a separate Desktop, log into the relevant sites."

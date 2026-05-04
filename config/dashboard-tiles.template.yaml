@@ -1,0 +1,143 @@
+# dashboard-tiles.template.yaml — Public default tile registry.
+#
+# STATUS: TEMPLATE — setup.sh copies this to
+# ~/cos-pipeline-config-<slug>/config/dashboard-tiles.yaml on first install
+# only (skips if the tenant copy already exists). The live tenant copy is
+# what the server reads. Customize tiles/tabs/auth tiers there, not here.
+#
+# Per-tenant tile-title overrides flow via firm_context.yaml :: tile_labels
+# (keyed by the tile id below). Example: a tenant that wants to display
+# "Deal Pipeline" instead of the public default "Pipeline" sets
+#   tile_labels:
+#     tomac-cove: "Deal Pipeline"
+# in their firm_context.yaml.
+#
+# Tile id naming note: some ids ('cos', 'tomac-cove', 'tomac' tab) carry
+# legacy names that are wired into the codebase (server URLs, JS state
+# values, DOM IDs). The public-default titles below are generic; the
+# legacy ids stay until a coordinated rename across templates + server.
+#
+# Each tile renders as a card on /all. `allowed` controls which auth
+# tiers can see it (current tiers: owner, partner). `tabs` lists the
+# sub-tabs within each dashboard — used by admin access management.
+# `requires_package` declares which firm_config.json package must be
+# active for this tile's data to be populated. The tile is always
+# visible; if the package is absent, tabs show an empty-state placeholder.
+# Omit for always-on tiles.
+# `data_keys` lists keys from the /data payload that this tile needs
+# (per-tenant filter reads this when PER_USER_FILTER_ENABLED=1).
+# Use [] to mean "no tile-specific data" (admin tiles, etc.). Required on
+# every tile — startup validation will fail if missing.
+# `requires_feature`: tile/tab is hidden when the named feature is OFF
+# for the current user/tenant. Resolved via firm_context :: feature_enabled.
+# Tile-level + per-tab supported.
+
+tiles:
+  - id: personal
+    title: Personal
+    description: Personal todos and tracking. (Job search tab opt-in via features.job_search.)
+    url: /personal/
+    icon: compass
+    allowed: [owner]
+    requires_package: operations
+    requires_feature: job_search
+    data_keys: [personalActions, recruiting, awaitingExternal]
+    tabs:
+      - id: job-search
+        title: Job Search
+        requires_feature: job_search
+      - id: personal-actions
+        title: Personal Actions
+      - id: awaiting
+        title: Awaiting External
+
+  - id: cos
+    title: Status
+    description: Operations — deals, fundraising, team actions, awaiting external, and daily todos.
+    url: /
+    icon: briefcase
+    allowed: [owner]
+    requires_package: operations
+    data_keys: [tomac, fundraising, awaitingExternal, today, upcomingCalls,
+                followUps, lpData, lpNetwork, staleContacts, warmContacts,
+                dealPortfolio]
+    tabs:
+      - id: tomac
+        title: Overview
+      - id: fundraising
+        title: Fundraising
+      - id: team-actions
+        title: Team Actions
+      - id: awaiting
+        title: Awaiting External
+
+  - id: tomac-cove
+    title: Pipeline
+    description: Portfolio view of live deals — health scores, milestones, capital in play, profit ranges.
+    url: /portfolio/
+    icon: diamond
+    allowed: [owner, partner]
+    requires_package: operations
+    data_keys: [dealPortfolio, tomac]
+    tabs:
+      - id: live-deals
+        title: Live Deals
+      - id: originating
+        title: Originating Deals
+
+  - id: deals
+    title: Deal Ideas
+    description: Scored deals, IC memos, health metrics, weekly Pass-1/2/3 output.
+    url: /deals/
+    icon: chart
+    allowed: [owner, partner]
+    requires_package: market_intelligence
+    data_keys: [pipelineStatus, pipelineRunHistory]
+    tabs:
+      - id: themes
+        title: Themes
+      - id: ic-memos
+        title: IC Memos
+
+  - id: briefing
+    title: Briefing
+    description: Today's agenda + full daily market briefing.
+    url: /briefing/
+    icon: sun
+    allowed: [owner]
+    requires_package: market_intelligence
+    data_keys: [briefingLog, briefingSynopsis]
+    tabs:
+      - id: intel
+        title: Daily Briefing
+      - id: deal
+        title: Deal Flash
+
+  - id: admin
+    title: Admin
+    description: Invite users, manage tile permissions, revoke access.
+    url: /admin/
+    icon: key
+    allowed: [owner]
+    data_keys: [emailQueue, emailActivity, gmailScanned, unprocessedTranscripts]
+    tabs:
+      - id: access
+        title: Access Management
+      - id: schedule
+        title: Schedule Recording
+        requires_feature: call_recording
+      - id: calls
+        title: Call History
+        requires_feature: call_recording
+      - id: status
+        title: Dashboard Status
+
+  # Future tiles — not yet built, disabled until routes exist:
+  # - id: research
+  #   title: Research Intelligence
+  #   description: Aggregated research / newsletter / podcast digests.
+  #   url: /research/
+  #   icon: book
+  #   allowed: [owner]
+  #   requires_package: market_intelligence
+  #   tabs: []
