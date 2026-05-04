@@ -948,30 +948,36 @@ Log each supersession to stderr so prompt drift can be audited.
 
 ## TOPIC — TILE DRILLDOWN SCOPE
 
-### 2026-05-04 — Tomac Cove tile drilldown is Fundraising-only; Dealflow + Portfolio sub-tabs removed
+### 2026-05-04 — Tile drilldowns expose ONE complementary lens, never parallel views
 
-`buildTomacSection` previously rendered a 3-tab card (Dealflow / Fundraising / Portfolio) when the user clicked the Tomac Cove tile or filtered focus to deals/fundraising. Per the user's broad-lens review, two of the three sub-tabs surfaced views that don't exist anywhere on the visible HQ page:
+When a top-of-page tile (e.g. a deal-pipeline tile, a "5 active deals" stat card) is clicked, the resulting drilldown card MUST expose information that adds to what's already visible on the page — not a parallel set of sub-tabs that re-render the same content at lower fidelity.
 
-- **Dealflow** duplicated `buildStatusTopRow`'s already-visible Live Deals + Origination columns at lower fidelity.
-- **Portfolio** was a drill-through pointer to `/tomac-cove/` — useful as a link, not as a sub-tab.
+**Failure pattern**: a tile click opens a 3-tab card whose tabs are
+(a) a duplicate of an already-visible top-row section,
+(b) a hidden complementary view that adds value, and
+(c) a drill-through pointer to another route. The user gets confused: "why does this tile show me Dealflow when Dealflow is already at the top of the page?"
 
-Stripped to Fundraising-only — the tile click now exposes ONE counterparty-lens view (LP roster + active LP commitments), which is distinct from the relationship-inventory Fundraising at the top of HQ. The `state.statFocus === 'deals'` branch in `buildFocusedLayout` now scrolls back to `#section-status-top` and highlights it briefly instead of rendering a parallel card.
+**Rule**: a tile drilldown should contain at most one card, and that card should be a complementary lens — typically a counterparty-by-counterparty view when the parent surface is a relationship inventory, or vice versa. If a sub-tab in a drilldown duplicates a top-row section, delete the sub-tab; if a sub-tab is a navigational pointer, replace the drilldown click with a direct link.
 
-**Rule** (companion to the 2026-05-04 "tile click must scroll-highlight existing visible sections" entry): never let a tile click reveal a card that's not part of the page's standard top-down information architecture. If a tile's payload is "show me more about X", X should already be on the page; the click should orient, not surface.
+**Companion rule**: when the tile's content corresponds to an already-visible section of the page, the click should scroll-highlight that section rather than render a parallel card. See the 2026-05-04 "tile click must scroll-highlight" entry above.
+
+Tenant-specific pre/post details for this session's surgery live in the private log.
 
 ---
 
 ## TOPIC — COUNTERPARTY ALIAS COVERAGE
 
-### 2026-05-04 — Smart fallback in `__cpClusterKey` + named-firm aliases for visible counterparties
+### 2026-05-04 — Smart fallback in `__cpClusterKey` + alias entries for any person-led raw counterparty
 
-`__cpClusterKey` previously fell back to splitting on `/` / `—` and taking the first part — so "Lee / Piper Sandler Syndication" clustered as **Lee** (a person), not the firm. The fix is two-layer:
+`__cpClusterKey` previously fell back to splitting on `/` / `—` and taking the first part. When the raw counterparty was extracted in `Person / Firm` order, that fallback clustered the items under the person's name instead of the firm. Two-layer fix:
 
-1. **Smart fallback** — when no alias match fires, scan the `/`-`—`-`,`-`|`-separated parts for one that contains a firm-keyword (`capital`, `partners`, `sandler`, `management`, `investments`, `bank`, `corp`, `llc`, `holdings`, `advisors`, `ventures`, `fund`, `equity`, `industries`, `infrastructure`, `securities`, `group`, `properties`, `finance`, `strategies`, `asset(s)`, `trust`, etc.). Use that firm half as the canonical key. Falls through to the legacy first-part-only behavior when no firm keyword matches.
+1. **Smart fallback** — when no `__CP_ALIASES` entry matches, scan the `/`-`—`-`,`-`|`-separated parts for one that contains a firm-shape keyword (`capital`, `partners`, `management`, `investments`, `bank`, `corp`, `llc`, `holdings`, `advisors`, `ventures`, `fund`, `equity`, `industries`, `infrastructure`, `securities`, `group`, `properties`, `finance`, `strategies`, `asset(s)`, `trust`, plus lower-case forms of placement-agent and PE-firm surnames maintained in the keyword list). Use that firm half as the canonical key. Falls through to the legacy first-part-only behavior when no firm keyword matches.
 
-2. **Explicit aliases** — for known firms with quirky raw extractions, add an explicit entry to `firm_context.yaml > counterparty_aliases`. This session added: Piper Sandler, Garden Investments, Apogee Comply, Astris Finance, Active Infrastructure, Fit Ventures.
+2. **Explicit aliases** — for firms with quirky raw extractions (the LLM consistently inverts the order, includes a desk name, or splits unusually), add an explicit entry to `firm_context.yaml > counterparty_aliases` with all observed needles → canonical name.
 
-**Rule (companion to the 2026-04-21 _CP_ALIASES single-source rule)**: when a /dash session surfaces a cluster that headlines a person rather than a firm, the firm needs an alias entry in `firm_context.yaml`. The smart fallback handles the long tail; explicit aliases give canonical display strings and stable keys.
+**Rule (companion to the 2026-04-21 _CP_ALIASES single-source rule)**: when a `/dash` session surfaces a cluster that headlines a person rather than a firm, the firm needs an alias entry in `firm_context.yaml`. The smart fallback handles the long tail; explicit aliases give canonical display strings and stable keys.
+
+The list of firms added this session lives in the private log (tenant-specific).
 
 ---
 
