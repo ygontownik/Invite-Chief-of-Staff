@@ -497,7 +497,18 @@ if ! command -v git >/dev/null 2>&1; then
 fi
 ok "git $(git --version | awk '{print $3}')"
 
-# 1e. Claude Code CLI — optional in cloud-mode; warn-only on Mac since SKILL
+# 1e. GitHub CLI — needed for repo creation in step 3d. Auto-install via brew.
+if command -v gh >/dev/null 2>&1; then
+  ok "GitHub CLI $(gh --version | head -1 | awk '{print $3}')"
+elif command -v brew >/dev/null 2>&1; then
+  info "Installing GitHub CLI…"
+  brew install gh --quiet && ok "GitHub CLI installed" \
+    || warn "brew install gh failed — repo creation in step 3d will be skipped"
+else
+  warn "GitHub CLI unavailable (no Homebrew) — repo creation in step 3d will be skipped"
+fi
+
+# 1f. Claude Code CLI — optional in cloud-mode; warn-only on Mac since SKILL
 # daemons need it for the briefing/capture flows.
 if command -v claude >/dev/null 2>&1; then
   ok "Claude Code CLI present"
@@ -716,72 +727,51 @@ step "[3d/8] GitHub repos"
 if $DEMO_MODE; then
   info "Demo mode — skipping GitHub repo creation"
 elif ! command -v gh >/dev/null 2>&1; then
-  warn "GitHub CLI (gh) not found — skipping repo creation"
-  info "Install: brew install gh && gh auth login, then re-run with --resume"
-elif ! gh auth status >/dev/null 2>&1; then
-  warn "GitHub CLI not authenticated — skipping repo creation"
-  info "Run: gh auth login, then re-run with --resume"
+  warn "GitHub CLI not found — skipping repo creation (re-run with --resume after: brew install gh)"
 else
-  # Derive title-cased first name from P_NAME (e.g. "Mark Saxe" → "Mark")
-  FIRST_NAME=$(echo "${P_NAME%% *}" | awk '{print toupper(substr($0,1,1)) tolower(substr($0,2))}')
-  GH_USER=$(gh api user --jq .login 2>/dev/null)
+  # Authenticate inline if needed — no separate step required
+  if ! gh auth status >/dev/null 2>&1; then
+    info "GitHub CLI needs authentication — launching gh auth login…"
+    gh auth login || warn "GitHub auth failed — skipping repo creation"
+  fi
 
-  DASH_REPO="Private-${FIRST_NAME}-Dashboard"
-  CONF_REPO="Private-${FIRST_NAME}-Config"
+  if gh auth status >/dev/null 2>&1; then
+    FIRST_NAME=$(echo "${P_NAME%% *}" | awk '{print toupper(substr($0,1,1)) tolower(substr($0,2))}')
+    GH_USER=$(gh api user --jq .login 2>/dev/null)
+    DASH_REPO="Private-${FIRST_NAME}-Dashboard"
+    CONF_REPO="Private-${FIRST_NAME}-Config"
 
-  echo ""
-  echo "  Following the COS naming convention, two private repos will be created"
-  echo "  under your GitHub account (${GH_USER:-?}):"
-  echo ""
-  echo "    $DASH_REPO  — your personal dashboard server (never shared)"
-  echo "    $CONF_REPO  — your runtime config: doc IDs, credentials (never shared)"
-  echo ""
-
-  read -p "    Create both repos now? [Y/n]: " _gh_confirm
-  if [ "$_gh_confirm" != "n" ] && [ "$_gh_confirm" != "N" ]; then
+    info "Creating GitHub repos for $FIRST_NAME (github.com/${GH_USER})…"
 
     # Dashboard repo
-    if gh repo create "$DASH_REPO" --private \
-        --description "Personal dashboard server for $P_NAME. PRIVATE — $FIRST_NAME only. Never shared." \
-        >/dev/null 2>&1; then
-      ok "Created: github.com/${GH_USER}/${DASH_REPO}"
-    else
-      warn "$DASH_REPO — already exists or creation failed (continuing)"
-    fi
+    gh repo create "$DASH_REPO" --private \
+      --description "Personal dashboard server for $P_NAME. PRIVATE — $FIRST_NAME only." \
+      >/dev/null 2>&1 \
+      && ok "Created: $DASH_REPO" \
+      || info "$DASH_REPO already exists — skipping"
 
-    # Config repo + wire it to the local config dir
-    if gh repo create "$CONF_REPO" --private \
-        --description "Personal runtime config for $P_NAME. PRIVATE — $FIRST_NAME only. Contains doc IDs, credentials. Never share." \
-        >/dev/null 2>&1; then
-      ok "Created: github.com/${GH_USER}/${CONF_REPO}"
-    else
-      warn "$CONF_REPO — already exists or creation failed (continuing)"
-    fi
+    # Config repo
+    gh repo create "$CONF_REPO" --private \
+      --description "Personal runtime config for $P_NAME. PRIVATE — $FIRST_NAME only. Contains doc IDs and credentials. Never share." \
+      >/dev/null 2>&1 \
+      && ok "Created: $CONF_REPO" \
+      || info "$CONF_REPO already exists — skipping"
 
-    # Point local config dir at the new config repo
+    # Wire local config dir to config repo and push
     CONF_REMOTE="https://github.com/${GH_USER}/${CONF_REPO}.git"
     EXISTING_REMOTE=$(cd "$CONFIG_DIR" && git remote get-url origin 2>/dev/null || echo "")
     if [ -z "$EXISTING_REMOTE" ]; then
-      (cd "$CONFIG_DIR" && git remote add origin "$CONF_REMOTE")
-      ok "Wired $CONFIG_DIR → $CONF_REMOTE"
-      (cd "$CONFIG_DIR" && git add -A \
+      (cd "$CONFIG_DIR" \
+        && git remote add origin "$CONF_REMOTE" \
+        && git add -A \
         && git commit -m "init $INSTANCE config" -q 2>/dev/null || true \
         && git branch -M main 2>/dev/null || true \
         && git push -u origin main -q 2>/dev/null) \
-        && ok "Pushed initial commit to $CONF_REPO" \
-        || warn "Push failed — run manually: cd $CONFIG_DIR && git push -u origin main"
+        && ok "Config repo wired and pushed → $CONF_REMOTE" \
+        || warn "Push failed — run: cd $CONFIG_DIR && git push -u origin main"
     else
-      info "Remote already set ($EXISTING_REMOTE) — skipping push"
+      info "Config remote already set — skipping"
     fi
-
-    echo ""
-    echo "  ── Future repos when other team members onboard ─────────────────"
-    echo "  Same pattern applies to anyone added to your instance:"
-    echo "    Private-[Name]-Dashboard   personal server"
-    echo "    Private-[Name]-Config      personal config"
-    echo ""
-    info "To give a team member read access to the deal pipeline, Yoni runs:"
-    info "  gh repo add-collaborator ygontownik/Read-Tomac-Deal-Pipeline <their-github-handle> --permission read"
   fi
 fi
 
