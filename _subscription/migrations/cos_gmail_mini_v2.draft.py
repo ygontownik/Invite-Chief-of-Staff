@@ -586,27 +586,18 @@ def haiku_triage(email: dict) -> dict:
     Pass 1: Call Haiku to classify a single email.
     Returns dict with category, confidence, reason, one_liner.
 
-    MIGRATED: routes through `_subscription.cached_client.complete`.
-    NOTE: see MIGRATION_PLAN.md — adding the 4,234-token static core to
-    each Haiku triage call increases per-call cost roughly 2× over the
-    original (~$0.0003 → ~$0.0006). The static-core context may improve
-    triage quality (firm list + INCLUDE/EXCLUDE keywords are now visible
-    to the classifier) but the cost regression is real. Recommendation:
-    consider leaving haiku_triage on the original path and only migrating
-    sonnet_enrich; this draft does both for completeness.
+    NOT MIGRATED — Option B per MIGRATION_PLAN.md: routing Haiku triage
+    through the static-core cached client added a ~3× cost regression
+    (~$1.60/mo → ~$4.80/mo) because the 4,234-token cached prefix dwarfs
+    Haiku's natively-tiny per-call footprint. Triage doesn't need investor
+    doctrine to decide DEAL vs RECRUIT vs IGNORE; original path preserved.
     """
-    import sys
-    from pathlib import Path
-    sys.path.insert(0, str(Path(__file__).resolve().parent / "_subscription"))
-    from cached_client import complete
+    import anthropic
 
-    # The original system prompt (TRIAGE_SYSTEM) becomes part of user_query
-    # because it carries the JSON-output contract that the static core
-    # doesn't enforce.
-    user_query = (
-        f"{TRIAGE_SYSTEM}\n\n"
-        f"---\n"
-        f"Email to classify:\n"
+    import _secrets
+    client = anthropic.Anthropic(api_key=_secrets.load_secret("ANTHROPIC_API_KEY"))
+
+    prompt = (
         f"From: {email['from']}\n"
         f"Subject: {email['subject']}\n"
         f"Date: {email['date']}\n\n"
@@ -614,26 +605,24 @@ def haiku_triage(email: dict) -> dict:
     )
 
     try:
-        result = complete(
-            user_query=user_query,
-            source_content="",  # email is already in user_query
-            tenant_bundle="",
+        response = client.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=256,
+            system=TRIAGE_SYSTEM,
+            messages=[{"role": "user", "content": prompt}],
         )
-        usage = result["usage"]
         log_usage("cos_gmail_mini_haiku", "claude-haiku-4-5-20251001", {
             "usage": {
-                "input_tokens":                getattr(usage, "input_tokens", 0),
-                "output_tokens":               getattr(usage, "output_tokens", 0),
-                "cache_read_input_tokens":     getattr(usage, "cache_read_input_tokens", 0),
-                "cache_creation_input_tokens": getattr(usage, "cache_creation_input_tokens", 0),
+                "input_tokens":                getattr(response.usage, "input_tokens", 0),
+                "output_tokens":               getattr(response.usage, "output_tokens", 0),
+                "cache_read_input_tokens":     getattr(response.usage, "cache_read_input_tokens", 0),
+                "cache_creation_input_tokens": getattr(response.usage, "cache_creation_input_tokens", 0),
             }
         })
-        parsed = _parse_json_response(result["text"])
-        parsed["category"] = parsed.get("category", "IGNORE").upper()
-        parsed["confidence"] = float(parsed.get("confidence", 0.5))
-        return parsed
+        result = _parse_json_response(response.content[0].text)
+        result["category"] = result.get("category", "IGNORE").upper()
+        result["confidence"] = float(result.get("confidence", 0.5))
+        return result
     except Exception as e:
         log.error(f"Haiku triage failed for {email['id']}: {e}")
         return {"category": "IGNORE", "confidence": 0.0, "reason": str(e), "one_liner": ""}

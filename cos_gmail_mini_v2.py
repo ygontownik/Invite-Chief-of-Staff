@@ -585,6 +585,12 @@ def haiku_triage(email: dict) -> dict:
     """
     Pass 1: Call Haiku to classify a single email.
     Returns dict with category, confidence, reason, one_liner.
+
+    NOT MIGRATED — Option B per MIGRATION_PLAN.md: routing Haiku triage
+    through the static-core cached client added a ~3× cost regression
+    (~$1.60/mo → ~$4.80/mo) because the 4,234-token cached prefix dwarfs
+    Haiku's natively-tiny per-call footprint. Triage doesn't need investor
+    doctrine to decide DEAL vs RECRUIT vs IGNORE; original path preserved.
     """
     import anthropic
 
@@ -675,20 +681,30 @@ def sonnet_enrich(email: dict, category: str) -> dict:
     """
     Pass 2: Call Sonnet to extract structured data from a high-confidence email.
     Only called for DEAL/RECRUIT with confidence >= 0.7, and ACTION.
-    """
-    import anthropic
 
-    import _secrets
-    client = anthropic.Anthropic(api_key=_secrets.load_secret("ANTHROPIC_API_KEY"))
+    MIGRATED: routes through `_subscription.cached_client.complete`. The
+    category-specific JSON-output system prompt is concatenated into
+    user_query because the static core does not enforce a JSON contract.
+    The static core's firm list and tracked-counterparty context now
+    informs Sonnet's enrichment, which should improve `counterparty`
+    field accuracy.
+    """
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parent / "_subscription"))
+    from cached_client import complete
 
     if category == "DEAL":
-        system = DEAL_ENRICHMENT_SYSTEM
+        category_system = DEAL_ENRICHMENT_SYSTEM
     elif category == "RECRUIT":
-        system = RECRUIT_ENRICHMENT_SYSTEM
+        category_system = RECRUIT_ENRICHMENT_SYSTEM
     else:
-        system = ACTION_ENRICHMENT_SYSTEM
+        category_system = ACTION_ENRICHMENT_SYSTEM
 
-    prompt = (
+    user_query = (
+        f"{category_system}\n\n"
+        f"---\n"
+        f"Email to enrich:\n"
         f"From: {email['from']}\n"
         f"Subject: {email['subject']}\n"
         f"Date: {email['date']}\n\n"
@@ -696,21 +712,23 @@ def sonnet_enrich(email: dict, category: str) -> dict:
     )
 
     try:
-        response = client.messages.create(
+        result = complete(
+            user_query=user_query,
+            source_content="",
+            tenant_bundle="",
             model="claude-sonnet-4-6",
             max_tokens=512,
-            system=system,
-            messages=[{"role": "user", "content": prompt}],
         )
+        usage = result["usage"]
         log_usage("cos_gmail_mini_sonnet", "claude-sonnet-4-6", {
             "usage": {
-                "input_tokens":                getattr(response.usage, "input_tokens", 0),
-                "output_tokens":               getattr(response.usage, "output_tokens", 0),
-                "cache_read_input_tokens":     getattr(response.usage, "cache_read_input_tokens", 0),
-                "cache_creation_input_tokens": getattr(response.usage, "cache_creation_input_tokens", 0),
+                "input_tokens":                getattr(usage, "input_tokens", 0),
+                "output_tokens":               getattr(usage, "output_tokens", 0),
+                "cache_read_input_tokens":     getattr(usage, "cache_read_input_tokens", 0),
+                "cache_creation_input_tokens": getattr(usage, "cache_creation_input_tokens", 0),
             }
         })
-        return _parse_json_response(response.content[0].text)
+        return _parse_json_response(result["text"])
     except Exception as e:
         log.error(f"Sonnet enrichment failed for {email['id']}: {e}")
         return {}
