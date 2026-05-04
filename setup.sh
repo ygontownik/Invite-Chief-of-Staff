@@ -710,6 +710,81 @@ else
   info "No websites — edit personal.intelligence.websites in firm_context.yaml later."
 fi
 
+# ── Step 3d: GitHub repos (naming convention) ────────────────────────────────
+step "[3d/8] GitHub repos"
+
+if $DEMO_MODE; then
+  info "Demo mode — skipping GitHub repo creation"
+elif ! command -v gh >/dev/null 2>&1; then
+  warn "GitHub CLI (gh) not found — skipping repo creation"
+  info "Install: brew install gh && gh auth login, then re-run with --resume"
+elif ! gh auth status >/dev/null 2>&1; then
+  warn "GitHub CLI not authenticated — skipping repo creation"
+  info "Run: gh auth login, then re-run with --resume"
+else
+  # Derive title-cased first name from P_NAME (e.g. "Mark Saxe" → "Mark")
+  FIRST_NAME=$(echo "${P_NAME%% *}" | awk '{print toupper(substr($0,1,1)) tolower(substr($0,2))}')
+  GH_USER=$(gh api user --jq .login 2>/dev/null)
+
+  DASH_REPO="Private-${FIRST_NAME}-Dashboard"
+  CONF_REPO="Private-${FIRST_NAME}-Config"
+
+  echo ""
+  echo "  Following the COS naming convention, two private repos will be created"
+  echo "  under your GitHub account (${GH_USER:-?}):"
+  echo ""
+  echo "    $DASH_REPO  — your personal dashboard server (never shared)"
+  echo "    $CONF_REPO  — your runtime config: doc IDs, credentials (never shared)"
+  echo ""
+
+  read -p "    Create both repos now? [Y/n]: " _gh_confirm
+  if [ "$_gh_confirm" != "n" ] && [ "$_gh_confirm" != "N" ]; then
+
+    # Dashboard repo
+    if gh repo create "$DASH_REPO" --private \
+        --description "Personal dashboard server for $P_NAME. PRIVATE — $FIRST_NAME only. Never shared." \
+        >/dev/null 2>&1; then
+      ok "Created: github.com/${GH_USER}/${DASH_REPO}"
+    else
+      warn "$DASH_REPO — already exists or creation failed (continuing)"
+    fi
+
+    # Config repo + wire it to the local config dir
+    if gh repo create "$CONF_REPO" --private \
+        --description "Personal runtime config for $P_NAME. PRIVATE — $FIRST_NAME only. Contains doc IDs, credentials. Never share." \
+        >/dev/null 2>&1; then
+      ok "Created: github.com/${GH_USER}/${CONF_REPO}"
+    else
+      warn "$CONF_REPO — already exists or creation failed (continuing)"
+    fi
+
+    # Point local config dir at the new config repo
+    CONF_REMOTE="https://github.com/${GH_USER}/${CONF_REPO}.git"
+    EXISTING_REMOTE=$(cd "$CONFIG_DIR" && git remote get-url origin 2>/dev/null || echo "")
+    if [ -z "$EXISTING_REMOTE" ]; then
+      (cd "$CONFIG_DIR" && git remote add origin "$CONF_REMOTE")
+      ok "Wired $CONFIG_DIR → $CONF_REMOTE"
+      (cd "$CONFIG_DIR" && git add -A \
+        && git commit -m "init $INSTANCE config" -q 2>/dev/null || true \
+        && git branch -M main 2>/dev/null || true \
+        && git push -u origin main -q 2>/dev/null) \
+        && ok "Pushed initial commit to $CONF_REPO" \
+        || warn "Push failed — run manually: cd $CONFIG_DIR && git push -u origin main"
+    else
+      info "Remote already set ($EXISTING_REMOTE) — skipping push"
+    fi
+
+    echo ""
+    echo "  ── Future repos when other team members onboard ─────────────────"
+    echo "  Same pattern applies to anyone added to your instance:"
+    echo "    Private-[Name]-Dashboard   personal server"
+    echo "    Private-[Name]-Config      personal config"
+    echo ""
+    info "To give a team member read access to the deal pipeline, Yoni runs:"
+    info "  gh repo add-collaborator ygontownik/Read-Tomac-Deal-Pipeline <their-github-handle> --permission read"
+  fi
+fi
+
 # ── Step 4: Transcripts source picker (D8) ──────────────────────────────────
 step "[4/8] Transcripts source"
 echo "    Pick which transcript app(s) feed this instance:"
