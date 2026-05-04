@@ -48,6 +48,16 @@ def _doc_id(key, default=''):
     gdocs = (_CTX.get('google_docs') or {})
     if key in gdocs:
         return gdocs[key]
+    # If google_docs section exists but this key is missing, the firm's
+    # context is incomplete — warn loudly rather than silently reading
+    # a fallback doc ID that may belong to a different subscriber.
+    if gdocs and default:
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            'FETCH: firm_context.yaml has google_docs but missing key %r — '
+            'falling back to hardcoded default %r. Add this key to firm_context.yaml.',
+            key, default
+        )
     legacy = (_FCONFIG.get('docs') or {})
     return legacy.get(key, default)
 

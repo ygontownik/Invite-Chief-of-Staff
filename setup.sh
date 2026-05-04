@@ -740,6 +740,20 @@ else
   fi
 fi
 
+# ── Step 7b: Tailscale (optional — remote/iPhone access) ────────────────────
+echo ""
+read -p "  Set up Tailscale for remote/iPhone dashboard access? [Y/n]: " _ts_confirm
+if [ "$_ts_confirm" != "n" ] && [ "$_ts_confirm" != "N" ]; then
+  TAILSCALE_SCRIPT="$REPO/docs/setup_tailscale.sh"
+  if [ -f "$TAILSCALE_SCRIPT" ]; then
+    DASH_PORT="$PORT" bash "$TAILSCALE_SCRIPT"
+  else
+    warn "setup_tailscale.sh not found at $TAILSCALE_SCRIPT — skipping"
+  fi
+else
+  info "Tailscale skipped — run later: DASH_PORT=$PORT bash ~/cos-pipeline/docs/setup_tailscale.sh"
+fi
+
 # ── Step 8: Validate ────────────────────────────────────────────────────────
 step "[8/8] Validation"
 "$0" --instance="$INSTANCE" --validate || warn "Validation reported issues — review above"

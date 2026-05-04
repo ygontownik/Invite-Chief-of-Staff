@@ -3526,8 +3526,11 @@ class Handler(BaseHTTPRequestHandler):
 
         # ── Register with focused-exploration Railway recording pipeline ──
         # This triggers Twilio to dial in and record, then transcribe + upload to Drive.
+        # Only attempt if call_recording is enabled in firm_context.yaml — subscribers
+        # without Twilio don't have a Railway endpoint and shouldn't see the warning.
+        _call_recording_enabled = bool((_FC_CTX or {}).get('call_recording', False))
         _railway_registered = False
-        if phone:
+        if phone and _call_recording_enabled:
             try:
                 import urllib.request as _urlreq
                 _sh, _sm = int(time_str.split(':')[0]), int(time_str.split(':')[1])
@@ -3556,7 +3559,7 @@ class Handler(BaseHTTPRequestHandler):
         detail = f'{date_str} at {time_str} ({dur_min} min)'
         if phone:
             detail += f' · dial {phone}' + (f' PIN {pin}' if pin else '')
-        _pipeline_note = ' Twilio recording pipeline armed.' if _railway_registered else (' (Railway pipeline not reached — check internet)' if phone else '')
+        _pipeline_note = ' Twilio recording pipeline armed.' if _railway_registered else (' (Railway pipeline not reached — check internet)' if (phone and _call_recording_enabled) else '')
         self._redirect_admin(('ok', f'Scheduled "{title}" for {detail}. Recording will start automatically.{_pipeline_note}'))
 
     def _redirect_admin(self, flash):
