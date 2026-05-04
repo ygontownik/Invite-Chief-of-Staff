@@ -630,6 +630,47 @@ function briefSyncAll() {
   }
 
   // Parse the full briefing plain-text file and return rendered HTML cards.
+  // Lightweight markdown → HTML for the personal-briefing format
+  // (## H2, ### H3, **bold**, --- rule, - bullet, _italic_). Keeps the
+  // briefing tab populated even when the structured parser doesn't match.
+  function _markdownCard(text) {
+    const lines = text.split('\n');
+    const out = [];
+    let inList = false;
+    const closeList = () => { if (inList) { out.push('</ul>'); inList = false; } };
+    for (const raw of lines) {
+      const line = raw.replace(/\s+$/, '');
+      if (!line.trim()) { closeList(); continue; }
+      if (/^---+$/.test(line.trim())) { closeList(); out.push('<hr style="border:none;border-top:1px solid var(--rule-light);margin:14px 0">'); continue; }
+      let m;
+      if ((m = line.match(/^##\s+(.+)/))) {
+        closeList();
+        out.push(`<h3 style="font-family:var(--font-display);font-size:16px;font-weight:700;color:var(--ink);margin:18px 0 8px">${esc(m[1])}</h3>`);
+        continue;
+      }
+      if ((m = line.match(/^###\s+(.+)/))) {
+        closeList();
+        out.push(`<div style="font-family:var(--font-data);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.14em;color:var(--ink-faint);margin:14px 0 6px">${esc(m[1])}</div>`);
+        continue;
+      }
+      if ((m = line.match(/^[-*]\s+(.+)/))) {
+        if (!inList) { out.push('<ul style="margin:6px 0 6px 18px;padding:0;line-height:1.55">'); inList = true; }
+        out.push(`<li style="margin-bottom:4px">${_inlineMd(m[1])}</li>`);
+        continue;
+      }
+      closeList();
+      out.push(`<p style="margin:6px 0;line-height:1.55">${_inlineMd(line)}</p>`);
+    }
+    closeList();
+    return `<div class="tc-card" style="margin-bottom:14px">${out.join('')}</div>`;
+  }
+
+  function _inlineMd(s) {
+    return esc(s)
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/(^|[^_])_([^_]+)_($|[^_])/g, '$1<em>$2</em>$3');
+  }
+
   function _parseBriefingFullText(text) {
     const lines = text.split('\n');
     const cards = [];
@@ -724,9 +765,17 @@ function briefSyncAll() {
       if (cosCard) parts.push(cosCard);
     }
 
-    // Market briefing — full text preferred; fall back to truncated marketCommentary
+    // Market briefing — full text preferred; fall back to truncated marketCommentary.
+    // 2026-05-04: when the structured parser returns 0 cards (e.g. fullText is
+    // markdown-style ## / ### headers from the new personal-briefing format), we
+    // render the markdown as a single card rather than show an empty surface.
     if (fullText) {
-      parts.push(..._parseBriefingFullText(fullText));
+      const structured = _parseBriefingFullText(fullText);
+      if (structured.length) {
+        parts.push(...structured);
+      } else {
+        parts.push(_markdownCard(fullText));
+      }
     } else if (mc && (mc.takeaway || (mc.sections && mc.sections.length))) {
       if (mc.takeaway) parts.push(_takeawayCard(mc.takeaway));
       for (const s of (mc.sections || [])) {

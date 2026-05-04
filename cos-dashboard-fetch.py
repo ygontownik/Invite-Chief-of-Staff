@@ -67,6 +67,7 @@ DOC_IDS = {
     'deal_pipeline': _doc_id('pipeline',      _doc_id('tomac', '1LHorixPs8ppwSvQzGfA_B6609YZA8dSpR4rmppENzpc')),
     'briefing_log':  _doc_id('briefing_log',  '14wE3L6ZRsjhhx2psRKbaHS5i0kgEoteWYZusqETiAZ0'),
     'daily_market':  _doc_id('daily_market',  '1UZ1t4bhgzll5VcAuP3Mj1CyYb-4xjgmbUK1xg6oUS_k'),
+    'people':        _doc_id('people',        '1F3MjRAoAOWYLXiwXEYQYpu1tJjdx7-4iZtAHSyyL3Hg'),
 }
 # Backward-compat alias key — preserved for 1 release so any in-flight
 # caller referencing DOC_IDS['tomac'] still works. Will be removed in
@@ -402,6 +403,106 @@ def _promote_source_ref(items):
     return items
 
 
+# Workflow-stage supersession: pairs of (upstream_pattern, downstream_pattern).
+# When the SAME canonical counterparty has both an upstream-stage item and a
+# downstream-stage item AND the downstream item's addedDate >= upstream's,
+# the upstream is auto-retired (logged to stderr) and dropped from awaiting.
+# Codified 2026-05-04 per dash_corrections.md.
+_WORKFLOW_PAIRS = [
+    # NDA draft → NDA review/redline
+    (_re_src.compile(r'\b(draft|deliver|send\s+draft)\s+(mutual\s+)?nda\b', _re_src.IGNORECASE),
+     _re_src.compile(r'\b(review|accept|counter|respond\s+to|redline|execute)\s+\w*\s*nda\b|nda\s+redline\b', _re_src.IGNORECASE)),
+    # Calendar invite → meeting confirmation/recap
+    (_re_src.compile(r'\b(send|share)\s+(calendar|cal|zoom)\s+inv', _re_src.IGNORECASE),
+     _re_src.compile(r'\b(confirm|recap|summarize)\s+(the\s+)?(call|meeting|catch[\s-]?up)\b', _re_src.IGNORECASE)),
+    # Teaser request → teaser delivered (we received materials)
+    (_re_src.compile(r'\b(send|deliver)\s+(the\s+)?(teaser|cim|materials)', _re_src.IGNORECASE),
+     _re_src.compile(r'\b(review|accept|respond\s+to)\s+(the\s+)?(teaser|cim|materials)', _re_src.IGNORECASE)),
+]
+
+def _supersede_workflow_stages(items):
+    """Drop upstream-stage awaiting items when a downstream-stage item exists for
+    the same canonical counterparty with newer addedDate.
+
+    Logs each supersession to stderr. See dash_corrections.md (2026-05-04).
+    """
+    if not items:
+        return items
+    # Group by canonical counterparty
+    by_cp = {}
+    for i, item in enumerate(items):
+        cp = _normalize_cp(item.get('counterparty') or '')
+        by_cp.setdefault(cp.lower(), []).append((i, item))
+
+    drop_idx = set()
+    for cp_low, group in by_cp.items():
+        if not cp_low or len(group) < 2:
+            continue
+        for upstream_re, downstream_re in _WORKFLOW_PAIRS:
+            ups = [(i, x) for (i, x) in group if upstream_re.search((x.get('content') or '') + ' ' + (x.get('what') or ''))]
+            dns = [(i, x) for (i, x) in group if downstream_re.search((x.get('content') or '') + ' ' + (x.get('what') or ''))]
+            if not ups or not dns:
+                continue
+            latest_dn_added = max((x.get('addedDate') or '') for (_, x) in dns)
+            for (ui, ux) in ups:
+                ux_added = ux.get('addedDate') or ''
+                if latest_dn_added and ux_added and latest_dn_added >= ux_added:
+                    print(
+                        f'cos-dashboard-fetch: superseded upstream item for {cp_low!r}: '
+                        f'{(ux.get("content") or "")[:80]!r} (downstream addedDate {latest_dn_added})',
+                        file=sys.stderr,
+                    )
+                    drop_idx.add(ui)
+    return [it for i, it in enumerate(items) if i not in drop_idx]
+
+
+# "next week" / "later this week" / "early next week" — frozen-in-time references
+# that go stale silently. Replaced with explicit "week of YYYY-MM-DD" computed
+# from the item's addedDate so the user can see the actual week being referenced.
+# Codified 2026-05-04 per dash_corrections.md.
+_NEXT_WEEK_PATTERNS = [
+    (_re_src.compile(r'\bnext\s+week\b', _re_src.IGNORECASE), 7),
+    (_re_src.compile(r'\bearly\s+next\s+week\b', _re_src.IGNORECASE), 7),
+    (_re_src.compile(r'\blate\s+next\s+week\b', _re_src.IGNORECASE), 10),
+    (_re_src.compile(r'\blater\s+this\s+week\b', _re_src.IGNORECASE), 3),
+    (_re_src.compile(r'\bend\s+of\s+the\s+week\b', _re_src.IGNORECASE), 3),
+    (_re_src.compile(r'\bend\s+of\s+next\s+week\b', _re_src.IGNORECASE), 10),
+]
+
+def _materialize_next_week(items):
+    """Replace 'next week' / 'later this week' references with explicit
+    'week of YYYY-MM-DD' computed from the item's addedDate. Prevents
+    floating-time references from going silently stale.
+
+    Operates on `content` and `what` fields. Idempotent — once replaced
+    with 'week of <date>', the patterns no longer match.
+    """
+    from datetime import date as _date, timedelta as _td
+    for item in items:
+        added_raw = item.get('addedDate') or ''
+        if not added_raw or len(added_raw) < 10:
+            continue
+        try:
+            base = _date.fromisoformat(added_raw[:10])
+        except ValueError:
+            continue
+        for fld in ('content', 'what'):
+            v = item.get(fld)
+            if not isinstance(v, str) or not v:
+                continue
+            new = v
+            for pat, days in _NEXT_WEEK_PATTERNS:
+                # Compute the Monday of the target week (week-start convention)
+                target = base + _td(days=days)
+                # Snap forward to the Monday on/after target
+                target = target + _td(days=(7 - target.weekday()) % 7)
+                replacement = f'week of {target.isoformat()}'
+                new = pat.sub(replacement, new)
+            if new != v:
+                item[fld] = new
+    return items
+
+
 _STALE_EVENT_PATTERNS = _re_src.compile(
     r'\b(conference|summit|forum|symposium|register|registration|rsvp|'
     r'attend|attending|attendance|sign[\s-]?up|enroll|'
@@ -412,7 +513,16 @@ _STALE_EVENT_PATTERNS = _re_src.compile(
     r'in.person\s+meeting|ranch\s+visit|site\s+visit|'
     r'text\s+\w+\s+schedule|schedule\s+for\s+next\s+week|'
     r'send\s+(calendar|cal)\s+inv|hold\s+(calendar|cal)\s+inv|'
-    r'zoom\s+(calendar|cal)\s+inv|calendar\s+invite\s+for\s+\w+\s+\w+\s+\d)\b',
+    r'zoom\s+(calendar|cal)\s+inv|calendar\s+invite\s+for\s+\w+\s+\w+\s+\d|'
+    # 2026-05-04: broadened to catch slash/and-separated forms and noun-style
+    # scheduling references — see dash_corrections.md
+    r'meeting\s+(day|date)?[\s/]*(and\s+)?(time|location|logistics)|'
+    r'meeting\s+day\s+and\s+location|'
+    r'confirm\s+\w+\s+\d+/\d+\s+(meeting|call|intro)|'
+    r'intro\s+(call|meeting)|live\s+call|connect\s+live|'
+    r'catch[\s-]?up\s+(call|meeting|chat)|'
+    r'host\s+\w*\s*catch[\s-]?up|'
+    r'reconnect\s+catch[\s-]?up)\b',
     _re_src.IGNORECASE,
 )
 
@@ -1859,6 +1969,19 @@ def main(dry_run: bool = False):
     print('cos-dashboard-fetch: connecting to Google APIs...', file=sys.stderr)
     docs_svc, cal_svc = get_services()
 
+    # Refresh the People-directory cache from the People/CRM Google Doc.
+    # Used by _envelope_writer counterparty inference. Daily refresh is
+    # plenty — the doc itself is human-curated and changes slowly.
+    try:
+        from _envelope_writer import refresh_people_directory_from_doc
+        n = refresh_people_directory_from_doc(DOC_IDS.get('people'))
+        if n:
+            print(f'cos-dashboard-fetch: people directory refreshed ({n} entries)',
+                  file=sys.stderr)
+    except Exception as e:
+        print(f'cos-dashboard-fetch: people directory refresh skipped ({e})',
+              file=sys.stderr)
+
     # Load pre-computed AI artifacts from scheduled pipeline runs
     run_state = load_run_state()
     last_full_run = run_state.get('lastFullRunAt')
@@ -2178,8 +2301,11 @@ def main(dry_run: bool = False):
         # Merge doc-authored [waiting] rows with pipeline-authored envelope items.
         # Dedupe by (counterparty, content[:60]) so a doc row and pipeline row
         # referencing the same commitment collapse.
-        'awaitingExternal':  _auto_expire_stale_events(_promote_source_ref(_merge_awaiting(
-                                 state.get('awaitingExternal', []), awaiting_from_doc))),
+        'awaitingExternal':  _auto_expire_stale_events(
+                                 _supersede_workflow_stages(
+                                 _materialize_next_week(
+                                 _promote_source_ref(_merge_awaiting(
+                                 state.get('awaitingExternal', []), awaiting_from_doc))))),
         'dealIntel':         state.get('dealIntel',         []),
         'originationInbox':  state.get('originationInbox',  []),
         'themes':            state.get('themes',            []),

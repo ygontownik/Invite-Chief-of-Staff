@@ -40,6 +40,32 @@ _SESSIONS: dict = {}          # token → {user: str, expires: float}
 _SESSIONS_LOCK  = threading.Lock()
 SESSION_TTL     = 30 * 24 * 3600  # seconds
 
+# 2026-05-04: connections from this host's own LAN IPs are treated as
+# loopback for auth purposes — opening the dashboard at the LAN URL on the
+# same Mac was triggering the /admin re-login flow. See _is_localhost().
+def _resolve_own_host_ips() -> set:
+    ips = {'127.0.0.1', '::1', 'localhost'}
+    try:
+        import socket as _socket
+        # All A records for this host's hostname
+        hostname = _socket.gethostname()
+        for fam, _, _, _, addr in _socket.getaddrinfo(hostname, None):
+            ip = (addr[0] if isinstance(addr, tuple) else '').lower()
+            if ip:
+                ips.add(ip)
+        # Bound interface IPs via UDP-trick (no packets sent)
+        try:
+            with _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM) as s:
+                s.connect(('8.8.8.8', 80))
+                ips.add(s.getsockname()[0].lower())
+        except Exception:
+            pass
+    except Exception:
+        pass
+    return ips
+
+_OWN_HOST_IPS = _resolve_own_host_ips()
+
 def _sessions_path():
     return Path(__file__).parent.parent / 'data' / 'user-state' / 'sessions.json'
 
@@ -2066,7 +2092,17 @@ class Handler(BaseHTTPRequestHandler):
 
     def _is_localhost(self):
         ip = (self.client_address[0] or '').lower()
-        return ip in ('127.0.0.1', '::1', 'localhost')
+        if ip in ('127.0.0.1', '::1', 'localhost'):
+            return True
+        # 2026-05-04: trust connections that originate from this host's own
+        # LAN IPs (e.g. 192.168.4.21 when the user opens the dashboard on the
+        # same Mac via the LAN URL). Without this, /admin re-prompts for login
+        # despite being accessed locally. Cached at process start in
+        # _OWN_HOST_IPS — see module-level helper.
+        try:
+            return ip in _OWN_HOST_IPS
+        except NameError:
+            return False
 
     def send_json(self, status, body: dict):
         payload = json.dumps(body).encode()

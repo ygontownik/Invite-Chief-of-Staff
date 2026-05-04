@@ -590,6 +590,170 @@ User explicitly asked for a reviewer who looks at the dashboard "with a broad le
 
 If any flag fires, fix at the source (deal directory or YAML) in the same session. The audit is the antidote to whack-a-mole correction loops where the user has to keep flagging the same class of error.
 
+## TOPIC — TILE / DRILLDOWN COHERENCE
+
+### 2026-05-04 — Tile clicks must scroll-highlight existing sections, never reveal hidden ones
+
+User flagged that the HQ tab's "Tomac Cove" tile (5 active deals) navigates to a drilldown panel containing sections — notably "Dealflow" and "Portfolio" — that are NOT visible anywhere else on the HQ tab. This violates the principle of progressive disclosure: a tile should let the user dive deeper into what they already see, not surface hidden content that bypasses the page's normal information architecture.
+
+**Rule**: a tile click on the HQ tab MUST resolve to a scroll-highlight of existing visible sections on that tab (Live Deals, Origination, Fundraising, Awaiting Counterparties, Team Actions). Never to a hidden panel that contains alternate sections. If a tile's content has no corresponding visible section on the tab, the tile is over-reaching — either add the section to the page properly, or remove the tile drilldown.
+
+**Specific actions for parallel UI session**:
+- Remove the "Dealflow" sub-section from the Tomac Cove tile drilldown — duplicates / replaces the visible Live Deals + Origination sections without adding value.
+- Remove the "Portfolio" sub-section from the Tomac Cove tile drilldown — no portfolio surface exists elsewhere on HQ; if portfolio is a real concept, surface it properly as a top-level section.
+- KEEP the Fundraising sub-section in the Tomac Cove drilldown — the user explicitly said this is appropriate. Note that the drilldown Fundraising shows counterparty *views* (named LPs/advisors and what's open with each), while the higher Fundraising section on HQ shows *who we have spoken to* (relationship inventory). Different lenses on related data — keep both.
+
+**Rule (general)**: every tile must declare a `scrollTarget` (CSS selector for the section to highlight) rather than a `panelTemplate`. If a tile cannot resolve to an existing visible section, the tile should not exist on that tab.
+
+---
+
+## TOPIC — AWAITING-EXTERNAL HYGIENE
+
+### 2026-05-04 — Awaiting Counterparties: organize by firm, dedup paraphrases, drop already-happened
+
+User opened HQ on 2026-05-04 and saw 24 awaiting-external items, many of which were duplicates and many for events that had already happened. Specific patterns discovered in this session's audit:
+
+1. **Per-thread paraphrase explosion**: Lee/Piper Sandler had 26 items, all paraphrases of 4 distinct asks (Uber lease, site pipeline, promote/OpCo-PropCo proposal, Friday call confirm). Each email in a 10-message thread produced its own paraphrased extraction. Per the 2026-05-01 rule, per-thread dedup must run at extraction; absent that, this user-facing list balloons by 5-10× per active thread.
+2. **Past-date scheduling clusters**: Garden Investments (9 items for an Apr 28-30 meeting), Apogee Comply / Jeff Kechejian intros (7 items for Apr 29/30 calls), ArcLight (Apr 18 / Apr 30), Heidrick & Struggles, iSquared, Active Infra, Black Mountain, EXIM Bank conference reg — all events that happened or expired. The `_auto_expire_stale_events()` regex misses common natural-language forms ("Confirm meeting day/time", "Confirm meeting logistics", "Confirm Wednesday 4/29 meeting"). The verb pattern `confirm\s+(call\s+time|meeting\s+time|in.person|the\s+meeting)` catches "meeting time" but NOT "meeting day/time" — slash-separated alternations need to be in the pattern.
+3. **Counterparty alias fragmentation**: Cholla appears under 5 firm-name spellings (Cholla / Gideon Powell, Cholla, Chola, Cholla Petro, Chisholm / CHolla); Thunderhead under 2 (Thunderhead, Thunderhead Energy Solutions); PNGTS under 2; Active Infra/Active Infrastructure as separate clusters. Each name fragment fragments the by-firm grouping the user wants.
+4. **Workflow stage supersession**: Martin Legal Group had 8 items about *drafting* the Cholla NDA, while Cholla / Gideon Powell had 5 items about *reviewing Yoni's redline* — meaning the NDA was already drafted and the workflow advanced. The drafting items should auto-retire when supersession is detected.
+5. **Phantom firms from extraction noise**: "Pacific Industrial" (LLM mis-firmed Pacific Fleet), "assistant" (extracted "via Michelle" as an action owner), "Unknown" (LinkedIn outreach with no firm tag), "attorneys" (generic counterparty) — all should be either rerouted to the right firm or auto-dropped.
+
+**Rule for the awaiting-counterparties UI surface**:
+- Group by canonical firm (alias-resolved via `_CP_ALIASES`), not raw `counterparty` string.
+- Within each firm group, dedup by content similarity (normalize whitespace + lowercase + strip dates; collapse items where the first 60 chars match).
+- Retire items whose `due` is >0 days past (not 7) when the content matches a scheduling pattern AND a transcript exists for the same counterparty + date — meaning the call happened.
+- Auto-supersede items in upstream workflow stages: if an "Awaiting NDA draft" item exists for firm X and an "Awaiting NDA review" item also exists for firm X with `addedDate` newer, the draft item is retired automatically.
+- Drop items with `counterparty` matching extraction-noise patterns: `^assistant$`, `^attorneys?$`, `^[Uu]nknown$`, bare email addresses (`@gmail.com`-suffixed counterparties).
+
+**Cleanup performed in this session**: 78 of 102 raw awaiting items tombstoned (75 from the audit batch + 3 final dups on second pass); visible count down from ~24 to **14 distinct items** across 9 firms. Tombstones written to `data/user-state/deletions.json` with category context. The cleanup is not a fix — the patterns above must be enforced upstream or the same garbage will re-extract on the next pass.
+
+### 2026-05-04 — Counterparty extraction: drop firms that look like extraction noise
+
+`cos_otter_backfill.py` and `cos_email_backfill.py` produced counterparty values like `assistant`, `attorneys`, `Unknown`, `jkechejian@gmail.com`, `— Mark Saxe` (orphaned em-dash). These are all signals that the LLM failed to identify a real firm and emitted a fallback or a misparsed token. They pollute the by-firm grouping.
+
+**Rule**: in the extraction prompts, add an explicit rule: "If the firm cannot be identified from the email/transcript, emit `counterparty: ''` and tag `intel_type: 'unattributed'` — DO NOT emit a generic placeholder like 'assistant', 'attorneys', 'Unknown', 'team', or a bare email address." At compile time, items with `counterparty == ''` are routed to a separate "Unattributed Items" review queue rather than appearing in by-firm awaiting lists. This is preferable to silently dropping them — review surfaces the extraction failure for prompt tuning.
+
+### 2026-05-04 — Stale-event regex must include slash-separated and noun-form variants
+
+`_STALE_EVENT_PATTERNS` misses "Confirm meeting day/time", "Confirm meeting logistics", "Confirm Wednesday <date> meeting", "intro meeting", and "live call". Add to the regex:
+
+- `meeting\s+(day|date)?[\s/]*(and|/)\s*time` — "meeting day/time", "meeting day and time"
+- `meeting\s+(logistics|day\s+and\s+location|location)` — "meeting logistics"
+- `confirm\s+\w+\s+\d+/\d+\s+(meeting|call|intro)` — "confirm Wednesday 4/29 meeting"
+- `intro\s+(call|meeting)` — generic intro events
+- `live\s+call|connect\s+live` — "Friday 5/1 live call"
+- `catch.?up\s+(call|meeting|chat)` — catchup events
+
+Update the pattern in `cos-dashboard-fetch.py` and add unit-test fixtures for each new form. Without the broadened patterns, stale-event auto-expire silently misses 50%+ of past-date scheduling items the user has to manually dismiss every week.
+
+### 2026-05-04 — Workflow-stage supersession rule
+
+When the same counterparty has both an upstream-stage and a downstream-stage awaiting item for what is clearly the same workflow (NDA draft vs. NDA review; calendar invite vs. meeting confirmation; teaser request vs. teaser delivery), the upstream item is retired automatically with a "superseded by <id>" tombstone reason.
+
+**Detection heuristic**: for each `(canonical_firm, content_topic)` cluster, sort items by `addedDate`. If item N's content uses an upstream verb ("draft", "send invite", "propose times") and item N+1's content uses a downstream verb ("review", "execute", "confirm <past tense>", "respond to redline"), item N is superseded.
+
+**Rule**: implement in `cos-dashboard-fetch.py` after `_promote_source_ref()` and before `_auto_expire_stale_events()`. Log each supersession to stderr so prompt drift can be audited.
+
+---
+
+## TOPIC — TIME-REFERENCE NORMALIZATION
+
+### 2026-05-04 — "next week" / "later this week" must materialize to "week of YYYY-MM-DD"
+
+Floating time references go silently stale. A 2026-04-23 email saying "let's catch up next week" still reads as "next week" on 2026-05-04 — the user's eye glosses past the stale qualifier and reads it as current. Two-layer defense added 2026-05-04:
+
+1. **Compile-time materialization** — `_materialize_next_week()` in `cos-dashboard-fetch.py` (runs in the awaiting-external pipeline before staleness checks). Replaces the floating phrase with `week of <Monday-of-target-week>` computed from the item's `addedDate`. Idempotent.
+2. **Extraction-time rule** — extraction prompts in `cos_otter_backfill.py` and `cos_email_backfill.py` should normalize the same phrases at write time (not yet implemented; rule stands as defense-in-depth).
+
+Phrases handled: "next week" (+7d), "early next week" (+7d), "late next week" (+10d), "later this week" (+3d), "end of the week" (+3d), "end of next week" (+10d). All anchored on `addedDate`, snapped to the Monday of the target week.
+
+---
+
+## TOPIC — TILE / DRILLDOWN UX
+
+### 2026-05-04 — Personal tab task icon is the action, not a popup launcher
+
+The Personal panel `Task` column buttons should DO the action, not open a popup that explains the action. When `taskUrl` is populated the button is an anchor (mailto, calendar URL, LinkedIn search) — that's correct. When it's empty, the legacy fallback opened a modal. The user's explicit feedback: that's wrong.
+
+**Rule** (now enforced in `_ptHelpers.taskBtn`):
+- For `claude_code` rows OR `personal_items` rows whose `name` starts with "Dashboard Update — ", the task button MUST link to `https://claude.ai/new?q=<encoded prompt>` (Claude session pre-loaded with the task).
+- Other rows lacking `taskUrl` get the modal fallback as a degraded path, but populating `taskUrl` in the source config is the right fix.
+- The popup is for review/context, not task execution.
+
+**Composition rule**: Claude-prompt encoded body = `name + myAction + what` joined with blank lines, skipping empty fields.
+
+### 2026-05-04 — Universal text-fit rule: succinct, fits the box
+
+Every text in a fixed-size component (table cell, tile, badge, modal label) must fit. When source data has long text, the layout MUST either:
+- Use a `minmax(<min>, <fr>)` grid column with `min-width: 0; overflow-wrap: break-word` on direct children for graceful wrapping, OR
+- Truncate with ellipsis and surface full text on hover/click.
+
+Banned: fixed-px columns whose content blows them out; nowrap content that overflows horizontally; long single-line strings without word-break.
+
+**This session's fix**: `.pt-row` and `.pt-col-hdr` `140px 1fr 110px 68px` → `minmax(160px, 1.2fr) minmax(0, 1.6fr) 110px 80px` plus `.pt-row > div { min-width: 0; overflow-wrap: break-word }`.
+
+---
+
+## TOPIC — VISUAL CONSISTENCY ACROSS ROUTES
+
+### 2026-05-04 — All HTML routes use the cream-paper / serif chrome — no per-route navbar
+
+Pre-2026-05-04, the React `/portfolio/` route (`app/tomac-cove-src/src/App.js`) had its own `GlobalNav` with `T.navy` (#1B2D45) background and monospace courier tabs — diverged from the Python-Jinja `_topnav.html`. Tabs also used different labels ("Status" vs. "HQ", "TC Pipeline" vs. "Deal Pipeline").
+
+**Rule**: `_topnav.html` is the single source of truth. Any route that renders a top-level navbar MUST either use the shared partial via `_inject_shared_chrome()`, OR replicate its design tokens AND label set EXACTLY.
+
+**React parity**: when `App.js GlobalNav` is updated, mirror with `_topnav.html` first; React follows. Label/route divergence is a bug — fix in both files in the same commit.
+
+**Build pipeline**: `app/tomac-cove-src/` is a CRA project; `npm run build` outputs to `tomac-cove-src/build/` and must be `rsync -a --delete`-ed to `app/tomac-cove-build/` (where the server reads). After updating App.js, rebuild AND deploy.
+
+### 2026-05-04 — Modal text contrast: never use slate-400 on white
+
+`.modal-section-label { color: #94a3b8 }` (slate-400) on white failed WCAG AA. User flagged as "too light, hard to read."
+
+**Rule**: modal/popover labels and subdued text use slate-600 (#475569) or darker. Slate-400 is acceptable only as a fourth-level subdued token (overlay legends, ghost icons), never primary label text.
+
+---
+
+## TOPIC — BRIEFING CONTENT FORMATS
+
+### 2026-05-04 — Briefing parser must accept markdown AND fall back to a card on empty parse
+
+`_parseBriefingFullText` (in `briefing-dashboard.html`) was tuned for the legacy `KEY TAKEAWAY:` / numbered-section format. The new personal-briefing fullText uses `## H2`, `### H3`, `**bold**`, `---` rule. The structured parser returned 0 cards → Daily Briefing tab empty.
+
+**Rule**: when `_parseBriefingFullText(fullText)` returns 0 AND `fullText` is non-empty, render via `_markdownCard(fullText)` (lightweight md → HTML helper added 2026-05-04). Never let the briefing tab show "no items" while data exists.
+
+**Future-proofing**: when a new briefing format ships, prefer extending `_parseBriefingFullText` over relying on the markdown fallback. The fallback is graceful degradation, not the canonical render path.
+
+---
+
+## TOPIC — AUTH / LOCALHOST TRUST
+
+### 2026-05-04 — Trust the host's own LAN IPs as loopback for owner auth
+
+Previously `_is_localhost()` returned True only for `127.0.0.1`/`::1`/`localhost`. Users opening the dashboard at `http://192.168.4.21:7777` from their own Mac saw the LAN IP as the connecting source — `_is_localhost()` returned False, `/admin` re-prompted for login despite being on the same machine.
+
+**Rule** (codified 2026-05-04): `_is_localhost()` consults `_OWN_HOST_IPS`, computed at process start via `socket.gethostname()` + a UDP socket trick to find the bound LAN IP. Connections from any IP in this set are treated as loopback for auth. Safe in single-tenant deployments because (a) the dashboard binds to specific interfaces, (b) only same-host or same-LAN traffic can present those source IPs.
+
+**General rule**: never assume `127.0.0.1` is the only loopback case for a host that listens on multiple interfaces.
+
+---
+
+## TOPIC — ROUTINES OBSERVABILITY
+
+### 2026-05-04 — Routines page reports `never_run` for everything; observability gap to investigate
+
+`GET /routines` returned 15 routines all with `status: "never_run"`, `last_run: None`. `launchctl list | grep com.yoni.claude-task` shows 12 agents loaded (never executed); 3 are missing from launchd entirely (`inbox-capture`, `morning-briefing`, `podcast-processing`). Inconsistent with observed reality (`dashboard-data.json` IS regenerating; daily briefing has fresh content).
+
+**Hypotheses for next session**:
+1. The routines registry reads run history from `~/dashboards/logs/claude-tasks/<task>.run.log`. If logs write elsewhere (e.g., `/tmp/` or `~/cos-pipeline/logs/`), the registry never sees them.
+2. The 3 missing-from-launchd routines need plists loaded: `launchctl load ~/Library/LaunchAgents/com.yoni.claude-task.<task>.plist`.
+3. The `/routines` endpoint may be reading the canonical-plist registry but plists fire under different identifiers.
+
+**Rule**: when `/routines` shows uniform `never_run`, treat as a critical observability gap. The routines surface is a health monitor — silent uniformity = a broken monitor, not a quiet day.
+
+---
+
 ### 2026-05-04 — After a git push, restart the server to activate code changes
 
 The dashboard server is a long-running LaunchAgent (`com.yoni.cosdashboard`).
