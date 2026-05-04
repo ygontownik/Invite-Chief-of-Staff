@@ -1,5 +1,7 @@
 # Subscription Routine Audit — What Works for Subscribers Without Claude Code
 
+> **CORRECTION (2026-05-04):** This document was originally drafted assuming scheduled Claude Code SKILLs ran under subscription quota. **They do not.** `run-claude-task.sh` exports `ANTHROPIC_API_KEY_SKILLS` as `ANTHROPIC_API_KEY` and there is no OAuth credentials file at `~/.claude/.credentials.json`, so every LaunchAgent-fired `claude --print` invocation is billed as **metered API**. Subscription quota only covers interactive Claude Code (a human typing in a terminal). This means: (1) "rewrite as SKILL native for Yoni's personal cost model" is NOT a valid efficiency play for scheduled work — those calls are metered too, and a SKILL run uses MORE tokens than a Python+cached_client equivalent due to harness overhead; (2) the right path for ALL three tiers' scheduled work is Python+cached_client direct, with the LaunchAgent → bash → python3 pattern (no Claude Code in the loop, like cos-gmail-mini already does); (3) Tier 1 (Claude Code subscriber) differs from Tier 2 only in that Tier 1 also gets a SKILL package for ad-hoc INTERACTIVE use (which IS subscription-covered). The migration recommendations in this doc remain correct; the framing of Tier 1 vs Tier 2 should be read with this correction in mind.
+
 ## Strategic context
 
 The subscription product needs to run for subscribers who **do not have a Claude Code account**. Two billing models are on the table:
