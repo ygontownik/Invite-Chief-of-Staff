@@ -392,8 +392,8 @@
     </div>
     <div class="cell">
       <div class="card c-drive">
-        <strong>3 blank Google Docs created (4 if job-search is on)</strong>
-        <span>Follow-ups · Pipeline · People (plus Recruiting only when <code>features.job_search: true</code>). These are your firm's dataroom — they fill up over time.</span>
+        <strong>3 blank Google Docs created</strong>
+        <span>Follow-ups · Pipeline · People. These are your firm's dataroom — they fill up over time.</span>
       </div>
     </div>
 
@@ -412,7 +412,7 @@
   </div>
 
   <div class="note">
-    <strong>Team 2 starting point:</strong> On day one you have 4 organized but empty Google Docs — your dataroom structure exists, it just has no data yet.
+    <strong>Team 2 starting point:</strong> On day one you have 3 organized but empty Google Docs — your dataroom structure exists, it just has no data yet.
     Run <code>python3 setup.py --onboard</code> to immediately populate them with the last 30 days of emails, any existing transcripts in your configured folders, and recent podcast episodes. After ~30 minutes you'll have a real dashboard, not an empty one.
   </div>
 </div>
@@ -448,7 +448,7 @@
     <div class="cell">
       <div class="card c-external">
         <strong>Fast sort first (cheap)</strong>
-        <span>Every email gets a category: Deal / Action / Research / Ignore. Only important ones go to the next step. (A "Recruit" category is added when <code>features.job_search</code> is on.)</span>
+        <span>Every email gets a category: Deal / Action / Research / Ignore. Only important ones go to the next step.</span>
       </div>
       <div class="card c-external">
         <strong>Deep read on what matters (thorough)</strong>
@@ -462,10 +462,6 @@
       </div>
       <div class="card c-drive">
         <strong>Deal threads → Pipeline Doc</strong>
-      </div>
-      <div class="card c-drive">
-        <strong>Recruiting threads → Recruiting Doc</strong>
-        <span>Only when <code>features.job_search</code> is on. Off by default for new tenants.</span>
       </div>
     </div>
     <div class="cell">
@@ -720,7 +716,7 @@
         <div class="icon">📁</div>
         <div>
           <strong>3 Google Docs (your firm's dataroom)</strong>
-          <div class="desc">Follow-ups · Pipeline · People (plus an optional Recruiting Doc when <code>features.job_search</code> is on). Every team member's pipeline writes here. Everyone reads the same data.</div>
+          <div class="desc">Follow-ups · Pipeline · People. Every team member's pipeline writes here. Everyone reads the same data.</div>
         </div>
       </div>
       <div class="pvs-item">
@@ -759,7 +755,7 @@
       <div class="step-num">3</div>
       <div class="step-body">
         <strong>Create your dataroom</strong> — <code>python3 setup.py --create-docs</code>
-        <div class="where">Opens Google sign-in in your browser. After you approve, creates 3 blank Google Docs (Follow-ups, Pipeline, People — plus a Recruiting Doc when <code>features.job_search</code> is on) and writes their IDs into your config automatically. These are now your firm's shared dataroom.</div>
+        <div class="where">Opens Google sign-in in your browser. After you approve, creates 3 blank Google Docs (Follow-ups, Pipeline, People) and writes their IDs into your config automatically. These are now your firm's shared dataroom.</div>
       </div>
     </div>
     <div class="step">
@@ -838,13 +834,6 @@
       <div class="pvs-item" style="padding-left:30px;">
         <div class="icon">📄</div>
         <div>
-          <strong>Recruiting Pipeline</strong> <span style="color:#888;font-size:11px;">(opt-in)</span>
-          <div class="desc">Job-search activity — firms, stages, contacts, comp intel. Created only when <code>features.job_search: true</code>; off by default for new tenants.</div>
-        </div>
-      </div>
-      <div class="pvs-item" style="padding-left:30px;">
-        <div class="icon">📄</div>
-        <div>
           <strong>Daily Briefing Log</strong>
           <div class="desc">Append-only log of every morning briefing sent</div>
         </div>
@@ -859,7 +848,7 @@
       <div class="pvs-item" style="padding-left:30px;">
         <div class="icon">📁</div>
         <div>
-          <strong>Otter AI / </strong> <span style="color:#888;font-size:11px;">Root · Deal Calls · Other (plus Recruiting when job-search is on)</span>
+          <strong>Otter AI / </strong> <span style="color:#888;font-size:11px;">Root · Deal Calls · Other</span>
           <div class="desc">Zapier drops new Otter recordings here automatically</div>
         </div>
       </div>
@@ -1209,8 +1198,8 @@
     <div style="display:grid;grid-template-columns:190px 90px 1fr 1fr;padding:12px 16px;gap:16px;border-top:1px solid #f0ede8;font-size:12px;align-items:start;">
       <div><strong>firm_config.json</strong><div style="font-size:11px;color:#888;">Google Doc IDs, email keywords</div></div>
       <div><span style="background:#fff3e0;color:#e65100;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600;">🔒 Team repo</span></div>
-      <div>The Doc IDs for your shared Follow-ups, Pipeline, and People docs (plus Recruiting when <code>features.job_search</code> is on) live here. All team members need the same IDs so they write to the same docs.</div>
-      <div>They create their own 4 Google Docs via <code>--create-docs</code>. Their Doc IDs are physically different. Cross-write is impossible.</div>
+      <div>The Doc IDs for your shared Follow-ups, Pipeline, and People docs live here. All team members need the same IDs so they write to the same docs.</div>
+      <div>They create their own 3 Google Docs via <code>--create-docs</code>. Their Doc IDs are physically different. Cross-write is impossible.</div>
     </div>
 
     <div style="display:grid;grid-template-columns:190px 90px 1fr 1fr;padding:12px 16px;gap:16px;border-top:1px solid #f0ede8;font-size:12px;align-items:start;">
