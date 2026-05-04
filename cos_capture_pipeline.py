@@ -322,9 +322,10 @@ def call_claude(system_prompt: str, user_payload: str, ctx: dict = None) -> dict
     sys.path.insert(0, str(_HERE / "_subscription"))
     from cached_client import complete  # noqa: PLC0415
     result = complete(
-        user_query=system_prompt,
+        user_query="",
         source_content=user_payload,
         tenant_bundle="",
+        routine_prompt=system_prompt,   # third cache breakpoint: stable ruleset+schema
         model="claude-sonnet-4-6",
         max_tokens=MAX_TOKENS,
     )

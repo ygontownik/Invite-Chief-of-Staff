@@ -68,16 +68,20 @@ def _split_static_core() -> tuple[str, str, str]:
     return pre.strip(), mid.strip(), post.strip()
 
 
-def _build_system_blocks(tenant_bundle: str) -> list[dict[str, Any]]:
-    """Render the three system segments with cache markers on the first two.
+def _build_system_blocks(tenant_bundle: str,
+                         routine_prompt: str = "") -> list[dict[str, Any]]:
+    """Render system segments with cache markers.
 
-    Order on the wire matches render order: blocks 1 and 2 are the cacheable
-    prefix; block 3 carries volatile per-request content (date, query, source)
-    and is intentionally NOT marked cache_control.
+    Blocks 1 + 2: investor identity and Tomac bundle — always cached.
+    Block 3: static tail of system_prompt_v1.md — NOT cached (volatile slot).
+    Block 4 (optional): per-routine format prompt (MEMO_PREAMBLE, JSON schema,
+    capture ruleset) — cached when provided. This is the third breakpoint:
+    stable within a routine, different per routine, much cheaper at subscriber
+    scale since it rides the same cache window as blocks 1+2.
     """
     seg1, seg2, seg3 = _split_static_core()
     seg2_filled = seg2.replace("{{TENANT_BUNDLE}}", tenant_bundle)
-    return [
+    blocks: list[dict[str, Any]] = [
         {
             "type": "text",
             "text": seg1,
@@ -93,6 +97,13 @@ def _build_system_blocks(tenant_bundle: str) -> list[dict[str, Any]]:
             "text": seg3,
         },
     ]
+    if routine_prompt and routine_prompt.strip():
+        blocks.append({
+            "type": "text",
+            "text": routine_prompt.strip(),
+            "cache_control": {"type": "ephemeral"},
+        })
+    return blocks
 
 
 def _bundle_hash(tenant_bundle: str) -> str:
@@ -115,8 +126,14 @@ def complete(
     tenant_bundle: str,
     model: str = "claude-sonnet-4-6",
     max_tokens: int = 4096,
+    routine_prompt: str = "",
 ) -> dict[str, Any]:
     """Send one Messages API call against the static-core prefix.
+
+    routine_prompt — per-routine format template (MEMO_PREAMBLE, JSON schema,
+    capture ruleset). When provided, sent as a fourth cached system block so it
+    shares the cache window with the static core. The user message then carries
+    only variable data (source_content), reducing uncached token spend.
 
     Returns:
         {"text": str,
@@ -125,15 +142,18 @@ def complete(
                            "uncached_input": int, "output": int}}
     """
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    user_content = (
-        f"Today's date: {today}\n\n"
-        f"User query: {user_query}\n\n"
-        f"Source content:\n{source_content}"
-    )
+    if user_query and user_query.strip():
+        user_content = (
+            f"Today's date: {today}\n\n"
+            f"User query: {user_query}\n\n"
+            f"Source content:\n{source_content}"
+        )
+    else:
+        user_content = f"Today's date: {today}\n\nSource content:\n{source_content}"
 
     api_key = _load_api_key()
     client = anthropic.Anthropic(api_key=api_key)
-    system_blocks = _build_system_blocks(tenant_bundle)
+    system_blocks = _build_system_blocks(tenant_bundle, routine_prompt=routine_prompt)
 
     t0 = time.monotonic()
     response = client.messages.create(
@@ -163,6 +183,7 @@ def complete(
         "ts": datetime.now(timezone.utc).isoformat(),
         "model": model,
         "tenant_bundle_hash": _bundle_hash(tenant_bundle),
+        "routine_prompt_tokens": len(routine_prompt.split()) * 4 // 3 if routine_prompt else 0,
         "cache_creation_tokens": cache_metrics["creation"],
         "cache_read_tokens": cache_metrics["read"],
         "uncached_input_tokens": cache_metrics["uncached_input"],
@@ -203,6 +224,7 @@ def submit_batch(
     tenant_bundle: str = "",
     model: str = "claude-sonnet-4-6",
     max_tokens: int = 4096,
+    routine_prompt: str = "",
 ) -> str:
     """Submit one or more requests to the Anthropic Batch API.
 
@@ -219,15 +241,19 @@ def submit_batch(
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     api_key = _load_api_key()
     client = anthropic.Anthropic(api_key=api_key)
-    system_blocks = _build_system_blocks(tenant_bundle)
+    system_blocks = _build_system_blocks(tenant_bundle, routine_prompt=routine_prompt)
 
     batch_requests = []
     for req in requests:
-        user_content = (
-            f"Today's date: {today}\n\n"
-            f"User query: {req['user_query']}\n\n"
-            f"Source content:\n{req['source_content']}"
-        )
+        uq = req.get("user_query", "")
+        if uq and uq.strip():
+            user_content = (
+                f"Today's date: {today}\n\n"
+                f"User query: {uq}\n\n"
+                f"Source content:\n{req['source_content']}"
+            )
+        else:
+            user_content = f"Today's date: {today}\n\nSource content:\n{req['source_content']}"
         batch_requests.append({
             "custom_id": req["custom_id"],
             "params": {

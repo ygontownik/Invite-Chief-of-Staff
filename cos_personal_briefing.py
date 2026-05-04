@@ -247,9 +247,10 @@ def call_claude(format_prompt: str, source_content: str,
     sys.path.insert(0, str(_HERE / "_subscription"))
     from cached_client import complete  # noqa: PLC0415
     result = complete(
-        user_query=format_prompt,
+        user_query="",
         source_content=source_content,
         tenant_bundle="",
+        routine_prompt=format_prompt,   # third cache breakpoint: stable briefing template
         model="claude-sonnet-4-6",
         max_tokens=2048,
     )

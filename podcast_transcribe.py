@@ -405,13 +405,14 @@ def generate_memo(show: str, title: str,
     finally:
         pass
 
-    user_query, source_content = _memo_args(show, title, pub_date, transcript_text)
+    _, source_content = _memo_args(show, title, pub_date, transcript_text)
 
     try:
         result = complete(
-            user_query=user_query,
+            user_query="",
             source_content=source_content,
             tenant_bundle="",
+            routine_prompt=MEMO_PREAMBLE,   # third cache breakpoint
             model="claude-sonnet-4-6",
             max_tokens=4096,
         )
@@ -449,7 +450,7 @@ def submit_batch_memo(
     sys.path.insert(0, str(Path(__file__).resolve().parent / "_subscription"))
     from cached_client import submit_batch  # noqa: PLC0415
 
-    user_query, source_content = _memo_args(show, title, pub_date, transcript_text)
+    _, source_content = _memo_args(show, title, pub_date, transcript_text)
     pub_date_str = pub_date.strftime("%Y-%m-%d") if pub_date else ""
     safe_title   = title[:60].replace("/", "-")
     custom_id    = f"podcast-{show[:20]}-{guid[:40]}"
@@ -457,7 +458,7 @@ def submit_batch_memo(
     batch_id = submit_batch(
         requests=[{
             "custom_id": custom_id,
-            "user_query": user_query,
+            "user_query": "",
             "source_content": source_content,
             "metadata": {
                 "show":            show,
@@ -472,6 +473,7 @@ def submit_batch_memo(
             },
         }],
         routine="podcast-transcribe-daily",
+        routine_prompt=MEMO_PREAMBLE,   # third cache breakpoint
         model="claude-sonnet-4-6",
         max_tokens=4096,
     )
