@@ -230,13 +230,42 @@ Keywords: Stonepeak, I Squared, ECP, Quantum, KKR, TPG, ArcLight, LS Power, Broo
 
 ## 6. Per-Tenant Bundle (volatile across tenants, stable within one)
 
-{{TENANT_BUNDLE}}
+> Source: `~/.claude/CLAUDE.md` § "Investment Context" + `~/cos-pipeline/data-tomac/compiled/deal-pipeline-data.json` (week of 2026-05-03). Firm list and briefing classifier sit in the static core above CBP1 per `CACHE_BREAKPOINT_DECISION.md`. This bundle holds the Tomac-specific overlay only.
 
-> Bundle contents (per CLAUDE.md "Investment Context"). Firm list and briefing classifier promoted to static core (above CBP1) per `CACHE_BREAKPOINT_DECISION.md`:
-> - Sectors in priority order (power & utilities, digital infrastructure, midstream, energy transition, government/DFC)
-> - Recurring analytical lenses (utility GenCo carveouts, MISO/PJM queue plays, LNG project finance, DC contractor roll-up, EU vs US LNG)
-> - People context (Mark Saxe, David Lorch, John Jovanovic, Greg Beard)
-> - Top active deal themes (id, theme, thesis preview from `deal-pipeline-data.json`)
+### Sectors (priority order)
+
+1. Power & utilities (ERCOT, PJM, MISO, WECC) — generation, transmission, GenCo carveouts
+2. Digital infrastructure — data centers, fiber, towers; AI load growth thesis
+3. Midstream — LNG (US export, global FIDs), gas processing, pipelines
+4. Energy transition — storage, solar supply chain, nuclear, geothermal
+5. Government/DFC-style investment — OSC, EXIM, DOE EDF
+
+### Recurring analytical lenses
+
+- Utility GenCo carveouts for data center large-load (Blackstone/NiSource template)
+- MISO/PJM interconnection queue and distressed land plays
+- LNG project finance: SPAs, JCC slope, FIDs, mtpa, force majeure, take-or-pay
+- DC contractor roll-up (captive power for hyperscalers)
+- European vs US LNG: supply/demand balance, geopolitical bypass routes
+
+### People context (recurring counterparties)
+
+- Mark Saxe — Tomac Cove co-founder (ex-BlackRock infra)
+- David Lorch — DoD OSC director (primary government role target)
+- John Jovanovic — EXIM Bank (connector via Brian Falik)
+- Greg Beard — DOE Office of Energy Dominance Financing (ex-Apollo)
+
+### Active deal themes (top 7 by score, week of 2026-05-03)
+
+- **[miso-power] MISO Power Plant Acquisitions** — DOE 202(c) orders stalled 2.5+ GW MISO coal. NIPSCO GenCo confirmed scaling: Amazon 2.4 GW + Alphabet 515 MW; total stack now $6-7B+. IURC PPA approval vote May 6, 2026 (3 days). Campbell DOE Order 20
+- **[pjm-power] PJM Power Plant Acquisitions** — PJM Reliability Backstop Procurement: 14.9 GW UCAP / >20 GW nameplate target. RFI submissions DUE MAY 4, 2026 (1 day). Two-phase: bilateral Sep 2026, central Mar 2027, COD by June 2031. PJM 2027/28 BR
+- **[eu-lng-fsru] European LNG Regas & FSRU** — Hormuz partial reopening April 17 (US blockade continues; ~5% pre-war volume per May 1). UAE quits OPEC effective May 1, 2026 — long-term supply policy independence target 5M bpd by 2027. Qatar FM (12
+- **[epc-rollup] DC Electrical Contractor Roll-up** — $255B market, no player >5%. LGN 2026 guidance $3.7-3.9B rev / $400-430M EBITDA; backlog $3.7B (+49%); DC = 49% of backlog. Faith Technologies ABC #1 DC contractor 2026, $1.6B revenue (Pittsboro IN ex
+- **[us-lng-pf] US LNG Project Finance** — CP2 $20.7B closed — outside equity window shut. NextDecade T4+T5 under construction. T6 FERC pre-filing Nov 2025; full FERC application expected mid-2026; service ~2030; ~6 MTPA. UAE OPEC exit May 1 +
+- **[captive-power] Captive Power & Supply Chain** — PJM RBP 14.9 GW (RFI submissions due May 4) catalyzes captive gas + supply chain. SoftBank Piketon mid-2026. Entergy/Meta active — $875M LA contracts, 5,000 peak workers June 2026. AES Indiana/Ohio po
+- **[dc-queue] DC Queue & Distressed Land** — ComEd ICC investigation docket opened April 23, 2026 (8-month investigation through Dec 2026). 75 customer applications totaling >system peak. Brookfield/Compass officially bailed on major Virginia DC
+
+> Note: cached_client.py's `tenant_bundle` runtime arg is now ignored (no `{{TENANT_BUNDLE}}` placeholder present). Tomac is single-tenant; the bundle is baked in. For multi-tenant productization (S8), reintroduce the placeholder and load tenant content from a per-tenant sidecar file.
 
 ---
 
