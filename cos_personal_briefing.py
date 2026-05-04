@@ -204,32 +204,31 @@ Active deals (stage ≠ Closed/Pass), one line each:
 **[Company]** · [Stage] → [Next step] _({dl_first}'s status if noted)_
 If none: "No active deals."
 
-### Market Intelligence
+### Intelligence
+Combine market intelligence and podcast takeaways into one unified section.
+
+**Market**
 From the Daily Market Update doc, find the most recent entry (today or yesterday).
 - Write the **KEY TAKEAWAY** line verbatim (one sentence)
-- Write the sector bullets verbatim — preserve the **bold sector headers** and bullet text exactly as written. Do not reformat or summarize.
-- If a WEEKLY WRAP section is present (Fridays), include it verbatim after the daily bullets.
-If no entry from the last 48h exists: "No new market update today."
-This section is parsed by the dashboard — copy it exactly from the doc, do not paraphrase.
+- Write the sector bullets verbatim — preserve **bold sector headers** and bullet text exactly. Do not reformat or summarize.
+- If a WEEKLY WRAP section is present (Fridays), include it verbatim after the bullets.
+If no entry from the last 48h: "No new market update today."
+Copy exactly from the doc — do not paraphrase.
 
-### Podcast Intelligence
-From the Personal Briefing Log, find any podcast episode memos added in the last 48 hours.
-For each episode found, write one entry:
+**Podcasts**
+From the Personal Briefing Log, find podcast episode memos added in the last 48 hours.
+For each episode:
 **[Show Name] — "[Episode Title]"**
-- THE CORE ARGUMENT: [one sentence verbatim or close paraphrase]
-- KEY INVESTMENT ANGLE: [the single most actionable insight — named asset, firm, deal structure, or regulatory position. 1-2 sentences.]
-- NAMES: [comma-separated list of named people and firms from that episode]
-If no podcast memos in last 48h: "No new episodes processed."
-
-### Captured Overnight
-One paragraph (3–5 sentences) covering what else the capture pipeline added since yesterday — emails, calls, non-podcast captures. Exclude podcasts (covered above).
-If no Capture Summary found: "No capture summary available."
+- [Core argument — one sentence]
+- [Single most actionable investment angle — named asset, firm, deal structure, or regulatory position]
+- Names: [named people and firms]
+If no episodes in last 48h: omit this subsection entirely.
 
 RULES:
 - Output ONLY the briefing markdown. No preamble, no closing remarks.
 - Be specific: named people, firms, dates, deal stages. Never vague summaries.
 - Today's Priorities and Coming Up draw exclusively from the Follow-ups doc — do not invent items.
-- Podcast Intelligence draws exclusively from the Briefing Log — do not invent episodes."""
+- Podcasts draw exclusively from the Briefing Log — do not invent episodes."""
 
 
 # ── Claude call via cached_client ─────────────────────────────────────────────
