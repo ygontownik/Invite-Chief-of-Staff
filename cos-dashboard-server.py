@@ -664,8 +664,12 @@ def _send_invite_email(name, email, username, password, tiles,
             BOOTSTRAP_CMD = 'curl -fsSL https://ygontownik.github.io/Invite-Chief-of-Staff/bootstrap.sh | bash'
             cos_plain = f"""
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-YOUR OWN DASHBOARD (COS SETUP)
+YOUR OWN DASHBOARD
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+IMPORTANT: Your dashboard runs entirely on your own Mac — not on Yoni's.
+Your API keys, pipeline outputs, and data never leave your machine.
+The login above is shared read-only access; this is your own private instance.
+
 Full setup guide: {ONBOARD_URL}
 
 You've been added to these GitHub repos:
@@ -674,30 +678,35 @@ You've been added to these GitHub repos:
 Setup takes ~10 minutes — one command does everything:
 
   1. Accept the GitHub invite (check your email from GitHub)
-  2. Open Terminal and run:
+  2. Open Terminal on your Mac and run:
        {BOOTSTRAP_CMD}
      The installer will:
-       • Ask for your GitHub token → clones the repo automatically
-       • Open Anthropic console → paste your API key
-       • Set your dashboard username + password (save these)
+       • Ask for your GitHub token → clones the repo to your Mac
+       • Open Anthropic console → create a key, paste it back
+       • Set your dashboard username + password (save these somewhere)
        • Wait for gdrive_credentials.json (Yoni will send separately)
        • Open Google sign-in → click Allow
-       • Launch your dashboard at http://localhost:7777
+       • Launch your dashboard at http://localhost:7777 (on your Mac)
 
 Note: macOS will ask "allow access to keychain?" during setup — click Always Allow each time.
 """
             cos_html = f"""
-<div style="border-top:1px solid #ddd8cf;padding-top:18px;margin-top:4px">
-  <div style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#8c8378;margin-bottom:10px">Your own dashboard (COS setup)</div>
+<div style="border-top:2px solid #1b2d45;padding-top:20px;margin-top:20px">
+  <div style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#8c8378;margin-bottom:10px">Your own dashboard</div>
+  <div style="background:#eef4ff;border:1px solid #c7d9f5;border-radius:8px;padding:14px 16px;margin-bottom:16px;font-size:13px;color:#1b2d45;line-height:1.6">
+    <strong>Your dashboard runs entirely on your own Mac</strong> — not on Yoni's server.<br>
+    Your API keys, pipeline outputs, and data never leave your machine.<br>
+    The login credentials above are for shared read-only access; this sets up your own private instance.
+  </div>
   <p style="font-size:13px;margin:0 0 12px">Full step-by-step guide: <a href="{ONBOARD_URL}" style="color:#1b2d45;font-weight:600">{ONBOARD_URL}</a></p>
   <p style="font-size:13px;margin:0 0 10px">You've been added to these GitHub repos:</p>
   <ul style="margin:0 0 14px;padding-left:18px">{repo_lines_html}</ul>
   <p style="font-size:13px;margin:0 0 8px">Setup takes ~10 minutes — one command does everything:</p>
   <ol style="margin:0 0 12px;padding-left:18px;font-size:13px;color:#333">
     <li>Accept the GitHub invite (check email from GitHub)</li>
-    <li>Open Terminal and run:<br>
+    <li>Open <strong>Terminal</strong> on your Mac and run:<br>
         <code style="background:#f0ece4;padding:3px 6px;border-radius:3px;font-size:12px;display:inline-block;margin-top:4px">{BOOTSTRAP_CMD}</code></li>
-    <li>The installer will open Anthropic console, ask for your API key, set your dashboard login, wait for <code style="background:#f0ece4;padding:1px 4px;border-radius:3px">gdrive_credentials.json</code> from Yoni, and launch your dashboard.</li>
+    <li>The installer will ask for your GitHub token, open Anthropic console for your API key, set your dashboard login, wait for <code style="background:#f0ece4;padding:1px 4px;border-radius:3px">gdrive_credentials.json</code> from Yoni, then launch your dashboard at <code style="background:#f0ece4;padding:1px 4px;border-radius:3px">http://localhost:7777</code>.</li>
   </ol>
   <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:10px 14px;font-size:12px;color:#92400e">
     <strong>macOS keychain:</strong> If macOS asks "allow access to keychain?" during setup — click <strong>Always Allow</strong> each time. This lets background tasks read your API keys without prompting.
