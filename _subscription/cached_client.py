@@ -26,6 +26,8 @@ _TELEMETRY_FILE = _HERE / "cache_telemetry.jsonl"
 _BP1 = "<!-- CACHE_BREAKPOINT_1 -->"
 _BP2 = "<!-- CACHE_BREAKPOINT_2 -->"
 
+BATCH_STATE_FILE = pathlib.Path.home() / "credentials" / "pending_batches.json"
+
 
 def _load_api_key() -> str:
     """Resolve ANTHROPIC_API_KEY via _secrets (keychain on Mac, env fallback).
@@ -175,6 +177,171 @@ def complete(
         "usage": usage,
         "cache_metrics": cache_metrics,
     }
+
+
+# ── Batch API helpers ─────────────────────────────────────────────────────────
+
+def _load_batch_state() -> dict:
+    try:
+        if BATCH_STATE_FILE.exists():
+            return json.loads(BATCH_STATE_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return {"batches": []}
+
+
+def _save_batch_state(state: dict) -> None:
+    try:
+        BATCH_STATE_FILE.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def submit_batch(
+    requests: list[dict[str, Any]],
+    routine: str = "",
+    tenant_bundle: str = "",
+    model: str = "claude-sonnet-4-6",
+    max_tokens: int = 4096,
+) -> str:
+    """Submit one or more requests to the Anthropic Batch API.
+
+    Each request dict must have:
+        custom_id   – stable unique string (e.g. "podcast-Catalyst-<guid>")
+        user_query  – the format/ruleset prompt (goes into user message)
+        source_content – variable data (doc text, transcript, etc.)
+        metadata    – arbitrary dict stored in pending_batches.json so the
+                      retrieval path can reconstruct enough context to write results
+
+    Returns the Anthropic batch_id string. State is persisted to BATCH_STATE_FILE.
+    50% cheaper than synchronous calls; results available within minutes-to-hours.
+    """
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    api_key = _load_api_key()
+    client = anthropic.Anthropic(api_key=api_key)
+    system_blocks = _build_system_blocks(tenant_bundle)
+
+    batch_requests = []
+    for req in requests:
+        user_content = (
+            f"Today's date: {today}\n\n"
+            f"User query: {req['user_query']}\n\n"
+            f"Source content:\n{req['source_content']}"
+        )
+        batch_requests.append({
+            "custom_id": req["custom_id"],
+            "params": {
+                "model": model,
+                "max_tokens": max_tokens,
+                "system": system_blocks,
+                "messages": [{"role": "user", "content": user_content}],
+            },
+        })
+
+    batch = client.messages.batches.create(requests=batch_requests)
+    batch_id = batch.id
+
+    state = _load_batch_state()
+    state["batches"].append({
+        "batch_id": batch_id,
+        "routine": routine,
+        "submitted_at": datetime.now(timezone.utc).isoformat(),
+        "status": "in_progress",
+        "results_written": False,
+        "request_count": len(requests),
+        "requests": [
+            {"custom_id": r["custom_id"], "metadata": r.get("metadata", {})}
+            for r in requests
+        ],
+    })
+    _save_batch_state(state)
+    _write_telemetry({
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "event": "batch_submitted",
+        "batch_id": batch_id,
+        "routine": routine,
+        "request_count": len(requests),
+        "model": model,
+    })
+    return batch_id
+
+
+def retrieve_batch(batch_id: str) -> dict | None:
+    """Check status and retrieve results for a batch.
+
+    Returns {"batch_id": str, "results": [{custom_id, text, usage}]} when ended.
+    Returns None when still in_progress.
+    Updates status in BATCH_STATE_FILE.
+    """
+    api_key = _load_api_key()
+    client = anthropic.Anthropic(api_key=api_key)
+
+    batch = client.messages.batches.retrieve(batch_id)
+    status = batch.processing_status  # "in_progress" | "ended" | "canceling" | "canceled"
+
+    state = _load_batch_state()
+    for b in state["batches"]:
+        if b["batch_id"] == batch_id:
+            b["status"] = status
+            break
+    _save_batch_state(state)
+
+    if status != "ended":
+        return None
+
+    results = []
+    for item in client.messages.batches.results(batch_id):
+        if item.result.type == "succeeded":
+            msg = item.result.message
+            text = next(
+                (block.text for block in msg.content if block.type == "text"), ""
+            )
+            usage = msg.usage
+            results.append({
+                "custom_id": item.custom_id,
+                "text": text,
+                "usage": usage,
+            })
+            _write_telemetry({
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "event": "batch_result",
+                "batch_id": batch_id,
+                "custom_id": item.custom_id,
+                "cache_creation_tokens": getattr(usage, "cache_creation_input_tokens", 0) or 0,
+                "cache_read_tokens": getattr(usage, "cache_read_input_tokens", 0) or 0,
+                "uncached_input_tokens": getattr(usage, "input_tokens", 0) or 0,
+                "output_tokens": getattr(usage, "output_tokens", 0) or 0,
+            })
+        elif item.result.type == "errored":
+            _write_telemetry({
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "event": "batch_error",
+                "batch_id": batch_id,
+                "custom_id": item.custom_id,
+                "error": str(item.result.error),
+            })
+
+    return {"batch_id": batch_id, "results": results}
+
+
+def load_pending_batches(routine: str = "") -> list[dict]:
+    """Return batches that haven't had results written yet, optionally filtered by routine."""
+    state = _load_batch_state()
+    batches = [b for b in state["batches"] if not b.get("results_written")]
+    if routine:
+        batches = [b for b in batches if b.get("routine") == routine]
+    return batches
+
+
+def mark_batch_written(batch_id: str) -> None:
+    """Mark a batch as done — results have been written to their destination."""
+    state = _load_batch_state()
+    for b in state["batches"]:
+        if b["batch_id"] == batch_id:
+            b["results_written"] = True
+            b["completed_at"] = datetime.now(timezone.utc).isoformat()
+            break
+    _save_batch_state(state)
 
 
 if __name__ == "__main__":

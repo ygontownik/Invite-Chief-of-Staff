@@ -370,6 +370,17 @@ def clean_memo(text: str) -> str:
     return '\n'.join(lines)
 
 
+def _memo_args(show: str, title: str, pub_date: datetime | None,
+               transcript_text: str) -> tuple[str, str]:
+    """Return (user_query, source_content) ready for cached_client.complete/submit_batch."""
+    date_str = pub_date.strftime("%Y-%m-%d") if pub_date else "unknown"
+    dynamic  = MEMO_DYNAMIC_TEMPLATE.format(
+        show=show, title=title, date=date_str,
+        transcript=transcript_text[:40000],
+    )
+    return MEMO_PREAMBLE, dynamic
+
+
 def generate_memo(show: str, title: str,
                   pub_date: datetime | None,
                   transcript_text: str) -> tuple[str, str]:
@@ -388,25 +399,19 @@ def generate_memo(show: str, title: str,
         fallback = "(memo skipped — ANTHROPIC_API_KEY not set)"
         return fallback, "No summary available."
 
-    # Import cached_client lazily so callers without the sandbox installed
-    # still load this module (matches lazy-import pattern used elsewhere).
     sys.path.insert(0, str(Path(__file__).resolve().parent / "_subscription"))
     try:
         from cached_client import complete
     finally:
-        pass  # leave path mod in place for module lifetime
+        pass
 
-    date_str = pub_date.strftime("%Y-%m-%d") if pub_date else "unknown"
-    dynamic  = MEMO_DYNAMIC_TEMPLATE.format(
-        show=show, title=title, date=date_str,
-        transcript=transcript_text[:40000],
-    )
+    user_query, source_content = _memo_args(show, title, pub_date, transcript_text)
 
     try:
         result = complete(
-            user_query=MEMO_PREAMBLE,
-            source_content=dynamic,
-            tenant_bundle="",  # bundle is baked into system_prompt_v1.md; arg ignored
+            user_query=user_query,
+            source_content=source_content,
+            tenant_bundle="",
             model="claude-sonnet-4-6",
             max_tokens=4096,
         )
@@ -428,6 +433,123 @@ def generate_memo(show: str, title: str,
     # Extract one-sentence summary from the memo
     one_liner = _extract_one_liner(full_memo)
     return full_memo, one_liner
+
+
+def submit_batch_memo(
+    show: str, title: str, pub_date: datetime | None,
+    transcript_text: str, guid: str,
+    aai_data: dict,
+) -> str:
+    """Submit memo generation as an Anthropic batch request. Returns batch_id.
+
+    Stores transcript + episode metadata in the batch state so the retrieval
+    path can write results without re-transcribing. Caller should skip the
+    normal doc-write step when this returns successfully.
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parent / "_subscription"))
+    from cached_client import submit_batch  # noqa: PLC0415
+
+    user_query, source_content = _memo_args(show, title, pub_date, transcript_text)
+    pub_date_str = pub_date.strftime("%Y-%m-%d") if pub_date else ""
+    safe_title   = title[:60].replace("/", "-")
+    custom_id    = f"podcast-{show[:20]}-{guid[:40]}"
+
+    batch_id = submit_batch(
+        requests=[{
+            "custom_id": custom_id,
+            "user_query": user_query,
+            "source_content": source_content,
+            "metadata": {
+                "show":            show,
+                "title":           title,
+                "pub_date":        pub_date_str,
+                "guid":            guid,
+                "safe_title":      safe_title,
+                "audio_duration":  aai_data.get("audio_duration", 0),
+                # Store processed transcript so retrieval can write transcript block
+                "transcript_text": transcript_text[:40000],
+                "transcript_block": aai_data.get("_formatted_block", ""),
+            },
+        }],
+        routine="podcast-transcribe-daily",
+        model="claude-sonnet-4-6",
+        max_tokens=4096,
+    )
+    print(f"    → Batch submitted: {batch_id} (50% off; results in minutes–hours)")
+    return batch_id
+
+
+def retrieve_and_write_pending_memos(drive_svc, docs_svc, doc_index: dict) -> int:
+    """Check all pending podcast batches. For each ended batch, write memos to docs.
+
+    Returns count of episodes successfully written.
+    Called by --retrieve-batches mode or Force sync from dashboard.
+    """
+    sys.path.insert(0, str(Path(__file__).resolve().parent / "_subscription"))
+    from cached_client import load_pending_batches, retrieve_batch, mark_batch_written  # noqa: PLC0415
+
+    pending = load_pending_batches(routine="podcast-transcribe-daily")
+    if not pending:
+        print("  No pending podcast batch jobs.")
+        return 0
+
+    written = 0
+    for batch_meta in pending:
+        batch_id = batch_meta["batch_id"]
+        print(f"  Checking batch {batch_id} (submitted {batch_meta.get('submitted_at','?')[:16]})…")
+        result = retrieve_batch(batch_id)
+        if result is None:
+            print(f"    Still in_progress — skipping.")
+            continue
+
+        for item in result["results"]:
+            cid      = item["custom_id"]
+            # Find matching request metadata
+            req_meta = next(
+                (r["metadata"] for r in batch_meta.get("requests", [])
+                 if r["custom_id"] == cid),
+                None,
+            )
+            if not req_meta:
+                print(f"    ⚠️  No metadata for {cid} — skipping.")
+                continue
+
+            show        = req_meta["show"]
+            title       = req_meta["title"]
+            guid        = req_meta["guid"]
+            pub_date_s  = req_meta.get("pub_date", "")
+            pub_date    = datetime.strptime(pub_date_s, "%Y-%m-%d").replace(tzinfo=timezone.utc) if pub_date_s else None
+            transcript_text  = req_meta.get("transcript_text", "")
+            transcript_block = req_meta.get("transcript_block", "") or transcript_text[:40000]
+
+            full_memo  = clean_memo(item["text"].strip())
+            one_liner  = _extract_one_liner(full_memo)
+
+            show_doc_id    = get_or_create_doc(drive_svc, doc_index, show, f"{show} Transcripts")
+            summary_doc_id = get_or_create_doc(drive_svc, doc_index, "__summary__",
+                                               SUMMARY_DOC_NAME, SUMMARY_GDRIVE_FOLDER_ID)
+            try:
+                show_bm = prepend_episode_to_show_doc(
+                    docs_svc, show_doc_id, show, title, pub_date,
+                    full_memo, one_liner, transcript_block,
+                )
+                append_memo_to_summary_doc(
+                    docs_svc, summary_doc_id, show, title, pub_date, full_memo, one_liner,
+                )
+                mark_processed(guid, show, title,
+                               f"https://docs.google.com/document/d/{show_doc_id}/edit",
+                               one_liner=one_liner,
+                               pub_date_str=pub_date_s,
+                               show_heading_id=show_bm or "",
+                               summary_heading_id="")
+                print(f"    ✅  Written: {show} | {title[:60]}")
+                written += 1
+            except Exception as e:
+                print(f"    ❌  Write failed for {cid}: {e}")
+
+        mark_batch_written(batch_id)
+
+    return written
 
 
 def _extract_one_liner(memo: str) -> str:
@@ -1124,7 +1246,8 @@ def append_memo_to_summary_doc(docs_svc, doc_id: str,
 # ── Core episode processor ────────────────────────────────────────────────────
 
 def process_episode(ep: dict, show_name: str,
-                     drive_svc, docs_svc, doc_index: dict) -> bool:
+                     drive_svc, docs_svc, doc_index: dict,
+                     use_batch: bool = False) -> bool:
     title     = ep["title"]
     audio_url = ep.get("audio_url")
     guid      = ep.get("guid", audio_url)
@@ -1145,10 +1268,25 @@ def process_episode(ep: dict, show_name: str,
         return False
 
     transcript_block = format_transcript_block(aai_data, show_name, title, pub_date)
+    aai_data["_formatted_block"] = transcript_block  # stash for batch metadata
 
-    # 2. Generate memo + one-liner
+    raw_text = aai_data.get("text", "") or transcript_block
+
+    # 2a. Batch mode: submit memo to Anthropic Batch API, write results later
+    if use_batch:
+        try:
+            submit_batch_memo(show_name, title, pub_date, raw_text, guid, aai_data)
+        except Exception as e:
+            print(f"  ⚠️  Batch submit failed ({e}), falling back to sync memo…")
+            use_batch = False  # fall through to sync path below
+        else:
+            # Transcription is logged; doc writes happen when batch results return
+            mins = round(aai_data.get("audio_duration", 0) / 60, 1)
+            print(f"  ⏳  {mins} min transcribed — memo queued for batch write")
+            return True
+
+    # 2b. Synchronous memo generation
     print(f"    → Generating analytical memo…")
-    raw_text         = aai_data.get("text", "") or transcript_block
     memo, one_liner  = generate_memo(show_name, title, pub_date, raw_text)
 
     # 2b. Routing-v2 (Phase 2): emit envelope items from the memo.
@@ -1231,6 +1369,11 @@ def main():
     parser.add_argument("--show",     choices=list(FEEDS.keys()),
                         help="Limit to one show")
     parser.add_argument("--url",      help="Transcribe a single MP3 URL (bypasses dedup)")
+    parser.add_argument("--batch",    action="store_true", default=False,
+                        help="Submit Claude memo calls to Batch API (50%% off; results written later). "
+                             "Default for LaunchAgent. Manual runs are sync by default.")
+    parser.add_argument("--retrieve-batches", action="store_true",
+                        help="Retrieve any pending batch results and write memos to Google Docs")
     args = parser.parse_args()
 
     processed    = load_json(PROCESSED_PATH)
@@ -1242,6 +1385,18 @@ def main():
         if args.backfill else
         datetime.now(timezone.utc) - timedelta(days=2)
     )
+
+    # ── Retrieve pending batch results ──
+    if args.retrieve_batches:
+        print(f"\n{'='*60}")
+        print(f"  Podcast Transcriber — RETRIEVE BATCH RESULTS")
+        print(f"  {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+        print(f"{'='*60}")
+        drive_svc, docs_svc = get_services()
+        doc_index = load_json(DOC_INDEX_PATH)
+        written = retrieve_and_write_pending_memos(drive_svc, docs_svc, doc_index)
+        print(f"\n  {written} episode(s) written from batch results.")
+        return
 
     # ── List mode ──
     if args.list:
@@ -1302,7 +1457,8 @@ def main():
         total_new += len(new_eps)
 
         for ep in new_eps:
-            ok           = process_episode(ep, show_name, drive_svc, docs_svc, doc_index)
+            ok           = process_episode(ep, show_name, drive_svc, docs_svc, doc_index,
+                                           use_batch=args.batch)
             total_done   += int(ok)
             total_failed += int(not ok)
 
