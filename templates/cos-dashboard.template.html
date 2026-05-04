@@ -2637,12 +2637,21 @@ function buildTomacPanel() {
   const { urgencyLabel } = _ptHelpers(today);
 
   // ── Deal data source ──────────────────────────────────────────────
+  // 2026-05-04: Cholla rendered in BOTH "Live Deals" (from dealPortfolio.deals)
+  // and "Origination" (from TOMAC_CONFIG.dealOrigination) because no dedup ran
+  // between the two surfaces. The user manages bucketing in deal-config.yaml —
+  // so the rule is: if a deal already lives in dealOrigination[], it must NOT
+  // also appear in Live Deals. Alias-canonicalize the name before comparing
+  // to handle spelling drift between data/deals/<TICKER>/deal.md and
+  // deal-config.yaml. See dash_corrections.md (2026-05-04 holistic-dedup rule).
   const dp    = DATA.dealPortfolio || {};
-  // Filter origination-only deals that live in dealOrigination (not live deals)
-  const ORIGINATION_ONLY = [];
-  const deals = ((dp && dp.deals) ? dp.deals : []).filter(d =>
-    !ORIGINATION_ONLY.some(n => (d.name||'').toLowerCase().includes(n))
-  );
+  const originationNames = new Set(((TOMAC_CONFIG.dealOrigination)||[]).map(o =>
+    __cpClusterKey(o.name||'').toLowerCase()
+  ));
+  const deals = ((dp && dp.deals) ? dp.deals : []).filter(d => {
+    const canon = __cpClusterKey(d.name||'').toLowerCase();
+    return !(canon && originationNames.has(canon));
+  });
   const dealsCount = deals.length;
 
   // Capital in play; TCIP GP profit = fee_income + carry_income + upside (excludes LP co-invest)

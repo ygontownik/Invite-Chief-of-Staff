@@ -946,6 +946,44 @@ Log each supersession to stderr so prompt drift can be audited.
 
 ---
 
+## TOPIC — PAST-DUE ITEM RESOLUTION
+
+### 2026-05-04 — Past-due deal action sweep: every passed date must be classified, not left
+
+When a `/dash` audit finds open or in-progress actions in `data/deals/<TICKER>/actions.md` (or any equivalent tracker) whose `due` date is in the past, the session MUST classify every one before closing. Acceptable resolutions:
+
+1. **Resolved** — clear evidence the action completed (later follow-up tagged `[RESOLVED]`, a closed item in the same file, a transcript / awaiting-external item demonstrating the deliverable was received). Move the row to **Closed items** with a `Result` field.
+2. **Superseded** — overtaken by a newer action that subsumes it. Move to closed; reference the superseding row.
+3. **Stage-graduated** — the underlying workstream advanced (e.g. an "intro call" became an "active diligence" workstream). Either close the parent and add the new child action, or update both `Action` and `due` in place with a comment.
+4. **Rolled forward** — still genuinely open but the date is stale. Update `due` to a sensible future date (typically 1–2 weeks out) and update `status` to `in-progress` if there's evidence of active work.
+5. **Blocked** — pending an external party. Update `status` to `blocked` and the `Action` text to name what's blocking (e.g. "gated on Mercuria deal-structure clarity").
+
+**Banned**: leaving a past-due open action in the tracker without classifying it. A passed date with no resolution is silent rot — it makes the dashboard look stale and trains the user to ignore the dates.
+
+**Detection**: `python3 -c "import json; ds=json.load(open('data/compiled/deal-system-data.json')); from datetime import date; t=date.today().isoformat(); [print(d['name'], a) for d in ds['deals'] for a in (d.get('actions') or []) if a.get('status') in ('open','in-progress') and (a.get('due') or '') < t]"`
+
+**Rule for stale-date sweeps in any other tracker** (`recruit-config.yaml > priorityTargets / recruiters`, `deal-config.yaml > nextTouchBase` fields, etc.): same classification options apply. If a `nextTouchBase` is past today and the underlying touch hasn't happened, roll forward; if it has happened, update `lastAction` and roll `nextTouchBase` forward; if the relationship is dormant, mark it so explicitly rather than leaving the date.
+
+---
+
+## TOPIC — DEAL-SECTION DEDUPLICATION
+
+### 2026-05-04 — A deal must appear in exactly one section; canonical-name dedup runs at render
+
+The deal-pipeline panel renders two adjacent sections:
+- `LIVE DEALS` — from `DATA.dealPortfolio.deals` (compiled from `data/deals/<TICKER>/deal.md`)
+- `DEAL ORIGINATION` — from `DEAL_CONFIG.dealOrigination` (curated in `deal-config.yaml`)
+
+Without a dedup pass between the two, a deal that has both a `data/deals/<TICKER>/` directory AND a curated origination row renders twice. The user manages bucketing via `deal-config.yaml`, but the Live Deals column was reading the compiled portfolio without checking for overlap.
+
+**Rule** (codified 2026-05-04 in the deal-pipeline panel function): build a Set of `__cpClusterKey(name)` for every row in `dealOrigination[]`; filter the Live Deals candidate list to exclude any deal whose canonical key is in that set. The user's manual bucketing wins — if a deal is curated as origination, it does NOT also appear in Live Deals regardless of its compiled `stage` field.
+
+**Why this is alias-aware**: the same deal can be named differently in `deal-config.yaml` (curated short name) and `data/deals/<TICKER>/deal.md` (full deal-source name with the contact appended). Comparing raw strings would miss the duplicate; canonicalizing through `__cpClusterKey` (which applies `__CP_ALIASES` then the smart firm-keyword fallback) collapses both to one canonical name.
+
+**Companion rule**: when a deal moves from Origination → Live Deals, REMOVE the `dealOrigination[]` entry from `deal-config.yaml` in the same commit that updates the deal's `stage` in `data/deals/<TICKER>/deal.md`. Otherwise the dedup filter will hide it from Live Deals (because it's still in dealOrigination[]). The user's manual bucketing is the source of truth.
+
+---
+
 ## TOPIC — TILE DRILLDOWN SCOPE
 
 ### 2026-05-04 — Tile drilldowns expose ONE complementary lens, never parallel views
