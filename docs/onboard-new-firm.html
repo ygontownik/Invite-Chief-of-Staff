@@ -268,7 +268,7 @@
   <div class="page-title-inner">
     <div class="label">COS Pipeline · New Firm Setup</div>
     <h1>Set up your pipeline</h1>
-    <p>5 steps &nbsp;·&nbsp; ~50 minutes &nbsp;·&nbsp; done once by one person</p>
+    <p>4 steps &nbsp;·&nbsp; ~35 minutes &nbsp;·&nbsp; done once by one person</p>
   </div>
 </div>
 
@@ -343,7 +343,7 @@
               <a href="https://console.anthropic.com/settings/keys" target="_blank">https://console.anthropic.com/settings/keys</a>
               <button class="url-copy-btn" onclick="copyUrl(this)">Copy URL</button>
             </div>
-            <div class="account-card-note">Create a new key, copy it. The installer asks for it and stores it in macOS Keychain — it never touches a file.</div>
+            <div class="account-card-note">The installer opens this page automatically when it needs the key — you don't need to visit it in advance. Just have an account ready. Stored in macOS Keychain, never in a file.</div>
           </div>
 
           <div class="account-card">
@@ -352,7 +352,7 @@
               <a href="https://www.assemblyai.com/dashboard" target="_blank">https://www.assemblyai.com/dashboard</a>
               <button class="url-copy-btn" onclick="copyUrl(this)">Copy URL</button>
             </div>
-            <div class="account-card-note">Sign up (credit card required), copy your API key from the dashboard. Pricing is ~$0.009/min of audio. Expect a few dollars/month for typical use.</div>
+            <div class="account-card-note">The installer opens this page automatically too. Sign up (credit card required), ~$0.009/min of audio — a few dollars/month typical. Press Enter to skip if you don't need podcast transcription yet.</div>
           </div>
 
           <div class="account-card">
@@ -378,63 +378,32 @@ claude</code>
         <div class="step-num">3</div>
         <div class="step-title-wrap">
           <div class="step-title">Run the installer</div>
-          <div class="step-sub">Four commands — most of the work happens automatically</div>
+          <div class="step-sub">One command — everything else is automatic</div>
         </div>
         <div class="step-time-badge">~20 min</div>
       </div>
       <div class="step-body">
 
-        <div class="install-list">
-
-          <div class="install-item">
-            <div class="install-item-label"><span style="color:var(--muted);font-size:12px;font-weight:700;">1</span> Clone the pipeline code</div>
-            <div class="code-block">
-              <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
-              <code>git clone https://github.com/ygontownik/Dashboard.git ~/cos-pipeline</code>
-            </div>
-            <ul class="explain-bullets">
-              <li>The Dashboard repo is private. Git will prompt for your GitHub username and a Personal Access Token (not your password).</li>
-              <li>Generate a token at <a href="https://github.com/settings/tokens/new" target="_blank" style="color:var(--blue);">github.com/settings/tokens/new</a> with the <code class="inline">repo</code> scope.</li>
-            </ul>
-          </div>
-
-          <div class="install-item">
-            <div class="install-item-label"><span style="color:var(--muted);font-size:12px;font-weight:700;">2</span> Enter the pipeline folder</div>
-            <div class="code-block">
-              <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
-              <code>cd ~/cos-pipeline</code>
-            </div>
-          </div>
-
-          <div class="install-item">
-            <div class="install-item-label"><span style="color:var(--muted);font-size:12px;font-weight:700;">3</span> Run setup — installs dependencies, keys, and Google OAuth</div>
-            <div class="code-block">
-              <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
-              <code>./setup.sh</code>
-            </div>
-            <ul class="explain-bullets">
-              <li>Installs Python packages (pyyaml, google-auth, anthropic, assemblyai…) <span class="auto-tag">✓ automatic</span></li>
-              <li>Stores Anthropic and AssemblyAI API keys in macOS Keychain <span class="auto-tag">✓ automatic</span></li>
-              <li>Opens Google OAuth in your browser — sign in, click Allow <span class="auto-tag">✓ automatic</span></li>
-              <li>Installs background LaunchAgents (email triage, dashboard) <span class="auto-tag">✓ automatic</span></li>
-            </ul>
-          </div>
-
-          <div class="install-item">
-            <div class="install-item-label"><span style="color:var(--muted);font-size:12px;font-weight:700;">4</span> Create your Google Drive structure automatically</div>
-            <div class="code-block">
-              <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
-              <code>python3 setup_new_firm.py</code>
-            </div>
-            <ul class="explain-bullets">
-              <li>Creates all Google Drive folders (Chief of Staff, Transcripts, Deals…) <span class="auto-tag">✓ automatic</span></li>
-              <li>Creates all six Google Docs (Briefing Log, Follow-ups, Deal Pipeline…) <span class="auto-tag">✓ automatic</span></li>
-              <li>Writes <code class="inline">firm_context.yaml</code> with every folder and doc ID filled in <span class="auto-tag">✓ automatic</span></li>
-              <li>Writes <code class="inline">firm_config.json</code> with Keychain prefix and keyword arrays <span class="auto-tag">✓ automatic</span></li>
-            </ul>
-          </div>
-
+        <div class="code-block">
+          <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+          <code>curl -fsSL https://ygontownik.github.io/Dashboard/bootstrap.sh | bash</code>
         </div>
+
+        <div class="install-list" style="margin-top:4px;">
+          <div class="install-item">
+            <ul class="explain-bullets">
+              <li>Asks for your GitHub username and token → clones the repo <span class="auto-tag">✓ automatic</span></li>
+              <li>Installs Python packages (pyyaml, google-auth, anthropic, assemblyai…) <span class="auto-tag">✓ automatic</span></li>
+              <li>Opens Anthropic console → paste your key, stored in macOS Keychain <span class="auto-tag">✓ automatic</span></li>
+              <li>Opens AssemblyAI dashboard → paste your key (or Enter to skip) <span class="auto-tag">✓ automatic</span></li>
+              <li>Opens Google OAuth in your browser — sign in, click Allow <span class="auto-tag">✓ automatic</span></li>
+              <li>Creates all Google Drive folders and Docs <span class="auto-tag">✓ automatic</span></li>
+              <li>Installs background LaunchAgents, validates, opens your dashboard <span class="auto-tag">✓ automatic</span></li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="tip">Safe to re-run if anything goes wrong — skips steps that are already done.</div>
 
       </div>
     </div>
@@ -467,51 +436,6 @@ claude</code>
         </div>
 
         <div class="tip">From now on, any transcript saved by Otter or Firefly will be picked up by the pipeline automatically within 24 hours. No manual action needed.</div>
-
-      </div>
-    </div>
-
-    <!-- ── Step 5: First run ── -->
-    <div class="step">
-      <div class="step-header">
-        <div class="step-num">5</div>
-        <div class="step-title-wrap">
-          <div class="step-title">First run &amp; validate</div>
-          <div class="step-sub">Two commands — then everything runs automatically</div>
-        </div>
-        <div class="step-time-badge">~3 min</div>
-      </div>
-      <div class="step-body">
-
-        <div class="install-list">
-
-          <div class="install-item">
-            <div class="install-item-label">Validate everything is wired up</div>
-            <div class="code-block">
-              <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
-              <code>python3 ~/cos-pipeline/setup.py --validate</code>
-            </div>
-          </div>
-
-          <div class="install-item">
-            <div class="install-item-label">Run the pipeline for the first time (processes last 7 days)</div>
-            <div class="code-block">
-              <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
-              <code>python3 ~/cos-pipeline/cos_capture_pipeline.py --since 168h</code>
-            </div>
-          </div>
-
-          <div class="install-item">
-            <div class="install-item-label">Open your dashboard</div>
-            <div class="url-block">
-              <a href="http://localhost:7777" target="_blank">http://localhost:7777</a>
-              <button class="url-copy-btn" onclick="copyUrl(this)">Copy URL</button>
-            </div>
-          </div>
-
-        </div>
-
-        <div class="tip">The pipeline runs automatically every day. You only need to run commands manually if you want to process something immediately or test a change.</div>
 
       </div>
     </div>

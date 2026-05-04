@@ -310,7 +310,7 @@
 <div class="header">
   <div class="firm">Tomac Cove Infrastructure Partners</div>
   <h1>Pipeline Setup</h1>
-  <p>New machine onboarding &nbsp;·&nbsp; 6 steps &nbsp;·&nbsp; ~20 minutes</p>
+  <p>New machine onboarding &nbsp;·&nbsp; 3 steps &nbsp;·&nbsp; ~10 minutes</p>
 </div>
 
 <div class="container">
@@ -337,8 +337,7 @@
     <div>
       <div class="prereqs-label">Yoni gives you</div>
       <div class="prereq-item"><span class="check">✓</span> Access to this GitHub repo</div>
-      <div class="prereq-item"><span class="check">✓</span> The TCIP Anthropic API key</div>
-      <div class="prereq-item"><span class="check">✓</span> Google OAuth credentials file</div>
+      <div class="prereq-item"><span class="check">✓</span> Google OAuth credentials file (via secure channel)</div>
     </div>
     <div>
       <div class="prereqs-label">Before starting</div>
@@ -383,21 +382,29 @@
         <div class="step-num">2</div>
         <div>
           <div class="step-title">Run the installer</div>
-          <div class="step-time">5 minutes &nbsp;·&nbsp; downloads repos, installs dependencies</div>
+          <div class="step-time">~10 minutes &nbsp;·&nbsp; one command does everything</div>
         </div>
       </div>
       <div class="step-body">
-        <p>Open <strong>Terminal</strong> (search in Spotlight: <code>Terminal</code>) and run these two commands. The second command is interactive — it will ask for your GitHub username, your token (from Step 1), and your API key.</p>
+        <p>Open <strong>Terminal</strong> (Spotlight → <code>Terminal</code>) and run this one command:</p>
 
         <div class="code-block">
           <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
-          <code>curl -fsSL https://ygontownik.github.io/Dashboard/onboard.sh -o /tmp/tcip-onboard.sh
-bash /tmp/tcip-onboard.sh</code>
+          <code>curl -fsSL https://ygontownik.github.io/Dashboard/bootstrap.sh | bash</code>
         </div>
 
-        <p>The script will walk you through everything — no other commands needed. It tells you what it's doing at each step.</p>
+        <p>The installer will guide you through these in order — no extra commands:</p>
+        <ol>
+          <li>Asks for your GitHub username and the token from Step 1 → clones the repo</li>
+          <li>Opens the <strong>Anthropic console</strong> in your browser → create a key, paste it back</li>
+          <li>Sets a <strong>dashboard username and password</strong> — write it down</li>
+          <li>Waits while Yoni sends you <code>gdrive_credentials.json</code> → save it to <code>~/Downloads/</code>, the installer picks it up automatically</li>
+          <li>Opens <strong>Google sign-in</strong> in your browser → sign in, click Allow, return to Terminal</li>
+          <li>Validates everything and opens your dashboard</li>
+        </ol>
+
         <div class="tip">
-          If anything goes wrong, just re-run <code>bash /tmp/tcip-onboard.sh</code>. It's safe to run again.
+          If anything goes wrong, just re-run the same command. It's safe to run again — skips steps that are already done.
         </div>
       </div>
     </div>
@@ -407,92 +414,15 @@ bash /tmp/tcip-onboard.sh</code>
       <div class="step-header">
         <div class="step-num">3</div>
         <div>
-          <div class="step-title">Enter the API key when prompted</div>
-          <div class="step-time">1 minute &nbsp;·&nbsp; stored in macOS Keychain</div>
+          <div class="step-title">You're done — dashboard opens automatically</div>
+          <div class="step-time">no commands needed</div>
         </div>
       </div>
       <div class="step-body">
-        <p>During the install, you'll be prompted for an <strong>Anthropic API key</strong>. This is TCIP's shared key — get it from Yoni before running the installer. It looks like:</p>
-        <div class="code-block">
-          <div class="code-label">Format</div>
-          <code>sk-ant-api03-…</code>
+        <p>The installer validates and opens <a href="http://localhost:7777" target="_blank">http://localhost:7777</a> when it finishes. Log in with the username and password you set in Step 2.</p>
+        <div class="tip">
+          Three background tasks are now running: <strong>7:22am Mon–Fri</strong> intelligence capture &nbsp;·&nbsp; <strong>Every 2h</strong> email triage &nbsp;·&nbsp; <strong>Always on</strong> dashboard
         </div>
-        <p>The key is stored in your macOS Keychain — not in any file. It never leaves your machine and is not in any code.</p>
-        <p>You'll also set a <strong>dashboard username and password</strong>. Use anything — this is just basic auth for the local web interface. Write it down.</p>
-      </div>
-    </div>
-
-    <!-- Step 4 -->
-    <div class="step">
-      <div class="step-header">
-        <div class="step-num">4</div>
-        <div>
-          <div class="step-title">Sign in to Google when the browser opens</div>
-          <div class="step-time">2 minutes &nbsp;·&nbsp; one-time OAuth</div>
-        </div>
-      </div>
-      <div class="step-body">
-        <p>The installer will open a browser window asking you to sign into Google. This gives the pipeline read access to your Gmail and write access to the shared TCIP Google Docs.</p>
-        <ol>
-          <li>Sign in with your Google account (the one with access to TCIP docs)</li>
-          <li>Click <strong>Allow</strong> on the permissions screen</li>
-          <li>Return to Terminal — the script continues automatically</li>
-        </ol>
-        <div class="note">
-          <strong>If the browser doesn't open automatically:</strong> Terminal will print a URL — paste it into Chrome or Safari manually.
-        </div>
-      </div>
-    </div>
-
-    <!-- Step 5 -->
-    <div class="step">
-      <div class="step-header">
-        <div class="step-num">5</div>
-        <div>
-          <div class="step-title">Place the Google credentials file</div>
-          <div class="step-time">2 minutes &nbsp;·&nbsp; file copy</div>
-        </div>
-      </div>
-      <div class="step-body">
-        <p>Yoni will share a file called <code>gdrive_credentials.json</code> via a secure channel. This is the Google Cloud OAuth client — it's what allows the pipeline to open the browser sign-in flow.</p>
-        <ol>
-          <li>Save the file Yoni sends you</li>
-          <li>Move it to exactly this path:</li>
-        </ol>
-        <div class="code-block">
-          <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
-          <code>mkdir -p ~/credentials
-mv ~/Downloads/gdrive_credentials.json ~/credentials/gdrive_credentials.json</code>
-        </div>
-        <p>If <code>setup.sh</code> already ran before this file was in place, just run it again:</p>
-        <div class="code-block">
-          <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
-          <code>cd ~/cos-pipeline && ./setup.sh --resume</code>
-        </div>
-      </div>
-    </div>
-
-    <!-- Step 6 -->
-    <div class="step">
-      <div class="step-header">
-        <div class="step-num">6</div>
-        <div>
-          <div class="step-title">Verify everything is running</div>
-          <div class="step-time">1 minute</div>
-        </div>
-      </div>
-      <div class="step-body">
-        <p>Run a quick validation to confirm the pipeline can reach all its dependencies:</p>
-        <div class="code-block">
-          <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
-          <code>cd ~/cos-pipeline && python3 setup.py --validate</code>
-        </div>
-        <p>Then open the dashboard:</p>
-        <div class="code-block">
-          <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
-          <code>open http://localhost:7777</code>
-        </div>
-        <p>You should see the TCIP dashboard with live data. From here it runs automatically — no manual steps needed day-to-day.</p>
       </div>
     </div>
 
@@ -506,7 +436,7 @@ mv ~/Downloads/gdrive_credentials.json ~/credentials/gdrive_credentials.json</co
         <strong>Always on</strong> — dashboard server
       </p>
       <a class="url" href="http://localhost:7777" target="_blank">http://localhost:7777</a>
-      <p style="font-size: 13px; margin-top: 8px;">Log into your local dashboard with the username + password you set in Step 3.</p>
+      <p style="font-size: 13px; margin-top: 8px;">Log in with the username and password you set during the installer.</p>
     </div>
 
   </div>
