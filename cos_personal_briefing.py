@@ -217,12 +217,10 @@ Copy exactly from the doc — do not paraphrase.
 
 **Podcasts**
 From the Personal Briefing Log, find podcast episode memos added in the last 48 hours.
-For each episode:
-**[Show Name] — "[Episode Title]"**
-- [Core argument — one sentence]
-- [Single most actionable investment angle — named asset, firm, deal structure, or regulatory position]
-- Names: [named people and firms]
+For each episode, one line only:
+**[Show] — "[Episode Title]"** · [THE CORE ARGUMENT verbatim from the memo, max 25 words] · _[single most investment-relevant named asset, firm, or person]_
 If no episodes in last 48h: omit this subsection entirely.
+Do not bullet-list points. One line per episode, no more.
 
 RULES:
 - Output ONLY the briefing markdown. No preamble, no closing remarks.
