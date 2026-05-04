@@ -612,66 +612,171 @@ EOF
   ok "Domain bundle '$DOMAIN' copied to $CONFIG_DIR; firm_context.yaml :: domain stamped"
 fi
 
-# ── Step 3c: Market Intelligence sources ─────────────────────────────────────
+# ── Step 3c: Market Intelligence — sectors + sources ─────────────────────────
 echo ""
-echo "  Market Intelligence sources (for your daily briefing):"
-echo "  These are public RSS feeds — select any you want fetched each morning."
+echo "  ── Market Intelligence personalisation ──────────────────────────────"
 echo ""
-echo "    1) RBN Energy Daily     — natural gas / LNG market commentary"
-echo "    2) Distributed Grid     — power / grid policy (Michael Lee, Substack)"
-echo "    3) Doomberg             — energy finance and macro"
-echo "    4) Columbia SIPA CGEP   — energy policy research (public)"
-echo "    5) None / skip"
+echo "  What sectors or topics does this user focus on?"
+echo "  (These drive briefing themes, source suggestions, and synthesis style.)"
 echo ""
-echo "  Enter numbers separated by spaces (e.g. 1 2) or press Enter to skip:"
-read -r _MARKET_PICKS
+echo "    1) Power & Utilities        — generation, transmission, grid"
+echo "    2) Digital Infrastructure   — data centers, fiber, towers"
+echo "    3) Midstream & LNG          — pipelines, gas processing, export"
+echo "    4) Real Estate              — CRE, multifamily, industrial"
+echo "    5) Private Credit           — lending, structured finance"
+echo "    6) Macro / Capital Markets  — rates, M&A, dealmaking"
+echo "    7) Healthcare Infrastructure"
+echo ""
+echo "  Enter numbers separated by spaces (e.g. 1 2 3) or press Enter to skip:"
+read -r _SECTOR_PICKS
 
-_BLOGS_YAML=""
-for _pick in $_MARKET_PICKS; do
-  case "$_pick" in
-    1) _BLOGS_YAML+="    - name: \"RBN Energy Daily\"\n      url: \"https://rbnenergy.com/feed\"\n      type: \"rss\"\n" ;;
-    2) _BLOGS_YAML+="    - name: \"Distributed Grid\"\n      url: \"https://distributedgrid.substack.com/feed\"\n      type: \"rss\"\n" ;;
-    3) _BLOGS_YAML+="    - name: \"Doomberg\"\n      url: \"https://doomberg.substack.com/feed\"\n      type: \"rss\"\n" ;;
-    4) _BLOGS_YAML+="    - name: \"Columbia CGEP\"\n      url: \"https://energypolicy.columbia.edu/feed/\"\n      type: \"rss\"\n" ;;
+# Map picks → sector names
+_SECTOR_LIST=""
+for _sp in $_SECTOR_PICKS; do
+  case "$_sp" in
+    1) _SECTOR_LIST+="Power & Utilities|" ;;
+    2) _SECTOR_LIST+="Digital Infrastructure|" ;;
+    3) _SECTOR_LIST+="Midstream & LNG|" ;;
+    4) _SECTOR_LIST+="Real Estate|" ;;
+    5) _SECTOR_LIST+="Private Credit|" ;;
+    6) _SECTOR_LIST+="Macro / Capital Markets|" ;;
+    7) _SECTOR_LIST+="Healthcare Infrastructure|" ;;
+  esac
+done
+_SECTOR_LIST="${_SECTOR_LIST%|}"   # strip trailing pipe
+
+if [ -n "$_SECTOR_LIST" ]; then
+  python3 - "$_SECTOR_LIST" <<'PYEOF'
+import sys, yaml
+sectors = sys.argv[1].split("|")
+p = "YAML_PLACEHOLDER"
+y = yaml.safe_load(open(p)) or {}
+personal = y.setdefault("personal", {})
+intel = personal.setdefault("intelligence", {})
+intel["sectors"] = sectors
+yaml.safe_dump(y, open(p, "w"), sort_keys=False, default_flow_style=False, allow_unicode=True, width=100)
+PYEOF
+  # re-run inline so $YAML expands correctly
+  python3 - <<PYEOF
+import sys, yaml
+sectors = "$_SECTOR_LIST".split("|")
+p = "$YAML"
+y = yaml.safe_load(open(p)) or {}
+personal = y.setdefault("personal", {})
+intel = personal.setdefault("intelligence", {})
+intel["sectors"] = sectors
+yaml.safe_dump(y, open(p, "w"), sort_keys=False, default_flow_style=False, allow_unicode=True, width=100)
+PYEOF
+  ok "Sectors written: $_SECTOR_LIST"
+else
+  info "No sectors selected — edit personal.intelligence.sectors in firm_context.yaml later."
+fi
+
+# Gmail label for forwarded newsletters / articles
+echo ""
+echo "  Gmail label for market intel emails (newsletters you forward or label)."
+echo "  Apply this label in Gmail to any email you want included in your morning brief."
+printf "  Label name [Market Intel]: "
+read -r _GMAIL_LABEL
+_GMAIL_LABEL="${_GMAIL_LABEL:-Market Intel}"
+python3 - <<PYEOF
+import yaml
+p = "$YAML"
+y = yaml.safe_load(open(p)) or {}
+personal = y.setdefault("personal", {})
+intel = personal.setdefault("intelligence", {})
+intel["gmail_label"] = "$_GMAIL_LABEL"
+yaml.safe_dump(y, open(p, "w"), sort_keys=False, default_flow_style=False, allow_unicode=True, width=100)
+PYEOF
+ok "Gmail label set: '$_GMAIL_LABEL'"
+
+# Sector-filtered RSS source suggestions
+echo ""
+echo "  Suggested RSS sources based on your sectors:"
+echo "  (These are fetched automatically each morning by cos_market_fetch.py)"
+echo ""
+
+# Build source menu filtered to selected sectors
+_SOURCE_MENU=()
+_SOURCE_DATA=()
+
+_has_energy=false; _has_digital=false; _has_macro=false; _has_re=false
+for _sp in $_SECTOR_PICKS; do
+  case "$_sp" in
+    1|3) _has_energy=true ;;
+    2)   _has_digital=true ;;
+    4)   _has_re=true ;;
+    5|6) _has_macro=true ;;
   esac
 done
 
-if [ -n "$_BLOGS_YAML" ]; then
-  python3 - <<PYEOF
-import yaml, re
+_IDX=1
+if $_has_energy; then
+  echo "    $_IDX) RBN Energy Daily        — natural gas / LNG market commentary"
+  _SOURCE_MENU+=("$_IDX"); _SOURCE_DATA["$_IDX"]="RBN Energy Daily|https://rbnenergy.com/feed"
+  _IDX=$((_IDX+1))
+  echo "    $_IDX) Distributed Grid        — power & grid policy (Michael Lee)"
+  _SOURCE_MENU+=("$_IDX"); _SOURCE_DATA["$_IDX"]="Distributed Grid|https://distributedgrid.substack.com/feed"
+  _IDX=$((_IDX+1))
+  echo "    $_IDX) Columbia CGEP           — energy policy research"
+  _SOURCE_MENU+=("$_IDX"); _SOURCE_DATA["$_IDX"]="Columbia CGEP|https://energypolicy.columbia.edu/feed/"
+  _IDX=$((_IDX+1))
+fi
+if $_has_digital || $_has_energy || $_has_macro; then
+  echo "    $_IDX) Doomberg                — energy finance and macro"
+  _SOURCE_MENU+=("$_IDX"); _SOURCE_DATA["$_IDX"]="Doomberg|https://doomberg.substack.com/feed"
+  _IDX=$((_IDX+1))
+fi
+if $_has_macro; then
+  echo "    $_IDX) Axios Pro: Energy       — deal and policy news"
+  _SOURCE_MENU+=("$_IDX"); _SOURCE_DATA["$_IDX"]="Axios Pro Energy|https://www.axios.com/feeds/feed.rss"
+  _IDX=$((_IDX+1))
+fi
+if $_has_re; then
+  echo "    $_IDX) The Real Deal           — CRE market news"
+  _SOURCE_MENU+=("$_IDX"); _SOURCE_DATA["$_IDX"]="The Real Deal|https://therealdeal.com/feed/"
+  _IDX=$((_IDX+1))
+fi
+echo "    $_IDX) None / skip"
+echo ""
+echo "  Enter numbers (e.g. 1 3) or press Enter to skip:"
+read -r _SOURCE_PICKS
+
+# Write selected sources to firm_context.yaml
+if [ -n "$_SOURCE_PICKS" ]; then
+  _SELECTED_SOURCES="[]"
+  for _pick in $_SOURCE_PICKS; do
+    _entry="${_SOURCE_DATA[$_pick]:-}"
+    [ -z "$_entry" ] && continue
+    _sname="${_entry%%|*}"
+    _surl="${_entry##*|}"
+    _SELECTED_SOURCES=$(python3 -c "
+import json, sys
+lst = json.loads('$_SELECTED_SOURCES')
+lst.append({'name': '$_sname', 'url': '$_surl', 'type': 'rss'})
+print(json.dumps(lst))
+")
+  done
+  if [ "$_SELECTED_SOURCES" != "[]" ]; then
+    python3 - <<PYEOF
+import json, yaml
 p = "$YAML"
 y = yaml.safe_load(open(p)) or {}
 personal = y.setdefault("personal", {})
 feeds = personal.setdefault("content_feeds", {})
-# Build blogs list from shell-generated YAML snippet
-import textwrap
-raw = "$_BLOGS_YAML"
-# Use Python to parse the multi-line entry correctly
-entries = []
-lines = raw.replace("\\n", "\n").split("\n")
-cur = {}
-for line in lines:
-    line = line.strip()
-    if line.startswith("- name:"):
-        if cur: entries.append(cur)
-        cur = {"name": line.split('"')[1]}
-    elif line.startswith("url:"):
-        cur["url"] = line.split('"')[1]
-    elif line.startswith("type:"):
-        cur["type"] = line.split('"')[1]
-if cur: entries.append(cur)
+new_sources = json.loads('$_SELECTED_SOURCES')
 existing = feeds.get("blogs") or []
-# Merge — avoid duplicates by name
 names = {e["name"] for e in existing}
-for e in entries:
-    if e["name"] not in names:
-        existing.append(e)
+for s in new_sources:
+    if s["name"] not in names:
+        existing.append(s)
 feeds["blogs"] = existing
 yaml.safe_dump(y, open(p, "w"), sort_keys=False, default_flow_style=False, allow_unicode=True, width=100)
 PYEOF
-  ok "Market sources written to firm_context.yaml — cos_market_fetch.py will run daily at 6:45am"
+    ok "RSS sources written to firm_context.yaml"
+  fi
 else
-  info "No market sources selected — skipped. Edit personal.content_feeds.blogs in firm_context.yaml to add later."
+  info "No RSS sources selected — edit personal.content_feeds.blogs in firm_context.yaml to add later."
 fi
 
 # ── Step 4: Transcripts source picker (D8) ──────────────────────────────────

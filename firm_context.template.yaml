@@ -268,6 +268,20 @@ transcript_sources:
 # To override firm-level feeds entirely, set firm_config.json podcast_feeds to {}.
 
 personal:
+  intelligence:
+    # Sectors you focus on — drives Market Intelligence synthesis themes,
+    # RSS source suggestions, and briefing section headers.
+    # Edit freely; the daily market fetch and briefing prompt both read this.
+    sectors: []
+    # Example values: "Power & Utilities", "Digital Infrastructure",
+    # "Midstream & LNG", "Real Estate", "Private Credit",
+    # "Macro / Capital Markets", "Healthcare Infrastructure"
+
+    # Gmail label to watch for forwarded newsletters and articles.
+    # Apply this label in Gmail to any email you want included in your
+    # morning market brief. Leave blank to disable Gmail ingestion.
+    gmail_label: "Market Intel"
+
   content_feeds:
     podcasts:
       # Add RSS feeds you want transcribed and summarized daily

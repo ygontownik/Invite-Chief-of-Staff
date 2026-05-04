@@ -211,11 +211,11 @@ If none: "No active deals."
 
 ### Market Intelligence
 From the Daily Market Update doc, find the most recent entry (today or yesterday).
-- Write the **KEY TAKEAWAY** verbatim (one sentence)
-- Write 3–5 most investment-relevant bullets from sections 1–3 (Digital Infra/Energy, Regulatory, Capital Flows/Dealmaking). Prioritize: named assets, dollar amounts, named firms, regulatory decisions with hard dates.
-- Format each bullet: `- **[Section header]:** [first sentence of insight, 30–60 words max]`
+- Write the **KEY TAKEAWAY** line verbatim (one sentence)
+- Write the sector bullets verbatim — preserve the **bold sector headers** and bullet text exactly as written. Do not reformat or summarize.
+- If a WEEKLY WRAP section is present (Fridays), include it verbatim after the daily bullets.
 If no entry from the last 48h exists: "No new market update today."
-This section is parsed by the dashboard fetch script — make it specific, not thematic.
+This section is parsed by the dashboard — copy it exactly from the doc, do not paraphrase.
 
 ### Captured Overnight
 One paragraph (3–5 sentences) summarizing what the capture pipeline added since yesterday, based on the most recent Capture Summary entry in the Personal Briefing Log tail.
