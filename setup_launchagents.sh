@@ -152,8 +152,26 @@ install_gmail() {
   write_plist "gmail-mini" "$sched" "$cmd" "false" "false"
 }
 
+install_market_fetch() {
+  echo ""
+  echo "── Installing cos-market-fetch (daily 6:45am Mon-Fri) ──"
+  local sched=$(cat <<'XML'
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>6</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>6</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>6</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>6</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>6</integer><key>Minute</key><integer>45</integer></dict>
+    </array>
+XML
+)
+  local cmd="source $SECRETS_HELPER 2>/dev/null || true; cd $REPO && python3 cos_market_fetch.py 2>&1"
+  write_plist "market-fetch" "$sched" "$cmd" "false" "false"
+}
+
 uninstall_all() {
-  for name in dashboard-server capture-pipeline gmail-mini; do
+  for name in dashboard-server capture-pipeline gmail-mini market-fetch; do
     local plist="$LAUNCH_DIR/${LAUNCH_LABEL_PREFIX:-com.cos-pipeline.}$name.plist"
     if [ -f "$plist" ]; then
       launchctl unload "$plist" 2>/dev/null || true
@@ -183,10 +201,31 @@ case "${1:-all}" in
   gmail)
     install_gmail
     ;;
+  market-fetch)
+    install_market_fetch
+    ;;
   all|*)
     install_dashboard
     install_capture
     install_gmail
+    # Only install market-fetch if the subscriber has configured blogs sources
+    _has_blogs=$(python3 -c "
+import sys, yaml
+try:
+    ctx = yaml.safe_load(open('firm_context.yaml'))
+    blogs = (ctx.get('personal') or {}).get('content_feeds', {}).get('blogs') or []
+    print('yes' if blogs else 'no')
+except Exception:
+    print('no')
+" 2>/dev/null || echo "no")
+    if [ "$_has_blogs" = "yes" ]; then
+      install_market_fetch
+    else
+      echo ""
+      echo "── Skipping cos-market-fetch (no blogs sources configured) ──"
+      echo "   Add feeds under personal.content_feeds.blogs in firm_context.yaml"
+      echo "   then run: ./setup_launchagents.sh market-fetch"
+    fi
     ;;
 esac
 
@@ -196,7 +235,7 @@ echo "  Done. Check status with:"
 echo "    launchctl list | grep ${LAUNCH_LABEL_PREFIX:-com.cos-pipeline.}"
 echo ""
 echo "  Logs at:"
-echo "    $LOG_DIR/{dashboard-server,capture-pipeline,gmail-mini}.{stdout,stderr}.log"
+echo "    $LOG_DIR/{dashboard-server,capture-pipeline,gmail-mini,market-fetch}.{stdout,stderr}.log"
 echo ""
 echo "  Dashboard:"
 echo "    http://localhost:${DASH_PORT:-7777}"

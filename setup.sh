@@ -612,6 +612,68 @@ EOF
   ok "Domain bundle '$DOMAIN' copied to $CONFIG_DIR; firm_context.yaml :: domain stamped"
 fi
 
+# ── Step 3c: Market Intelligence sources ─────────────────────────────────────
+echo ""
+echo "  Market Intelligence sources (for your daily briefing):"
+echo "  These are public RSS feeds — select any you want fetched each morning."
+echo ""
+echo "    1) RBN Energy Daily     — natural gas / LNG market commentary"
+echo "    2) Distributed Grid     — power / grid policy (Michael Lee, Substack)"
+echo "    3) Doomberg             — energy finance and macro"
+echo "    4) Columbia SIPA CGEP   — energy policy research (public)"
+echo "    5) None / skip"
+echo ""
+echo "  Enter numbers separated by spaces (e.g. 1 2) or press Enter to skip:"
+read -r _MARKET_PICKS
+
+_BLOGS_YAML=""
+for _pick in $_MARKET_PICKS; do
+  case "$_pick" in
+    1) _BLOGS_YAML+="    - name: \"RBN Energy Daily\"\n      url: \"https://rbnenergy.com/feed\"\n      type: \"rss\"\n" ;;
+    2) _BLOGS_YAML+="    - name: \"Distributed Grid\"\n      url: \"https://distributedgrid.substack.com/feed\"\n      type: \"rss\"\n" ;;
+    3) _BLOGS_YAML+="    - name: \"Doomberg\"\n      url: \"https://doomberg.substack.com/feed\"\n      type: \"rss\"\n" ;;
+    4) _BLOGS_YAML+="    - name: \"Columbia CGEP\"\n      url: \"https://energypolicy.columbia.edu/feed/\"\n      type: \"rss\"\n" ;;
+  esac
+done
+
+if [ -n "$_BLOGS_YAML" ]; then
+  python3 - <<PYEOF
+import yaml, re
+p = "$YAML"
+y = yaml.safe_load(open(p)) or {}
+personal = y.setdefault("personal", {})
+feeds = personal.setdefault("content_feeds", {})
+# Build blogs list from shell-generated YAML snippet
+import textwrap
+raw = "$_BLOGS_YAML"
+# Use Python to parse the multi-line entry correctly
+entries = []
+lines = raw.replace("\\n", "\n").split("\n")
+cur = {}
+for line in lines:
+    line = line.strip()
+    if line.startswith("- name:"):
+        if cur: entries.append(cur)
+        cur = {"name": line.split('"')[1]}
+    elif line.startswith("url:"):
+        cur["url"] = line.split('"')[1]
+    elif line.startswith("type:"):
+        cur["type"] = line.split('"')[1]
+if cur: entries.append(cur)
+existing = feeds.get("blogs") or []
+# Merge — avoid duplicates by name
+names = {e["name"] for e in existing}
+for e in entries:
+    if e["name"] not in names:
+        existing.append(e)
+feeds["blogs"] = existing
+yaml.safe_dump(y, open(p, "w"), sort_keys=False, default_flow_style=False, allow_unicode=True, width=100)
+PYEOF
+  ok "Market sources written to firm_context.yaml — cos_market_fetch.py will run daily at 6:45am"
+else
+  info "No market sources selected — skipped. Edit personal.content_feeds.blogs in firm_context.yaml to add later."
+fi
+
 # ── Step 4: Transcripts source picker (D8) ──────────────────────────────────
 step "[4/8] Transcripts source"
 echo "    Pick which transcript app(s) feed this instance:"

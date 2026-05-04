@@ -277,13 +277,16 @@ personal:
       # - name: "Your Favorite Show"
       #   rss: "https://example.com/feed.rss"
     blogs:
-      # Add RSS/Atom feeds for blogs, newsletters, research sites
-      # Entries are fetched daily and appended to your briefing
-      # - name: "RBN Energy Daily"
-      #   url: "https://rbnenergy.com/feed"
-      #   type: "rss"
-      # - name: "Substack Newsletter"
-      #   url: "https://newsletter.substack.com/feed"
+      # RSS/Atom feeds fetched daily at 6:45am by cos_market_fetch.py.
+      # Selected during setup — edit freely to add or remove sources.
+      # Available pre-configured sources:
+      #   RBN Energy Daily       https://rbnenergy.com/feed
+      #   Distributed Grid       https://distributedgrid.substack.com/feed
+      #   Doomberg               https://doomberg.substack.com/feed
+      #   Columbia CGEP          https://energypolicy.columbia.edu/feed/
+      # To add a custom source:
+      # - name: "My Newsletter"
+      #   url: "https://example.substack.com/feed"
       #   type: "rss"
 
   daily_briefing:
