@@ -946,6 +946,181 @@ Log each supersession to stderr so prompt drift can be audited.
 
 ---
 
+## TOPIC — DEAL STAGE & FRESHNESS
+
+### 2026-05-04 — Canonical deal-stage ladder (ordered)
+
+Every `data/deals/<TICKER>/deal.md > stage` value MUST be one of the following canonical labels (case-sensitive). `stage_index` mirrors the ordinal position so compile can sort:
+
+| stage_index | stage | Meaning |
+|---|---|---|
+| 0 | `Watch` | Passive intel only; no engagement |
+| 1 | `Sourcing` | Active research / dialogue; no commitment yet |
+| 2 | `Active Bid` | The firm has put forward a position (bid, indication, term sheet) |
+| 3 | `Diligence` | Engaged commercial diligence |
+| 4 | `Advisory` | The firm holds a paid/structured advisor role |
+| 5 | `Memo` | IC-memo stage |
+| 6 | `IC` | At investment committee |
+| 7 | `Live` | Closed / portfolio company |
+| — | `Dormant` | Relationship paused; off active surfaces (separate sidecar) |
+
+When a stage-graduating action closes (bid submitted, term sheet drafted, diligence opened, IC date booked), the `stage` AND `stage_index` MUST update in the same commit as the action's closure. **Banned**: leaving `stage: Sourcing` on a deal whose actions or briefing prose describe it as bid-active.
+
+### 2026-05-04 — Stage-progression discipline
+
+Companion to the ladder above. Acceptance criteria for stage advancement:
+
+- `Sourcing → Active Bid`: a firm-side commitment has been formally communicated to the counterparty (bid, term sheet, equity indication).
+- `Active Bid → Diligence`: counterparty has accepted/engaged on the bid; commercial diligence is open.
+- `Diligence → Advisory`: firm role has been formalized in writing (paid advisory, observer, structured engagement).
+- `* → Memo / IC`: an IC date is on the calendar.
+- `* → Live`: closing documents are signed.
+- `* → Dormant`: lastAction >30 days, no concrete next step, and the relationship has not been formally killed. Move to a `dormant:` sidecar.
+
+A `/dash` audit that finds the stage label inconsistent with the deal's actions.md or recent briefing prose MUST update the stage in the same pass — don't silently note the discrepancy.
+
+### 2026-05-04 — `last_activity` auto-derived from signals, not hand-edited
+
+`data/deals/<TICKER>/deal.md > last_activity` is treated as a fallback only. The compile step (`deal-system-compile.py > overlay_fresh_signals()`) computes:
+
+```
+last_activity = max(
+    dashboard-data.json > tomac[].latestUpdate.date,    # tomac doc parse
+    max(addedDate of followUps[] mentioning the deal),
+    max(addedDate of awaitingExternal[] mentioning the deal),
+    deal.md hand-edited last_activity
+)
+```
+
+Tokens used to "mention the deal": canonical name, ticker, id (lowercased substring match against followUp `who`/`what` and awaiting `counterparty`/`content`).
+
+### 2026-05-04 — `next_milestone` must always reference a future date
+
+`data/deals/<TICKER>/deal.md > next_milestone_due` MUST be ≥ today. A past `next_milestone_due` means the milestone happened (close it; queue the next one) or slipped (roll forward with explicit reasoning). **Banned**: leaving a past `next_milestone_due` to render on the deal-pipeline mini-card.
+
+**Detection**: `python3 -c "import json,datetime; t=datetime.date.today().isoformat(); ds=json.load(open('data/compiled/deal-system-data.json')); [print(d['name'], d.get('next_milestone_due')) for d in ds['deals'] if (d.get('next_milestone_due') or '') < t]"` — should be empty.
+
+---
+
+## TOPIC — PROSE / TIME-REFERENCE STALENESS (companion to next-week → week-of rule)
+
+### 2026-05-04 — Curated config prose must not reference closed time windows
+
+`takeaway` / `nextStep` strings in `deal-config.yaml` and `recruit-config.yaml` MUST NOT reference calendar-bounded events that have passed (e.g. "site visit Apr 28–May 2", "before the Dallas trip", "ranch visit window"). When the window closes, the prose goes silently stale and misleads any reader.
+
+**Rule**: extend the 2026-05-04 next-week → week-of rule from extraction prompts to curated config files. When a `/dash` review finds a takeaway/nextStep referencing a closed window, it MUST be rewritten in the same pass.
+
+### 2026-05-04 — Briefing/dashboard takeaway sync
+
+When the daily briefing fullText surfaces deal context absent from the curated `deal-config.yaml > takeaway`, that context is fresh intel and must be reflected in the curated source. The briefing should be the highest-fidelity restatement; the dashboard takeaway should not lag the briefing's mention of the same deal.
+
+**Detection**: `grep -i '<deal name>' /tmp/daily_briefing_*.txt` — diff the bullets against the curated takeaway for material new facts (named counterparties, committee meetings, geology/structural validation, deadline).
+
+---
+
+## TOPIC — ACTION-LIST INTEGRITY
+
+### 2026-05-04 — `awaitingExternal ↔ myAction` mirror rule
+
+When `awaitingExternal[]` contains a specific deliverable owed by the principal/team to a counterparty (data send, redline counter, Zoom set-up), the corresponding `deal-config.yaml > myAction` for that counterparty MUST cite the specific deliverable, not paraphrase as "follow up."
+
+**Rule**: at compile time (or at the analyst review step), for each curated entry that has matching awaitingExternal items, surface a warning if the myAction string does not contain ≥1 noun from the awaiting content. Cheap signal; high-value.
+
+### 2026-05-04 — Workflow-gate explicitness
+
+When a myAction is gated on a sub-decision ("after aligning with X on Y", "once Z resolves"), the gate is itself an open team-action and MUST surface as one — assigned to the gate-holder. Do not bury blocking decisions inside dependent action text.
+
+**Pattern**: split a gated myAction `"Send X to Y after aligning with Z on W"` into:
+- A blocker action: `"Decide W with Z — <downstream> blocked until resolved"` (owner = Z)
+- A dependent action: `"Send X to Y (post W decision)"` (owner = original)
+
+### 2026-05-04 — Empty-myAction → wait-state explicit
+
+If a curated config row has `myAction: ""` AND nextStep names a dependency, set myAction explicitly to `"Wait — gated on <X>"`. Empty myAction with a dependency dependency is silent ambiguity. Alternative: move the row to a dormant sidecar.
+
+### 2026-05-04 — Counterparty-commitment categorization
+
+`awaitingExternal[]` is for items pending a counterparty's response that affects YOUR pipeline. The counterparty's own commitments-to-you (e.g., "X pledged $Y when you bring a deal") belong in a `standingCommitments:` array on the prospectiveInvestor / advisor record. Do NOT route counterparty pledges into the awaiting queue — they create false noise.
+
+### 2026-05-04 — Activity-volume vs. nextStep freshness
+
+When a recruiting target or deal has ≥3 follow-ups in the last 7 days, the curated `nextStep` MUST reflect the most recent activity. A static nextStep that is older than the most recent burst of follow-ups is stale and misleading.
+
+**Detection** (per `/dash` review): for each recruit-config row, count `followUps[]` whose `who` matches in the last 7 days; if count ≥3 and the row's `lastAction` < oldest-of-the-three, flag for refresh.
+
+---
+
+## TOPIC — DORMANCY & SCOPE
+
+### 2026-05-04 — Dormancy classification rule
+
+Counterparties (LP advisors, prospective investors, recruiting targets, recruiters) with `myAction: ""` AND `lastAction` >30 days old MUST be moved to a dormant sidecar — NOT left in the active list. Active surfaces are for items the user touches; dormant is a separate watchlist.
+
+**Implementation**:
+- `deal-config.yaml > dormantInvestors:` array (sibling of `prospectiveInvestors`).
+- `recruit-config.yaml > priorityTargets.dormant:` array (sibling of `inDiscussion / waitingToHear / doIChase`).
+- Recruiter rows: add `status: dormant` field on the row itself; UI filters out unless dormant view is opted in.
+
+Each dormant entry carries `movedToDormant: YYYY-MM-DD` and a `nextStep` that names the reactivation trigger (e.g., "Reactivate if a concrete role surfaces via the introducing firm").
+
+**Reactivation**: when a fresh signal arrives (call, email, intro), move the row back to the active bucket AND update lastAction.
+
+### 2026-05-04 — Recruiting-bucket scope rule
+
+`recruit-config.yaml > priorityTargets / recruiters` are for ACTIVE job-search interactions. Items where the underlying relationship is operational (deal counterparty, M&A history, prior-employer commodity overlap, vendor) MUST NOT be in recruit-config — they belong in deal-config or a dedicated relationship tracker.
+
+**Documented exception**: an entry in `priorityTargets.inDiscussion` whose name contains `(CURRENT ROLE)` is the principal's career anchor (e.g., the firm they currently work at / are co-founding) and is intentionally tracked here as the career-arc reference. The cross-config dedup assertion treats this as a special case.
+
+### 2026-05-04 — Time-bounded one-time-event auto-removal
+
+Personal items / awaiting items whose trigger has a known natural expiry (LinkedIn device-verification email, expiring offer codes, scheduled-event confirmations, calendar-invite RSVPs past the event date) MUST be auto-removed once the expiry passes. Extends the 2026-05-04 stale-event auto-expire patterns to the personal-items.json schema.
+
+### 2026-05-04 — `pending-verification` status for items the user can't quickly confirm
+
+Personal items where the close criteria is "did this run/work as expected?" and the user can't confirm at audit time get a `status: pending-verification` tag and roll forward 7 days. They are NOT silently closed and NOT left in the active list as if open.
+
+---
+
+## TOPIC — DEDUP / CONSISTENCY
+
+### 2026-05-04 — Cross-config dedup assertion (deal-config × recruit-config)
+
+An entity (firm name) in `deal-config.yaml` (any section) MUST NOT also exist in `recruit-config.yaml` (any section). The dashboard server runs `_assert_cross_config_dedup()` at module import (startup) and logs a warning per overlap to the server log. Documented exception: `(CURRENT ROLE)` suffix in recruit-config.
+
+**Rule**: when adding a new entry to either file, grep the other for the firm name. If it exists in both, decide which surface owns it and remove from the other.
+
+### 2026-05-04 — Alias-before-supersession order in workflow-stage matching
+
+`_supersede_workflow_stages()` MUST canonicalize counterparty via `__cpClusterKey` BEFORE grouping items. Verified working in the current implementation — the bug was the upstream regex, not the grouping.
+
+**Companion fix this session**: broadened the NDA upstream regex from `(draft|deliver|send\s+draft)\s+(mutual\s+)?nda` to `(draft|deliver|send|finaliz[ae]|issue|stand[\s-]?up|prepar(e|ing))\s+...\s+nda` so "Finalize and send NDA" matches and gets superseded by "Review NDA redline" on the same canonical counterparty. **Rule for future regex tuning**: when a supersession fails to fire on a known alias-grouped pair, the bug is the verb pattern, not the grouping.
+
+### 2026-05-04 — Curated-config-wins over awaitingExternal (auto-tombstone duplicates)
+
+When the same operational action appears both as a curated `deal-config.yaml > myAction` AND an `awaitingExternal[]` item, the awaiting copy is auto-tombstoned. Curated wins; awaitingExternal is the queue for not-yet-curated items. Implemented at compile time by matching canonical counterparty + content-token overlap.
+
+### 2026-05-04 — Briefing must reference deal-config-known deals
+
+Any deal mentioned in the daily-briefing fullText must correspond to a deal in `deal-config.yaml > liveDeals|dealOrigination` OR `data/deals/<TICKER>/`. Briefing-only deals (no curated config and no deal directory) MUST be auto-suppressed by the briefing pipeline before output. Either add the deal to config or drop from briefing.
+
+**Implementation**: the briefing SKILL reads `deal-config.yaml` and filters its candidate list against the union of `liveDeals + dealOrigination + data/deals/*/` directories. A `briefingExclude:` array in deal-config.yaml provides explicit suppression for borderline cases.
+
+---
+
+## TOPIC — OUTCOME CAPTURE & OBSERVABILITY
+
+### 2026-05-04 — In-person-meeting outcome capture rule
+
+When a recruiting/deal target has a calendared in-person meeting and the date passes, the dashboard MUST flag for retro-takeaway capture. The meeting either happened (capture takeaway, advance the relationship) or was missed (re-propose). Either way it is NOT acceptable to leave the row showing "meeting next week" five days after the date.
+
+**Detection**: any recruit-config / deal-config row whose `nextStep` mentions a date within the past 14 days AND `lastAction` < that date — flag for capture.
+
+### 2026-05-04 — `briefingSynopsis.captureSummary` freshness assertion
+
+`/briefing/intel.json` returns `synopsis.captureSummary` with a `date` field. If `captureSummary.date < today - 1`, the capture pipeline didn't run today. Surface a warning chip on the briefing tab + log to stderr. With the routines catch-up agent live, the underlying capture should run at every wake — a stale captureSummary is now an actionable signal of pipeline failure, not an ambient background condition.
+
+---
+
 ## TOPIC — PAST-DUE ITEM RESOLUTION
 
 ### 2026-05-04 — Past-due deal action sweep: every passed date must be classified, not left
@@ -956,7 +1131,7 @@ When a `/dash` audit finds open or in-progress actions in `data/deals/<TICKER>/a
 2. **Superseded** — overtaken by a newer action that subsumes it. Move to closed; reference the superseding row.
 3. **Stage-graduated** — the underlying workstream advanced (e.g. an "intro call" became an "active diligence" workstream). Either close the parent and add the new child action, or update both `Action` and `due` in place with a comment.
 4. **Rolled forward** — still genuinely open but the date is stale. Update `due` to a sensible future date (typically 1–2 weeks out) and update `status` to `in-progress` if there's evidence of active work.
-5. **Blocked** — pending an external party. Update `status` to `blocked` and the `Action` text to name what's blocking (e.g. "gated on Mercuria deal-structure clarity").
+5. **Blocked** — pending an external party. Update `status` to `blocked` and the `Action` text to name what's blocking (e.g. "gated on counterparty deal-structure clarity").
 
 **Banned**: leaving a past-due open action in the tracker without classifying it. A passed date with no resolution is silent rot — it makes the dashboard look stale and trains the user to ignore the dates.
 

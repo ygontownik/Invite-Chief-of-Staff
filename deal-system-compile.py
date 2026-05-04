@@ -148,13 +148,44 @@ def overlay_fresh_signals() -> int:
 
         latest = match.get('latestUpdate') or {}
         fresh_date = (latest.get('date') or '').strip()
-        if _DATE_RE.match(fresh_date):
+        # 2026-05-04: also scan followUps[] and awaitingExternal[] for items
+        # whose `who` / `counterparty` mentions the deal — take max addedDate.
+        # This auto-derives last_activity from the broader signal set, so a
+        # deal touched by an email/transcript yesterday updates even if the
+        # tomac doc hasn't been re-parsed yet.
+        deal_tokens = [t for t in (
+            (d.get('name') or '').lower(),
+            (d.get('ticker') or '').lower(),
+            (d.get('id') or '').lower(),
+        ) if t]
+        signal_dates = []
+        for fu in (dash.get('followUps') or []):
+            who = (fu.get('who') or '').lower()
+            what = (fu.get('what') or '').lower()
+            if any(t in who or t in what for t in deal_tokens):
+                ad = (fu.get('addedDate') or '').strip()
+                if _DATE_RE.match(ad):
+                    signal_dates.append(ad)
+        for ae in (dash.get('awaitingExternal') or []):
+            cp = (ae.get('counterparty') or '').lower()
+            content = (ae.get('content') or '').lower()
+            if any(t in cp or t in content for t in deal_tokens):
+                ad = (ae.get('addedDate') or '').strip()
+                if _DATE_RE.match(ad):
+                    signal_dates.append(ad)
+        signal_dates.sort()
+        signal_max = signal_dates[-1] if signal_dates else ''
+        # Prefer the most-recent of (latestUpdate, signal_max) over deal.md
+        # hand-edited last_activity.
+        candidates = [x for x in (fresh_date, signal_max) if _DATE_RE.match(x)]
+        if candidates:
+            best = max(candidates)
             cur_la = (d.get('last_activity') or '').strip()
-            if not _DATE_RE.match(cur_la) or fresh_date > cur_la:
-                d['last_activity'] = fresh_date
+            if not _DATE_RE.match(cur_la) or best > cur_la:
+                d['last_activity'] = best
             cur_lu = (d.get('last_updated') or '').strip()
-            if not _DATE_RE.match(cur_lu) or fresh_date > cur_lu:
-                d['last_updated'] = fresh_date
+            if not _DATE_RE.match(cur_lu) or best > cur_lu:
+                d['last_updated'] = best
         if 'signalCount' in match:
             try:
                 d['_signal_count'] = int(match.get('signalCount') or 0)

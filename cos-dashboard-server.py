@@ -520,6 +520,55 @@ def _load_deal_config() -> dict:
 # Back-compat alias — remove in next major release.
 _load_tomac_config = _load_deal_config
 
+
+def _assert_cross_config_dedup() -> None:
+    """Cross-config dedup invariant: an entity in deal-config.yaml MUST NOT
+    also exist in recruit-config.yaml. Logs a stderr warning per overlap.
+
+    Documented exception: an entry in `recruit-config.yaml >
+    priorityTargets.inDiscussion` whose name contains "(CURRENT ROLE)" is the
+    principal's career anchor and intentionally tracked there even if it
+    matches a deal-config name (e.g. the firm Yoni co-founds is also a
+    recruiting touch-point). Codified 2026-05-04 — see dash_corrections.md.
+    """
+    try:
+        deal = _load_deal_config()
+        recr = _load_recruit_config()
+    except Exception as e:
+        print(f'[cross-config-dedup] load skipped: {e}', flush=True)
+        return
+    deal_names = set()
+    for sec in ('liveDeals', 'dealOrigination', 'capitalRaisingAdvisors', 'prospectiveInvestors'):
+        for r in (deal.get(sec) or []):
+            n = (r.get('name') or '').lower().strip()
+            if n: deal_names.add(n)
+    overlaps = []
+    for bucket in ('inDiscussion', 'waitingToHear', 'doIChase'):
+        for r in (recr.get('priorityTargets', {}).get(bucket) or []):
+            n = (r.get('name') or '').lower().strip()
+            if not n: continue
+            if '(current role)' in n: continue  # documented exception
+            if n in deal_names:
+                overlaps.append((bucket, r.get('name')))
+    for r in (recr.get('recruiters') or []):
+        f = (r.get('firm') or '').lower().strip()
+        if f and f in deal_names:
+            overlaps.append(('recruiters', r.get('firm')))
+    if overlaps:
+        print(
+            f'[cross-config-dedup] WARNING — {len(overlaps)} entity present '
+            f'in BOTH deal-config and recruit-config:',
+            flush=True,
+        )
+        for bucket, name in overlaps:
+            print(f'  - recruit-config[{bucket}] {name!r}', flush=True)
+    else:
+        print('[cross-config-dedup] OK — no deal/recruit overlap', flush=True)
+
+
+# Run the assertion at module import (server startup).
+_assert_cross_config_dedup()
+
 # ── Fundraising user-state ──────────────────────────────────────────────
 # Buckets schema (2026-04-28): direct_lps / gp_stakes / placement_agents /
 # strategic. Lives at data/user-state/fundraising.json — never overwritten by

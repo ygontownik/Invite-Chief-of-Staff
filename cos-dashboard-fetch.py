@@ -409,9 +409,18 @@ def _promote_source_ref(items):
 # the upstream is auto-retired (logged to stderr) and dropped from awaiting.
 # Codified 2026-05-04 per dash_corrections.md.
 _WORKFLOW_PAIRS = [
-    # NDA draft → NDA review/redline
-    (_re_src.compile(r'\b(draft|deliver|send\s+draft)\s+(mutual\s+)?nda\b', _re_src.IGNORECASE),
-     _re_src.compile(r'\b(review|accept|counter|respond\s+to|redline|execute)\s+\w*\s*nda\b|nda\s+redline\b', _re_src.IGNORECASE)),
+    # NDA draft / send / issue / finalize → NDA review / redline / counter / execute
+    # 2026-05-04: broadened upstream pattern to catch "Finalize and send NDA"
+    # (was requiring literal "draft NDA" / "send draft NDA"). Also covers
+    # "issue NDA", "deliver NDA", "stand up NDA" as the upstream-stage verbs.
+    (_re_src.compile(
+        r'\b(draft|deliver|send|finaliz[ae]|issue|stand[\s-]?up|prepar(e|ing))\s+(?:and\s+\w+\s+)?(?:the\s+)?(?:mutual\s+|draft\s+|new\s+)?nda\b',
+        _re_src.IGNORECASE,
+     ),
+     _re_src.compile(
+        r'\b(review|accept|counter|respond\s+to|redline|execute|sign|countersign)\s+\w*\s*nda\b|nda\s+redline\b',
+        _re_src.IGNORECASE,
+     )),
     # Calendar invite → meeting confirmation/recap
     (_re_src.compile(r'\b(send|share)\s+(calendar|cal|zoom)\s+inv', _re_src.IGNORECASE),
      _re_src.compile(r'\b(confirm|recap|summarize)\s+(the\s+)?(call|meeting|catch[\s-]?up)\b', _re_src.IGNORECASE)),
