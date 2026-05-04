@@ -8,6 +8,15 @@ Run:
 No pytest dependency; uses unittest. Mocks the anthropic SDK so the
 suite runs offline. Writes cost JSONL into a temp dir (overrides
 _PIPELINE_ROOT) so it never touches the live data-tomac/costs/ tree.
+
+POST-CUTOVER VERSION (subscription dispatch is wired). Differences vs
+the prior live test file:
+  - TestSubscriptionDispatch no longer asserts NotImplementedError;
+    instead it mocks claude_agent_sdk and verifies the dispatch hands
+    off to it. Detailed contract tests live in
+    tests/test_model_router_subscription.py.
+  - Everything else (TestRouting, TestDaemonDispatch, TestApiDispatch,
+    TestQuotas, TestCostMath) is unchanged from the prior version.
 """
 from __future__ import annotations
 
@@ -16,6 +25,7 @@ import json
 import os
 import sys
 import tempfile
+import types
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
@@ -76,6 +86,71 @@ def _install_fake_anthropic(captured: list[dict], **usage_kw):
 
 
 # ─────────────────────────────────────────────────────────────────────
+# Helpers — fake claude_agent_sdk (post-cutover subscription path).
+# ─────────────────────────────────────────────────────────────────────
+
+class _FakeAssistantMessage:
+    def __init__(self, text: str) -> None:
+        self.content = [types.SimpleNamespace(text=text)]
+
+
+class _FakeResultMessage:
+    def __init__(self, usage: dict) -> None:
+        self.usage = usage
+
+
+class _FakeRateLimitEvent:
+    def __init__(self, status: str, resets_at) -> None:
+        self.rate_limit_info = types.SimpleNamespace(
+            status=status, resets_at=resets_at,
+        )
+
+
+class _FakeProcessError(Exception):
+    pass
+
+
+class _FakeClaudeSDKError(Exception):
+    pass
+
+
+_FakeAssistantMessage.__name__ = "AssistantMessage"
+_FakeResultMessage.__name__ = "ResultMessage"
+_FakeRateLimitEvent.__name__ = "RateLimitEvent"
+
+
+def _install_fake_sdk(*, chunks=None, error=None):
+    chunks = chunks or []
+
+    async def _gen(prompt=None, options=None):
+        if error is not None:
+            raise error
+        for c in chunks:
+            yield c
+
+    def _query(prompt=None, options=None):
+        return _gen(prompt=prompt, options=options)
+
+    class _OptionsCapture:
+        last_kwargs: dict = {}
+
+        def __init__(self, **kwargs):
+            type(self).last_kwargs = dict(kwargs)
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+
+    fake = types.SimpleNamespace(
+        query=_query,
+        ClaudeAgentOptions=_OptionsCapture,
+        RateLimitEvent=_FakeRateLimitEvent,
+        ProcessError=_FakeProcessError,
+        ClaudeSDKError=_FakeClaudeSDKError,
+    )
+    sys.modules["claude_agent_sdk"] = fake
+    return fake
+
+
+# ─────────────────────────────────────────────────────────────────────
 # Tests.
 # ─────────────────────────────────────────────────────────────────────
 
@@ -104,6 +179,16 @@ class _RouterTestBase(unittest.TestCase):
             return p
 
         self.mr._costs_path = _patched_costs_path  # type: ignore[attr-defined]
+
+        # Redirect _data_dir (subscription-mode dispatch ledger + queue).
+        if hasattr(self.mr, "_data_dir"):
+            def _patched_data_dir(tenant: str):
+                p = self.cost_root / f"data-{tenant}"
+                p.mkdir(parents=True, exist_ok=True)
+                return p
+            self.mr._data_dir = _patched_data_dir  # type: ignore[attr-defined]
+
+        self.addCleanup(lambda: sys.modules.pop("claude_agent_sdk", None))
 
 
 class TestRouting(_RouterTestBase):
@@ -141,18 +226,38 @@ class TestRouting(_RouterTestBase):
 
 
 class TestSubscriptionDispatch(_RouterTestBase):
-    def test_subscription_raises_not_implemented(self):
-        with self.assertRaises(NotImplementedError) as ctx:
-            self.mr.call_claude(
-                "cos-personal-briefing",
-                system="firm context",
-                messages=[{"role": "user", "content": "hi"}],
-                tenant=self.tenant,
-            )
-        # Must mention C-spike + api fallback path.
-        msg = str(ctx.exception)
-        self.assertIn("CSPIKE_PLAN", msg)
-        self.assertIn("api", msg)
+    def test_subscription_dispatches_via_sdk(self):
+        # Cutover-day test: subscription mode should hand off to
+        # claude_agent_sdk.query() and return the assistant text plus
+        # subscription_meta. NotImplementedError is gone.
+        _install_fake_sdk(chunks=[
+            _FakeAssistantMessage("ok"),
+            _FakeResultMessage({"input_tokens": 1, "output_tokens": 1}),
+        ])
+        out = self.mr.call_claude(
+            "cos-personal-briefing",
+            system="firm context",
+            messages=[{"role": "user", "content": "hi"}],
+            tenant=self.tenant,
+        )
+        self.assertEqual(out["text"], "ok")
+        self.assertEqual(out["est_usd"], 0.0)
+        self.assertIn("subscription_meta", out)
+
+    def test_subscription_returns_zero_usd(self):
+        # Subscription mode is window-billed, not per-token.
+        _install_fake_sdk(chunks=[
+            _FakeAssistantMessage("hi"),
+            _FakeResultMessage({"input_tokens": 100, "output_tokens": 20}),
+        ])
+        out = self.mr.call_claude(
+            "briefing-morning",
+            system=None,
+            messages=[{"role": "user", "content": "x"}],
+            mode="subscription",
+            tenant=self.tenant,
+        )
+        self.assertEqual(out["est_usd"], 0.0)
 
 
 class TestDaemonDispatch(_RouterTestBase):
@@ -212,6 +317,7 @@ class TestApiDispatch(_RouterTestBase):
             system="ctx",
             messages=[{"role": "user", "content": "x"}],
             cache=False,
+            mode="api",
             tenant=self.tenant,
         )
         # system should be the raw string, not a block list.
@@ -245,6 +351,7 @@ class TestQuotas(_RouterTestBase):
                 "pass1_source_scanner",
                 system="x",
                 messages=[{"role": "user", "content": "x"}],
+                mode="api",
                 tenant=self.tenant,
             )
         joined = "".join(buf)
@@ -261,6 +368,7 @@ class TestQuotas(_RouterTestBase):
                 "pass1_source_scanner",
                 system="x",
                 messages=[{"role": "user", "content": "x"}],
+                mode="api",
                 tenant=self.tenant,
             )
         # No SDK call made.

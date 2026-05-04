@@ -285,12 +285,38 @@ def build_system_prompt(ctx: dict) -> str:
 
 # ── Anthropic call via cached_client ─────────────────────────────────────────
 
-def call_claude(system_prompt: str, user_payload: str) -> dict:
-    """Single Sonnet call via cached_client — returns parsed JSON output.
+def _extract_json(text: str) -> str:
+    text = text.strip()
+    if text.startswith("{") or text.startswith("["): return text
+    if "```" in text:
+        parts = text.split("```")
+        for i in range(len(parts) - 1, 0, -1):
+            block = parts[i]
+            if block.startswith("json\n"): block = block[5:]
+            block = block.strip()
+            if block.startswith("{") or block.startswith("["): return block
+    return text
 
-    system_prompt (SKILL ruleset) → user_query; user_payload (email/cal/doc data)
-    → source_content. Investor identity + Tomac bundle ride cached system blocks.
-    """
+
+def call_claude(system_prompt: str, user_payload: str, ctx: dict = None) -> dict:
+    """Single Sonnet call — returns parsed JSON output."""
+    if ctx and ctx.get("auth_mode") == "subscription":
+        import _model_router as mr  # noqa: PLC0415
+        slug = (
+            ctx.get("tenant_slug")
+            or (ctx.get("firm", {}) or {}).get("short_name", "").lower().replace(" ", "-")
+            or "tomac"
+        )
+        result = mr.call_claude(
+            task_type="cos-capture-pipeline",
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_payload}],
+            mode="subscription",
+            tenant=slug,
+            extract_json=True,
+        )
+        return json.loads(_extract_json(result["text"]))
+
     if not ANTHROPIC_API_KEY:
         raise RuntimeError("ANTHROPIC_API_KEY not set")
     sys.path.insert(0, str(_HERE / "_subscription"))
@@ -569,7 +595,7 @@ def main() -> int:
 
     log.info(f"Calling Claude (system={len(system_prompt)} chars, user={len(user_payload)} chars)...")
     try:
-        result = call_claude(system_prompt, user_payload)
+        result = call_claude(system_prompt, user_payload, ctx=ctx)
     except Exception as e:
         log.error(f"Claude call failed: {e}")
         return 1

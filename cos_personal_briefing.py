@@ -229,7 +229,19 @@ RULES:
 
 # ── Claude call via cached_client ─────────────────────────────────────────────
 
-def call_claude(format_prompt: str, source_content: str) -> str:
+def call_claude(format_prompt: str, source_content: str,
+                auth_mode: str = None, tenant: str = "tomac") -> str:
+    if auth_mode == "subscription":
+        import _model_router as mr  # noqa: PLC0415
+        user_message = f"{format_prompt}\n\n{source_content}" if source_content else format_prompt
+        result = mr.call_claude(
+            task_type="cos-personal-briefing",
+            system=_SYSTEM,
+            messages=[{"role": "user", "content": user_message}],
+            mode="subscription",
+            tenant=tenant,
+        )
+        return result["text"]
     if not ANTHROPIC_API_KEY:
         raise RuntimeError("ANTHROPIC_API_KEY not set")
     sys.path.insert(0, str(_HERE / "_subscription"))
@@ -314,9 +326,13 @@ def main() -> int:
 === PERSONAL BRIEFING LOG (tail — for Captured Overnight) ===
 {briefing_tail}"""
 
-    log.info("Calling Claude via cached_client...")
+    fc = _fc.load_firm_context()
+    _auth_mode = fc.get("auth_mode")
+    _tenant = fc.get("tenant_slug") or "tomac"
+    log.info(f"Calling Claude (auth_mode={_auth_mode!r}, tenant={_tenant!r})...")
     try:
-        briefing = call_claude(format_prompt, source_content)
+        briefing = call_claude(format_prompt, source_content,
+                               auth_mode=_auth_mode, tenant=_tenant)
     except Exception as e:
         log.error(f"Claude call failed: {e}")
         return 1

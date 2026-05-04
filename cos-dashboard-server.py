@@ -435,7 +435,8 @@ def _resolve_deal_config_path():
     if env:
         candidates.append(Path(env).expanduser() / 'config' / 'deal-config.yaml')
         candidates.append(Path(env).expanduser() / 'deal-config.yaml')
-    candidates.append(Path.home() / 'cos-pipeline-config-tomac' / 'config' / 'deal-config.yaml')
+    slug = os.environ.get('COS_TENANT_SLUG', 'tomac')
+    candidates.append(Path.home() / f'cos-pipeline-config-{slug}' / 'config' / 'deal-config.yaml')
     candidates.append(Path(__file__).parent.parent / 'config' / 'deal-config.yaml')
     # Legacy fallback (one-release back-compat — remove next major release)
     candidates.append(Path(__file__).parent.parent / 'config' / 'tomac-config.yaml')
@@ -731,7 +732,7 @@ def _is_partner_path(path: str) -> bool:
             return True
     return False
 
-PORT                = 7777
+PORT                = int(os.environ.get('COS_DASHBOARD_PORT', '7777'))
 _HERE               = Path(__file__).parent  # ~/dashboards/app/ (via symlink — do NOT .resolve())
 _ROOT               = _HERE.parent           # ~/dashboards/
 
@@ -1749,6 +1750,59 @@ def _routines_kickstart(name):
         return False, f'kickstart error: {e}'
 
 
+# ── Batch jobs ─────────────────────────────────────────────
+_BATCH_STATE_FILE = Path.home() / 'credentials' / 'pending_batches.json'
+_PODCAST_RETRIEVE_SCRIPT = str(Path.home() / 'cos-pipeline' / 'podcast_transcribe.py')
+_BATCH_RETRIEVE_RUNNING = threading.Lock()
+
+
+def _batch_jobs_data() -> list[dict]:
+    """Read pending_batches.json and return all unwritten batches with dashboard-friendly fields."""
+    try:
+        if not _BATCH_STATE_FILE.exists():
+            return []
+        state = json.loads(_BATCH_STATE_FILE.read_text(encoding='utf-8'))
+    except Exception:
+        return []
+    out = []
+    for b in state.get('batches', []):
+        if b.get('results_written'):
+            continue
+        submitted = b.get('submitted_at', '')
+        out.append({
+            'batch_id':      b.get('batch_id', ''),
+            'routine':       b.get('routine', ''),
+            'status':        b.get('status', 'unknown'),
+            'submitted_at':  submitted,
+            'request_count': b.get('request_count', len(b.get('requests', []))),
+            'requests':      [{'custom_id': r['custom_id'],
+                               'title': r.get('metadata', {}).get('title', ''),
+                               'show':  r.get('metadata', {}).get('show', '')}
+                              for r in b.get('requests', [])],
+        })
+    # newest first
+    out.sort(key=lambda x: x['submitted_at'], reverse=True)
+    return out
+
+
+def _batch_force_retrieve(batch_id: str) -> tuple[bool, str]:
+    """Kick off podcast --retrieve-batches in background. Returns (ok, message)."""
+    if not _BATCH_RETRIEVE_RUNNING.acquire(blocking=False):
+        return False, 'Retrieve already in progress'
+    def _run():
+        try:
+            subprocess.run(
+                ['/opt/homebrew/bin/python3', _PODCAST_RETRIEVE_SCRIPT, '--retrieve-batches'],
+                timeout=300,
+            )
+        except Exception:
+            pass
+        finally:
+            _BATCH_RETRIEVE_RUNNING.release()
+    threading.Thread(target=_run, daemon=True).start()
+    return True, 'Retrieve started in background'
+
+
 # ── Request handler ────────────────────────────────────────
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
@@ -2021,6 +2075,10 @@ class Handler(BaseHTTPRequestHandler):
             if 'ftype' in qs and 'fmsg' in qs:
                 flash = (qs['ftype'][0], qs['fmsg'][0])
             self._handle_admin(flash=flash)
+        elif self.path.split('?')[0] == '/batch-jobs':
+            if user != 'owner':
+                self._send_403(); return
+            self.send_json(200, {'jobs': _batch_jobs_data()})
         elif self.path.split('?')[0] == '/routines':
             # owner-only: routine inventory + per-task status
             if user != 'owner':
@@ -3014,6 +3072,20 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_topics_save()
         elif self.path == '/order/save':
             self._handle_order_save()
+        elif (self.path.startswith('/batch-jobs/')
+              and self.path.split('?')[0].endswith('/force')):
+            if not self._is_localhost():
+                user = self._authenticate()
+                if user != 'owner':
+                    self._send_403(); return
+            segs = self.path.split('?')[0].split('/')
+            # /batch-jobs/<batch_id>/force
+            if len(segs) == 4:
+                bid = segs[2]
+                ok, msg = _batch_force_retrieve(bid)
+                self.send_json(200 if ok else 409, {'ok': ok, 'message': msg})
+            else:
+                self.send_json(400, {'ok': False, 'error': 'bad path'})
         elif (self.path.startswith('/routines/')
               and self.path.split('?')[0].endswith('/kickstart')):
             # localhost-or-owner (gate already applied above for non-localhost
