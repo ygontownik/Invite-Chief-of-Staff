@@ -40,9 +40,8 @@ USAGE:
   python3 cos_capture_pipeline.py --provider outlook # override email_provider
 
 SCHEDULED:
-  LaunchAgent ~/Library/LaunchAgents/com.yoni.claude-task.cos-capture-pipeline.plist
-  → ~/.claude/scheduled-tasks/cos-capture-pipeline/SKILL.md (now a thin wrapper)
-  → calls this script at 7:22 AM daily.
+  LaunchAgent com.tomaccove.cos-capture-pipeline → bash runner
+  → calls this script at 7:22 AM M-F directly (no Claude Code SKILL wrapper).
 """
 from __future__ import annotations
 
@@ -53,7 +52,6 @@ import os
 import subprocess
 import sys
 import urllib.request
-import urllib.error
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
@@ -113,10 +111,7 @@ from _email_provider import (  # noqa: E402
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
-# Resolves through keychain (Mac default) then env-var fallback per BOOTSTRAP_PLAN #2.
 ANTHROPIC_API_KEY = _secrets.load_secret("ANTHROPIC_API_KEY", "")
-ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
-MODEL = "claude-sonnet-4-6"
 MAX_TOKENS = 8192
 DASHBOARD_WARMUP_URL = "http://localhost:7777/warmup"
 
@@ -288,40 +283,35 @@ def build_system_prompt(ctx: dict) -> str:
     return "\n".join(parts)
 
 
-# ── Anthropic call ────────────────────────────────────────────────────────────
+# ── Anthropic call via cached_client ─────────────────────────────────────────
 
 def call_claude(system_prompt: str, user_payload: str) -> dict:
-    """Single Sonnet call — returns parsed JSON output."""
+    """Single Sonnet call via cached_client — returns parsed JSON output.
+
+    system_prompt (SKILL ruleset) → user_query; user_payload (email/cal/doc data)
+    → source_content. Investor identity + Tomac bundle ride cached system blocks.
+    """
     if not ANTHROPIC_API_KEY:
         raise RuntimeError("ANTHROPIC_API_KEY not set")
-
-    body = {
-        "model": MODEL,
-        "max_tokens": MAX_TOKENS,
-        "system": [
-            {
-                "type": "text",
-                "text": system_prompt,
-                "cache_control": {"type": "ephemeral"},
-            }
-        ],
-        "messages": [{"role": "user", "content": user_payload}],
-    }
-    req = urllib.request.Request(
-        ANTHROPIC_URL,
-        data=json.dumps(body).encode(),
-        headers={
-            "x-api-key": ANTHROPIC_API_KEY,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-        },
-        method="POST",
+    sys.path.insert(0, str(_HERE / "_subscription"))
+    from cached_client import complete  # noqa: PLC0415
+    result = complete(
+        user_query=system_prompt,
+        source_content=user_payload,
+        tenant_bundle="",
+        model="claude-sonnet-4-6",
+        max_tokens=MAX_TOKENS,
     )
-    with urllib.request.urlopen(req, timeout=120) as r:
-        resp = json.loads(r.read())
-    log_usage("cos_capture_pipeline", MODEL, resp)
-
-    text = resp["content"][0]["text"].strip()
+    usage = result["usage"]
+    log_usage("cos_capture_pipeline", "claude-sonnet-4-6", {
+        "usage": {
+            "input_tokens":                getattr(usage, "input_tokens", 0),
+            "output_tokens":               getattr(usage, "output_tokens", 0),
+            "cache_read_input_tokens":     getattr(usage, "cache_read_input_tokens", 0),
+            "cache_creation_input_tokens": getattr(usage, "cache_creation_input_tokens", 0),
+        }
+    })
+    text = result["text"].strip()
     # Strip optional code-fence
     if text.startswith("```"):
         text = text.split("\n", 1)[1] if "\n" in text else text
@@ -580,14 +570,6 @@ def main() -> int:
     log.info(f"Calling Claude (system={len(system_prompt)} chars, user={len(user_payload)} chars)...")
     try:
         result = call_claude(system_prompt, user_payload)
-    except urllib.error.HTTPError as e:
-        body = ""
-        try:
-            body = e.read().decode("utf-8", errors="replace")[:2000]
-        except Exception:
-            pass
-        log.error(f"Claude call failed: HTTP {e.code} {e.reason} | body: {body}")
-        return 1
     except Exception as e:
         log.error(f"Claude call failed: {e}")
         return 1
