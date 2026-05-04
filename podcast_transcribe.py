@@ -408,7 +408,7 @@ def generate_memo(show: str, title: str,
             source_content=dynamic,
             tenant_bundle="",  # bundle is baked into system_prompt_v1.md; arg ignored
             model="claude-sonnet-4-6",
-            max_tokens=2048,
+            max_tokens=4096,
         )
         # Adapt cached_client's return to the shape log_usage expects.
         usage = result["usage"]
