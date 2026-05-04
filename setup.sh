@@ -664,9 +664,32 @@ if $DEMO_MODE; then
 else
   # 6a. OAuth client secrets must be present (either canonical name accepted).
   if [ ! -f "$CREDS/client_secret.json" ] && [ ! -f "$CREDS/gdrive_credentials.json" ]; then
-    err "Missing OAuth client secrets at $CREDS/{client_secret.json,gdrive_credentials.json}"
-    info "Get a Desktop client from console.cloud.google.com and save it there."
-    read -p "    Press Enter when done (or Ctrl-C to skip): "
+    # Auto-detect the file from ~/Downloads — subscriber just needs to save it there.
+    mkdir -p "$CREDS"
+    DL_CRED="$HOME/Downloads/gdrive_credentials.json"
+    if [ -f "$DL_CRED" ]; then
+      cp "$DL_CRED" "$CREDS/gdrive_credentials.json"
+      ok "Found gdrive_credentials.json in Downloads — moved to ~/credentials/"
+    else
+      warn "Waiting for gdrive_credentials.json (Yoni will send this via secure channel)"
+      info "Save it to ~/Downloads/gdrive_credentials.json — this script will pick it up automatically."
+      echo ""
+      printf "    Checking every 5s... (Ctrl-C to skip OAuth): "
+      WAITED=0
+      while [ ! -f "$DL_CRED" ] && [ ! -f "$CREDS/gdrive_credentials.json" ]; do
+        sleep 5
+        WAITED=$((WAITED + 5))
+        printf "."
+        [ "$WAITED" -ge 300 ] && break
+      done
+      echo ""
+      if [ -f "$DL_CRED" ]; then
+        cp "$DL_CRED" "$CREDS/gdrive_credentials.json"
+        ok "Found gdrive_credentials.json — moved to ~/credentials/"
+      elif [ ! -f "$CREDS/gdrive_credentials.json" ]; then
+        warn "gdrive_credentials.json not found after ${WAITED}s — skipping OAuth (run ./setup.sh --resume later)"
+      fi
+    fi
   fi
 
   # 6b. Bootstrap tokens. Idempotent — skips scopes whose token already exists.
@@ -734,3 +757,4 @@ echo "  Logs dir     : $LOG_DIR"
 echo "  Manual run   : COS_CONFIG_DIR=$CONFIG_DIR python3 cos_capture_pipeline.py --since 1h"
 echo "  Re-validate  : ./setup.sh --instance=$INSTANCE --validate"
 echo ""
+open "http://localhost:$PORT" 2>/dev/null || true
