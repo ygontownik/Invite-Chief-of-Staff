@@ -199,11 +199,6 @@ If none: "No urgent items due today."
 Follow-up rows due in the next 3 calendar days (not today). Same format.
 If none: "Nothing due in the next 3 days."
 
-### Recruiting Pipeline
-For each active opportunity (stage ≠ Closed), one line:
-**[Firm]** · [Role] · [Stage] → [Next step] _(deadline if set)_
-If none active: "No active recruiting opportunities."
-
 ### {deal_section}
 Active deals (stage ≠ Closed/Pass), one line each:
 **[Company]** · [Stage] → [Next step] _({dl_first}'s status if noted)_
