@@ -414,14 +414,34 @@
       <div class="step-header">
         <div class="step-num">3</div>
         <div>
-          <div class="step-title">You're done — dashboard opens automatically</div>
-          <div class="step-time">no commands needed</div>
+          <div class="step-title">Access your dashboard from iPhone &amp; anywhere</div>
+          <div class="step-time">~3 minutes &nbsp;·&nbsp; Tailscale</div>
         </div>
       </div>
       <div class="step-body">
-        <p>The installer validates and opens <a href="http://localhost:7777" target="_blank">http://localhost:7777</a> when it finishes. Log in with the username and password you set in Step 2.</p>
-        <div class="tip">
-          Three background tasks are now running: <strong>7:22am Mon–Fri</strong> intelligence capture &nbsp;·&nbsp; <strong>Every 2h</strong> email triage &nbsp;·&nbsp; <strong>Always on</strong> dashboard
+        <p>Run this to install Tailscale and get your remote dashboard URL:</p>
+        <div class="code-block">
+          <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+          <code>curl -fsSL https://ygontownik.github.io/Dashboard/setup_tailscale.sh | bash</code>
+        </div>
+        <p>The script installs Tailscale, connects your Mac, and prints a URL like <code>http://100.x.x.x:7777</code>. That URL works from your iPhone, laptop, or anywhere.</p>
+
+        <div style="background:var(--blue-bg);border:1px solid #bfdbfe;border-radius:10px;padding:18px 20px;margin-top:4px;">
+          <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--blue);margin-bottom:12px;">iPhone setup — 3 steps</div>
+          <div style="display:flex;flex-direction:column;gap:12px;">
+            <div style="display:flex;gap:12px;align-items:flex-start;">
+              <div style="width:24px;height:24px;border-radius:50%;background:var(--blue);color:white;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;">1</div>
+              <div style="font-size:13px;color:var(--ink);">Open the <strong>App Store</strong> on your iPhone → search <strong>Tailscale</strong> → install the app by <em>Tailscale Inc.</em></div>
+            </div>
+            <div style="display:flex;gap:12px;align-items:flex-start;">
+              <div style="width:24px;height:24px;border-radius:50%;background:var(--blue);color:white;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;">2</div>
+              <div style="font-size:13px;color:var(--ink);">Open Tailscale on iPhone → tap <strong>Log in</strong> → sign in with the <strong>same account</strong> you used on Mac → tap <strong>Allow</strong> on the VPN screen. Tailscale connects automatically.</div>
+            </div>
+            <div style="display:flex;gap:12px;align-items:flex-start;">
+              <div style="width:24px;height:24px;border-radius:50%;background:var(--blue);color:white;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;">3</div>
+              <div style="font-size:13px;color:var(--ink);">In Safari on iPhone, open the URL the script printed (<code>http://100.x.x.x:7777</code>). Tap <strong>Share → Add to Home Screen</strong> to bookmark it.</div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -436,7 +456,7 @@
         <strong>Always on</strong> — dashboard server
       </p>
       <a class="url" href="http://localhost:7777" target="_blank">http://localhost:7777</a>
-      <p style="font-size: 13px; margin-top: 8px;">Log in with the username and password you set during the installer.</p>
+      <p style="font-size: 13px; margin-top: 8px;">Log in with the username and password you set during the installer. Use the Tailscale URL from Step 3 on your iPhone.</p>
     </div>
 
   </div>

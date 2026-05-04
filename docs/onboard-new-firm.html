@@ -268,7 +268,7 @@
   <div class="page-title-inner">
     <div class="label">COS Pipeline · New Firm Setup</div>
     <h1>Set up your pipeline</h1>
-    <p>4 steps &nbsp;·&nbsp; ~35 minutes &nbsp;·&nbsp; done once by one person</p>
+    <p>5 steps &nbsp;·&nbsp; ~40 minutes &nbsp;·&nbsp; done once by one person</p>
   </div>
 </div>
 
@@ -408,10 +408,52 @@ claude</code>
       </div>
     </div>
 
-    <!-- ── Step 4: Connect transcript app ── -->
+    <!-- ── Step 4: Tailscale ── -->
     <div class="step">
       <div class="step-header">
         <div class="step-num">4</div>
+        <div class="step-title-wrap">
+          <div class="step-title">Access your dashboard from iPhone &amp; anywhere</div>
+          <div class="step-sub">Tailscale — private remote access, no port forwarding</div>
+        </div>
+        <div class="step-time-badge">~3 min</div>
+      </div>
+      <div class="step-body">
+
+        <p style="font-size:13px;color:var(--muted);">Run this to install Tailscale on your Mac and get your remote dashboard URL:</p>
+
+        <div class="code-block">
+          <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+          <code>curl -fsSL https://ygontownik.github.io/Dashboard/setup_tailscale.sh | bash</code>
+        </div>
+
+        <p style="font-size:13px;color:var(--muted);">The script installs Tailscale, connects your Mac, and prints a URL like <code class="inline">http://100.x.x.x:7777</code>. That URL works from your iPhone or any device.</p>
+
+        <div style="background:var(--blue-bg);border:1px solid #bfdbfe;border-radius:10px;padding:18px 20px;">
+          <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--blue);margin-bottom:12px;">iPhone setup — 3 steps</div>
+          <div style="display:flex;flex-direction:column;gap:12px;">
+            <div style="display:flex;gap:12px;align-items:flex-start;">
+              <div style="width:24px;height:24px;border-radius:50%;background:var(--blue);color:white;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;">1</div>
+              <div style="font-size:13px;color:var(--ink);">Open the <strong>App Store</strong> on your iPhone → search <strong>Tailscale</strong> → install the app by <em>Tailscale Inc.</em></div>
+            </div>
+            <div style="display:flex;gap:12px;align-items:flex-start;">
+              <div style="width:24px;height:24px;border-radius:50%;background:var(--blue);color:white;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;">2</div>
+              <div style="font-size:13px;color:var(--ink);">Open Tailscale on iPhone → tap <strong>Log in</strong> → sign in with the <strong>same account</strong> you used on Mac → tap <strong>Allow</strong> on the VPN screen. Connects automatically.</div>
+            </div>
+            <div style="display:flex;gap:12px;align-items:flex-start;">
+              <div style="width:24px;height:24px;border-radius:50%;background:var(--blue);color:white;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;">3</div>
+              <div style="font-size:13px;color:var(--ink);">In Safari on iPhone, open the URL the script printed. Tap <strong>Share → Add to Home Screen</strong> to pin it.</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── Step 5: Connect transcript app ── -->
+    <div class="step">
+      <div class="step-header">
+        <div class="step-num">5</div>
         <div class="step-title-wrap">
           <div class="step-title">Connect your transcript app</div>
           <div class="step-sub">Paste two folder IDs — takes two minutes</div>
