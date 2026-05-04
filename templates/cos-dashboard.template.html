@@ -1629,14 +1629,28 @@ function buildFilterBar() {
 // Loaded from firm_context.yaml (counterparty_aliases) via window.__CP_ALIASES__
 // injected server-side. Falls back to [] — no aliases — if not configured.
 const __CP_ALIASES = window.__CP_ALIASES__ || [];
+// Firm-shape keywords used by the smart fallback below — if one half of a
+// "Lee / Piper Sandler" raw counterparty contains any of these tokens,
+// prefer that half over the other (which is likely a personal name).
+// Codified 2026-05-04 per dash_corrections.md ("Action labels lead with firm").
+const __CP_FIRM_KEYWORDS = /\b(capital|partners|sandler|management|investments|investment|bank|corp|inc|llc|holdings|advisors|advisory|ventures|fund|equity|industries|infrastructure|infra|securities|group|associates|company|properties|finance|financial|strategies|asset|assets|trust)\b/i;
 function __cpClusterKey(raw) {
   if (!raw) return '';
   const low = String(raw).toLowerCase();
   for (const [needle, canon] of __CP_ALIASES) {
     if (low.indexOf(needle) !== -1) return canon;
   }
-  let s = String(raw).split(/[—–\/,]| of /)[0].trim();
-  // Strip leading stopwords and common descriptors
+  // Smarter fallback: split on " / ", " — ", "|", ",". When two parts exist,
+  // pick the one that looks most like a firm — prevents the awaiting cluster
+  // from headlining a person's name when the firm is right there in the raw.
+  const parts = String(raw).split(/\s*[—–\/|,]\s*/).map(s => s.trim()).filter(Boolean);
+  if (parts.length >= 2) {
+    const firmPart = parts.find(p => __CP_FIRM_KEYWORDS.test(p));
+    if (firmPart) {
+      return firmPart.replace(/\s*\(.*?\)\s*$/, '').replace(/^(re:|fwd:)\s*/i, '').trim();
+    }
+  }
+  let s = (parts[0] || String(raw)).split(' of ')[0].trim();
   s = s.replace(/^(re:|fwd:)\s*/i, '').trim();
   return s;
 }
@@ -2067,46 +2081,31 @@ function buildTeamActionsCard() {
 // (Intel Card — Deal Intel / Origination / Themes — retired 2026-04-27.
 //  Drill-down lives on /deals/ Themes and /deals/ Origination tabs.)
 
-// Status > Deal card. Sub-tabs kept as reference but no longer called from
-// the main layout (replaced by buildStatusTopRow on 2026-04-28):
-//   Deals       → active-deal next-step prose (buildTomacDealsInner)
-//   Fundraising → LP roster + strategy line (buildFundraisingInner)
-//   Portfolio   → drill-through to /tomac-cove/ (buildPortfolioInner)
-// Sub-tab choice persists to localStorage as `cos_tc_tab`. The fundraising
-// stat card and the Fundraising filter pill both pre-select the Fund sub-tab.
+// Status > Deal-tile drilldown.
+// 2026-05-04: stripped to Fundraising-only — the previous Dealflow and
+// Portfolio sub-tabs revealed surfaces that don't exist on the visible HQ
+// page (duplicates of Live Deals/Origination, and a /tomac-cove/ pointer).
+// Per user feedback: the tile click should expose ONE counterparty-lens
+// view (Fundraising) — distinct from the relationship-inventory Fundraising
+// at the top of HQ — and not a parallel set of hidden cards.
+// See dash_corrections.md (2026-05-04 — Tile clicks must scroll-highlight
+// existing visible sections, never reveal hidden ones).
 function buildTomacSection(deals) {
-  const tab       = state.tcTab || 'deal';
-  const isDeals   = tab === 'deal';
-  const isFund    = tab === 'fund';
-  const isPort    = tab === 'portfolio';
-  const dealCount = deals.length;
-  const lpItems   = Array.isArray(DATA.lpData) ? DATA.lpData : [];
+  const lpItems  = Array.isArray(DATA.lpData) ? DATA.lpData : [];
   const fundCount = lpItems.length;
-  const portfolioDeals = (DATA.dealPortfolio && DATA.dealPortfolio.deals) || [];
-  const portCount = portfolioDeals.length;
-  const tcid      = 'tomac';
-  const tcc       = state.collapsed[tcid];
-
-  const inner = isDeals ? buildTomacDealsInner(deals)
-              : isFund  ? buildFundraisingInner()
-              :           buildPortfolioInner(portfolioDeals);
+  const tcid     = 'tomac';
+  const tcc      = state.collapsed[tcid];
 
   return `
   <div class="card" style="margin-bottom:18px">
     <div class="tc-tabs" style="display:flex;align-items:center">
-      <div class="tc-tab${isDeals ? ' active-deal' : ''}" onclick="setTcTab('deal')">
-        Dealflow <span style="font-weight:400;opacity:0.6">(${dealCount})</span>
-      </div>
-      <div class="tc-tab${isFund ? ' active-fund' : ''}" onclick="setTcTab('fund')">
+      <div class="tc-tab active-fund" style="cursor:default">
         Fundraising <span style="font-weight:400;opacity:0.6">(${fundCount})</span>
-      </div>
-      <div class="tc-tab${isPort ? ' active-port' : ''}" onclick="setTcTab('portfolio')">
-        Portfolio <span style="font-weight:400;opacity:0.6">(${portCount})</span>
       </div>
       ${makeSectionRefreshBtn()}
       <div onclick="collapseToggle('${tcid}')" style="margin-left:6px;padding:0 4px;cursor:pointer;color:#cbd5e1;font-size:12px;line-height:1" title="Collapse">${tcc ? '▸' : '▾'}</div>
     </div>
-    ${tcc ? '' : inner}
+    ${tcc ? '' : buildFundraisingInner()}
   </div>`;
 }
 
@@ -3759,9 +3758,23 @@ function buildFocusedLayout(focus, calls, fus, tomac, showRec) {
   const tomacAll = (Array.isArray(DATA.tomac) ? DATA.tomac : []);
   switch (focus) {
     case 'deals':
-      return tomac.length > 0
-        ? `<div id="section-tomac">${buildTomacSection(tomac)}</div>`
-        : '<div class="card" style="margin-bottom:18px"><div class="no-items">No active deals in current filter.</div></div>';
+      // 2026-05-04: tile click no longer reveals a hidden "Dealflow" panel.
+      // Live deals are already visible on HQ via buildStatusTopRow — the tile
+      // click should bounce focus back to the daily layout (and ideally
+      // scroll/highlight that section). Returning empty falls through to the
+      // default daily layout which already shows Live Deals + Origination.
+      // See dash_corrections.md (2026-05-04 tile-click rule).
+      setTimeout(() => {
+        const el = document.getElementById('section-status-top');
+        if (el) {
+          el.scrollIntoView({behavior: 'smooth', block: 'start'});
+          el.style.transition = 'background 0.4s';
+          el.style.background = 'rgba(245,158,11,0.12)';
+          setTimeout(() => { el.style.background = ''; }, 1500);
+        }
+        if (state.statFocus === 'deals') { state.statFocus = null; }
+      }, 0);
+      return buildDailyLayout(calls, fus, tomac, showRec);
     case 'fundraising':
       return tomacAll.length > 0
         ? `<div id="section-tomac">${buildTomacSection(tomacAll)}</div>`

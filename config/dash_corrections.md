@@ -946,6 +946,35 @@ Log each supersession to stderr so prompt drift can be audited.
 
 ---
 
+## TOPIC — TILE DRILLDOWN SCOPE
+
+### 2026-05-04 — Tomac Cove tile drilldown is Fundraising-only; Dealflow + Portfolio sub-tabs removed
+
+`buildTomacSection` previously rendered a 3-tab card (Dealflow / Fundraising / Portfolio) when the user clicked the Tomac Cove tile or filtered focus to deals/fundraising. Per the user's broad-lens review, two of the three sub-tabs surfaced views that don't exist anywhere on the visible HQ page:
+
+- **Dealflow** duplicated `buildStatusTopRow`'s already-visible Live Deals + Origination columns at lower fidelity.
+- **Portfolio** was a drill-through pointer to `/tomac-cove/` — useful as a link, not as a sub-tab.
+
+Stripped to Fundraising-only — the tile click now exposes ONE counterparty-lens view (LP roster + active LP commitments), which is distinct from the relationship-inventory Fundraising at the top of HQ. The `state.statFocus === 'deals'` branch in `buildFocusedLayout` now scrolls back to `#section-status-top` and highlights it briefly instead of rendering a parallel card.
+
+**Rule** (companion to the 2026-05-04 "tile click must scroll-highlight existing visible sections" entry): never let a tile click reveal a card that's not part of the page's standard top-down information architecture. If a tile's payload is "show me more about X", X should already be on the page; the click should orient, not surface.
+
+---
+
+## TOPIC — COUNTERPARTY ALIAS COVERAGE
+
+### 2026-05-04 — Smart fallback in `__cpClusterKey` + named-firm aliases for visible counterparties
+
+`__cpClusterKey` previously fell back to splitting on `/` / `—` and taking the first part — so "Lee / Piper Sandler Syndication" clustered as **Lee** (a person), not the firm. The fix is two-layer:
+
+1. **Smart fallback** — when no alias match fires, scan the `/`-`—`-`,`-`|`-separated parts for one that contains a firm-keyword (`capital`, `partners`, `sandler`, `management`, `investments`, `bank`, `corp`, `llc`, `holdings`, `advisors`, `ventures`, `fund`, `equity`, `industries`, `infrastructure`, `securities`, `group`, `properties`, `finance`, `strategies`, `asset(s)`, `trust`, etc.). Use that firm half as the canonical key. Falls through to the legacy first-part-only behavior when no firm keyword matches.
+
+2. **Explicit aliases** — for known firms with quirky raw extractions, add an explicit entry to `firm_context.yaml > counterparty_aliases`. This session added: Piper Sandler, Garden Investments, Apogee Comply, Astris Finance, Active Infrastructure, Fit Ventures.
+
+**Rule (companion to the 2026-04-21 _CP_ALIASES single-source rule)**: when a /dash session surfaces a cluster that headlines a person rather than a firm, the firm needs an alias entry in `firm_context.yaml`. The smart fallback handles the long tail; explicit aliases give canonical display strings and stable keys.
+
+---
+
 ## TOPIC — TIME-REFERENCE NORMALIZATION
 
 ### 2026-05-04 — "next week" / "later this week" must materialize to "week of YYYY-MM-DD"
