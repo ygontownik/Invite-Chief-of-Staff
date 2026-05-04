@@ -2,13 +2,15 @@
 """
 cos_personal_briefing.py — Daily 7:51am Chief of Staff personal briefing
 
-Replaces the cos-personal-briefing SKILL. ONE Sonnet call with a cached
-system prompt replaces a multi-turn agent session.
+Replaces the cos-personal-briefing SKILL. ONE Sonnet call via
+_subscription.cached_client replaces a multi-turn agent session.
 
 WHAT IT DOES:
   1. Reads 5 Google Docs (follow-ups, recruiting, tomac-pipeline,
      market-update, briefing-log tail for Captured Overnight context)
-  2. Calls Claude Sonnet once to generate the full structured briefing
+  2. Calls Claude Sonnet once via cached_client — investor identity +
+     Tomac bundle ride the cached system blocks; briefing structural
+     template moves into user_query (Option B pattern)
   3. Appends the briefing to the Personal Briefing Log doc
   4. Triggers dashboard cache warmup
 
@@ -24,7 +26,6 @@ import logging
 import os
 import sys
 import urllib.request
-import urllib.error
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -54,11 +55,7 @@ import _firm_context as _fc  # noqa: E402
 import _secrets  # noqa: E402
 
 # ── Constants ─────────────────────────────────────────────────────────────────
-# Resolves through keychain (Mac default) then env-var fallback per BOOTSTRAP_PLAN #2.
 ANTHROPIC_API_KEY  = _secrets.load_secret("ANTHROPIC_API_KEY", "")
-ANTHROPIC_URL      = "https://api.anthropic.com/v1/messages"
-MODEL              = "claude-sonnet-4-6"
-MAX_TOKENS         = 2048
 DASHBOARD_WARMUP   = "http://localhost:7777/warmup"
 GOOGLE_DOCS_URL    = "https://docs.googleapis.com/v1/documents"
 
@@ -172,34 +169,26 @@ def append_to_doc(token: str, doc_id: str, text: str) -> None:
     with urllib.request.urlopen(req, timeout=30) as r:
         r.read()
 
-# ── System prompt (built dynamically from firm_context.yaml) ──────────────────
-# Identity (principal name, firm name, deal-lead name, deal section header)
-# is loaded from firm_context.yaml so the prompt is tenant-neutral.
+# ── Briefing format prompt (loaded lazily, tenant-specific) ───────────────────
+# Identity and investor frame live in the cached static core (system_prompt_v1.md).
+# This function returns only the structural template unique to this routine.
 
-def _build_system_prompt() -> str:
+def _build_briefing_format_prompt(today_str: str, day_of_week: str) -> str:
     ctx = _fc.load_firm_context()
-    p = ctx.get("principal", {}) or {}
-    f = ctx.get("firm", {}) or {}
-    p_name = p.get("name", "Principal")
-    p_role = p.get("role", "senior investor")
+    f   = ctx.get("firm", {}) or {}
     f_name = f.get("name", "the firm")
-
-    # Deal-lead name (for "Mark's status" style attribution in deal section)
-    dl = _fc._deal_lead(ctx)  # internal helper — fall back to "the deal lead"
+    dl = _fc._deal_lead(ctx)
     dl_first = (dl.get("name", "Deal lead") or "Deal lead").split()[0]
-
-    # Deal section header from workstream_categories.deal — falls back to firm name
     deal_section = (
         ctx.get("workstream_categories", {}).get("deal")
         or f.get("short_name")
         or f_name
     )
+    return f"""Generate the daily personal briefing for {today_str} ({day_of_week}).
 
-    return f"""You are the Chief of Staff AI generating the daily personal briefing for {p_name} — {p_role}, co-founding {f_name} with {dl.get('name', 'the deal lead')}.
+Use EXACTLY this structure and nothing else:
 
-You will be given the current content of four Google Docs and the tail of the Personal Briefing Log. Generate the full briefing with EXACTLY this structure and nothing else:
-
-## Personal Briefing — {{TODAY}} ({{DAY_OF_WEEK}})
+## Personal Briefing — {today_str} ({day_of_week})
 
 ### Today's Priorities
 All follow-up rows with due date = today, sorted by urgency (explicitly promised > inferred).
@@ -233,44 +222,35 @@ One paragraph (3–5 sentences) summarizing what the capture pipeline added sinc
 If no Capture Summary found: "No capture summary available."
 
 RULES:
-- Replace {{TODAY}} and {{DAY_OF_WEEK}} with the actual date and day provided in the user message.
 - Output ONLY the briefing markdown. No preamble, no closing remarks.
 - Be specific: named people, firms, dates, deal stages. Never vague summaries.
 - Today's Priorities and Coming Up draw exclusively from the Follow-ups doc — do not invent items."""
 
-_SYSTEM = _build_system_prompt()
 
-# ── Claude call ───────────────────────────────────────────────────────────────
+# ── Claude call via cached_client ─────────────────────────────────────────────
 
-def call_claude(user_message: str) -> str:
+def call_claude(format_prompt: str, source_content: str) -> str:
     if not ANTHROPIC_API_KEY:
         raise RuntimeError("ANTHROPIC_API_KEY not set")
-    body = json.dumps({
-        "model":      MODEL,
-        "max_tokens": MAX_TOKENS,
-        "system": [
-            {
-                "type":          "text",
-                "text":          _SYSTEM,
-                "cache_control": {"type": "ephemeral"},
-            }
-        ],
-        "messages": [{"role": "user", "content": user_message}],
-    }).encode()
-    req = urllib.request.Request(
-        ANTHROPIC_URL, data=body,
-        headers={
-            "x-api-key":        ANTHROPIC_API_KEY,
-            "anthropic-version":"2023-06-01",
-            "anthropic-beta":   "prompt-caching-1",
-            "content-type":     "application/json",
-        },
-        method="POST",
+    sys.path.insert(0, str(_HERE / "_subscription"))
+    from cached_client import complete  # noqa: PLC0415
+    result = complete(
+        user_query=format_prompt,
+        source_content=source_content,
+        tenant_bundle="",
+        model="claude-sonnet-4-6",
+        max_tokens=2048,
     )
-    with urllib.request.urlopen(req, timeout=90) as r:
-        resp = json.loads(r.read())
-    log_usage("cos_personal_briefing", MODEL, resp)
-    return resp["content"][0]["text"].strip()
+    usage = result["usage"]
+    log_usage("cos_personal_briefing", "claude-sonnet-4-6", {
+        "usage": {
+            "input_tokens":                getattr(usage, "input_tokens", 0),
+            "output_tokens":               getattr(usage, "output_tokens", 0),
+            "cache_read_input_tokens":     getattr(usage, "cache_read_input_tokens", 0),
+            "cache_creation_input_tokens": getattr(usage, "cache_creation_input_tokens", 0),
+        }
+    })
+    return result["text"].strip()
 
 # ── Dashboard warmup ──────────────────────────────────────────────────────────
 
@@ -318,9 +298,8 @@ def main() -> int:
     log.info(f"  pipeline:   {len(pipeline)} chars")
     log.info(f"  market:     {len(market)} chars")
 
-    user_message = f"""TODAY: {today_str} ({day_of_week})
-
-=== FOLLOW-UPS DOC ===
+    format_prompt = _build_briefing_format_prompt(today_str, day_of_week)
+    source_content = f"""=== FOLLOW-UPS DOC ===
 {followups}
 
 === RECRUITING PIPELINE DOC ===
@@ -333,13 +312,11 @@ def main() -> int:
 {market}
 
 === PERSONAL BRIEFING LOG (tail — for Captured Overnight) ===
-{briefing_tail}
+{briefing_tail}"""
 
-Generate the briefing now."""
-
-    log.info("Calling Claude...")
+    log.info("Calling Claude via cached_client...")
     try:
-        briefing = call_claude(user_message)
+        briefing = call_claude(format_prompt, source_content)
     except Exception as e:
         log.error(f"Claude call failed: {e}")
         return 1
