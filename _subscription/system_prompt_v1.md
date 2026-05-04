@@ -206,6 +206,24 @@ Each episode entry:
 
 > Referenced in CLAUDE.md and `MODEL_ROUTER.md` as the actionability filter Pass 2 applies before promoting an opportunity. The five specific tests are not yet enumerated in CLAUDE.md — the user maintains them in working memory and applies them per call. When CLAUDE.md is updated with the explicit five-test list, replace this paragraph with the verbatim copy. Until then, Pass 2 prompts should preserve the gate by name and let the model surface its own interpretation.
 
+### Tracked firms (firms-of-interest universe)
+
+> Promoted from tenant bundle to static core per `CACHE_BREAKPOINT_DECISION.md`. Verbatim from CLAUDE.md § "Firms I track closely".
+
+Stonepeak, I Squared, ECP, Quantum, KKR Infra, TPG Rise Climate, ArcLight, LS Power, Brookfield Infra, Nuveen Infrastructure, Ridgewood.
+
+### Briefing call classifier — INCLUDE / EXCLUDE keywords
+
+> Verbatim from CLAUDE.md § "Call classification for briefing purposes". Drives the daily/weekly briefing pipeline's call-mention triage.
+
+**INCLUDE** in briefing (consulting/advisory):
+Keywords: advisory, consulting, update, check-in, intro, catch-up, podcast, research, expert, channel check, industry
+
+**EXCLUDE** from briefing (deal/recruiting — Drive only, no briefing mention):
+Keywords: Stonepeak, I Squared, ECP, Quantum, KKR, TPG, ArcLight, LS Power, Brookfield, Nuveen, Ridgewood, Tomac, Mark, OSC, EXIM, DOE, DFC, interview, offer, term sheet, LOI, diligence, NDA, confidential, headhunter, recruiter, search
+
+**DEFAULT**: exclude if ambiguous (err on side of privacy)
+
 ---
 
 <!-- CACHE_BREAKPOINT_1 -->
@@ -214,12 +232,11 @@ Each episode entry:
 
 {{TENANT_BUNDLE}}
 
-> Bundle contents (per CLAUDE.md "Investment Context"):
+> Bundle contents (per CLAUDE.md "Investment Context"). Firm list and briefing classifier promoted to static core (above CBP1) per `CACHE_BREAKPOINT_DECISION.md`:
 > - Sectors in priority order (power & utilities, digital infrastructure, midstream, energy transition, government/DFC)
 > - Recurring analytical lenses (utility GenCo carveouts, MISO/PJM queue plays, LNG project finance, DC contractor roll-up, EU vs US LNG)
-> - Firms tracked closely (Stonepeak, I Squared, ECP, Quantum, KKR Infra, TPG Rise Climate, ArcLight, LS Power, Brookfield Infra, Nuveen Infrastructure, Ridgewood)
 > - People context (Mark Saxe, David Lorch, John Jovanovic, Greg Beard)
-> - Briefing classifier keywords (INCLUDE: advisory/consulting/update/check-in; EXCLUDE: deal-firm names + recruiting terms)
+> - Top active deal themes (id, theme, thesis preview from `deal-pipeline-data.json`)
 
 ---
 
