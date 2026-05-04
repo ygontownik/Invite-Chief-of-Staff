@@ -1833,14 +1833,36 @@ def _routines_data():
     out = []
     for name in tasks:
         meta = _routines_parse_plist(name)
-        # Use the log-stem from the plist's StandardOutPath, NOT the task name —
-        # historical plists wrote logs under different filenames than the task
-        # label (see _routines_parse_plist docstring).
+        # The wrapper script (run-claude-task.sh) writes BEGIN/END to
+        # `<task>.run.log` using the canonical task name passed via plist
+        # ProgramArguments — independent of StandardOutPath. So check that
+        # first. Fall back to the stem-derived stdout/run logs to recover
+        # history from before any plist rename.
         stem = meta.get('log_stem') or name
-        run_log = ROUTINES_LOG_DIR / f'{stem}.run.log'
-        std_log = ROUTINES_LOG_DIR / f'{stem}.stdout.log'
-        text = _routines_tail_log(run_log) or _routines_tail_log(std_log)
+        canonical_run = ROUTINES_LOG_DIR / f'{name}.run.log'
+        stem_run      = ROUTINES_LOG_DIR / f'{stem}.run.log'
+        stem_stdout   = ROUTINES_LOG_DIR / f'{stem}.stdout.log'
+        # Concatenate the candidate sources — _routines_parse_runs picks runs
+        # in document order, so older history (stem files) comes first and
+        # newer canonical runs land at the end where `runs[-1]` looks.
+        text_parts = []
+        for p in (stem_run, stem_stdout, canonical_run):
+            t = _routines_tail_log(p)
+            if t:
+                text_parts.append(t)
+        text = '\n'.join(text_parts)
         runs = _routines_parse_runs(text)
+        # Drop duplicates that appear in both stem and canonical files.
+        seen = set()
+        unique_runs = []
+        for r in runs:
+            key = (r.get('start'), r.get('end'))
+            if key in seen: continue
+            seen.add(key)
+            unique_runs.append(r)
+        runs = unique_runs
+        # Sort by start timestamp so latest is last.
+        runs.sort(key=lambda r: r.get('start') or '')
         last = runs[-1] if runs else None
         history = [{'start': r.get('start'),
                     'exit_code': r.get('exit_code'),
