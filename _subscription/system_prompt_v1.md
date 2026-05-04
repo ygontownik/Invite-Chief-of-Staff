@@ -255,7 +255,8 @@ Keywords: Stonepeak, I Squared, ECP, Quantum, KKR, TPG, ArcLight, LS Power, Broo
 - John Jovanovic — EXIM Bank (connector via Brian Falik)
 - Greg Beard — DOE Office of Energy Dominance Financing (ex-Apollo)
 
-### Active deal themes (top 7 by score, week of 2026-05-03)
+<!-- AUTO_THEMES_BEGIN — managed by _subscription/refresh_bundle.py; do not hand-edit -->
+### Active deal themes (top 7 by score, week of 2026-05-04)
 
 - **[miso-power] MISO Power Plant Acquisitions** — DOE 202(c) orders stalled 2.5+ GW MISO coal. NIPSCO GenCo confirmed scaling: Amazon 2.4 GW + Alphabet 515 MW; total stack now $6-7B+. IURC PPA approval vote May 6, 2026 (3 days). Campbell DOE Order 20
 - **[pjm-power] PJM Power Plant Acquisitions** — PJM Reliability Backstop Procurement: 14.9 GW UCAP / >20 GW nameplate target. RFI submissions DUE MAY 4, 2026 (1 day). Two-phase: bilateral Sep 2026, central Mar 2027, COD by June 2031. PJM 2027/28 BR
@@ -263,7 +264,8 @@ Keywords: Stonepeak, I Squared, ECP, Quantum, KKR, TPG, ArcLight, LS Power, Broo
 - **[epc-rollup] DC Electrical Contractor Roll-up** — $255B market, no player >5%. LGN 2026 guidance $3.7-3.9B rev / $400-430M EBITDA; backlog $3.7B (+49%); DC = 49% of backlog. Faith Technologies ABC #1 DC contractor 2026, $1.6B revenue (Pittsboro IN ex
 - **[us-lng-pf] US LNG Project Finance** — CP2 $20.7B closed — outside equity window shut. NextDecade T4+T5 under construction. T6 FERC pre-filing Nov 2025; full FERC application expected mid-2026; service ~2030; ~6 MTPA. UAE OPEC exit May 1 +
 - **[captive-power] Captive Power & Supply Chain** — PJM RBP 14.9 GW (RFI submissions due May 4) catalyzes captive gas + supply chain. SoftBank Piketon mid-2026. Entergy/Meta active — $875M LA contracts, 5,000 peak workers June 2026. AES Indiana/Ohio po
-- **[dc-queue] DC Queue & Distressed Land** — ComEd ICC investigation docket opened April 23, 2026 (8-month investigation through Dec 2026). 75 customer applications totaling >system peak. Brookfield/Compass officially bailed on major Virginia DC
+- **[ercot-powered-land] ERCOT Powered Land & Interconnection** — Gideon Powell / Cholla holds 30 GW ERCOT interconnection land portfolio. TCIP call-option product: developers/hyperscalers pay monthly premiums for site certainty before capital raise. PCR batch study
+<!-- AUTO_THEMES_END -->
 
 > Note: cached_client.py's `tenant_bundle` runtime arg is now ignored (no `{{TENANT_BUNDLE}}` placeholder present). Tomac is single-tenant; the bundle is baked in. For multi-tenant productization (S8), reintroduce the placeholder and load tenant content from a per-tenant sidecar file.
 
