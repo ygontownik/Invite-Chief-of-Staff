@@ -666,8 +666,9 @@ def _send_invite_email(name, email, username, password, tiles,
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 YOUR OWN DASHBOARD
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-IMPORTANT: Your dashboard runs entirely on your own Mac — not on Yoni's.
-Your API keys, pipeline outputs, and data never leave your machine.
+IMPORTANT: Your dashboard and pipeline run on your own Mac — not on Yoni's server.
+Yoni has no access to your data or API keys. Content is processed through
+standard cloud APIs (Anthropic, Google Drive, AssemblyAI) that you control.
 The login above is shared read-only access; this is your own private instance.
 
 Full setup guide: {ONBOARD_URL}
@@ -694,8 +695,7 @@ Note: macOS will ask "allow access to keychain?" during setup — click Always A
 <div style="border-top:2px solid #1b2d45;padding-top:20px;margin-top:20px">
   <div style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#8c8378;margin-bottom:10px">Your own dashboard</div>
   <div style="background:#eef4ff;border:1px solid #c7d9f5;border-radius:8px;padding:14px 16px;margin-bottom:16px;font-size:13px;color:#1b2d45;line-height:1.6">
-    <strong>Your dashboard runs entirely on your own Mac</strong> — not on Yoni's server.<br>
-    Your API keys, pipeline outputs, and data never leave your machine.<br>
+    <strong>Your dashboard and pipeline run on your own Mac</strong> — not on Yoni's server. Yoni has no access to your data or API keys. Content is processed through standard cloud APIs (Anthropic, Google Drive, AssemblyAI) that you control and pay for.<br><br>
     The login credentials above are for shared read-only access; this sets up your own private instance.
   </div>
   <p style="font-size:13px;margin:0 0 12px">Full step-by-step guide: <a href="{ONBOARD_URL}" style="color:#1b2d45;font-weight:600">{ONBOARD_URL}</a></p>
