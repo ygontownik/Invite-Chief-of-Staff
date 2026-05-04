@@ -97,9 +97,47 @@ prompt_and_store() {
   echo ""
 }
 
+# ── Shared-key pre-population (admin-managed mode) ───────────────
+# If TCIP_SHARED_KEYS_URL is set (injected by bootstrap.sh --shared-keys),
+# fetch JSON from that URL and pre-store keys so prompt_and_store skips them.
+# URL must return: {"ANTHROPIC_API_KEY":"sk-ant-...","ASSEMBLYAI_API_KEY":"..."}
+# The URL is authenticated via the subscriber's GitHub PAT (set in TCIP_GH_TOKEN).
+if [ -n "${TCIP_SHARED_KEYS_URL:-}" ]; then
+  echo "  Fetching shared keys from admin config..."
+  SHARED_JSON=$(curl -fsSL \
+    -H "Authorization: token ${TCIP_GH_TOKEN:-}" \
+    -H "Accept: application/vnd.github.v3.raw" \
+    "$TCIP_SHARED_KEYS_URL" 2>/dev/null || echo "")
+  if [ -n "$SHARED_JSON" ]; then
+    for _key in ANTHROPIC_API_KEY ASSEMBLYAI_API_KEY; do
+      _val=$(echo "$SHARED_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('$_key',''))" 2>/dev/null || echo "")
+      if [ -n "$_val" ]; then
+        existing=$(security find-generic-password -s "$SERVICE_PREFIX/$_key" -a "$USER_ACCOUNT" -w 2>/dev/null || echo "")
+        if [ -z "$existing" ]; then
+          security add-generic-password -s "$SERVICE_PREFIX/$_key" -a "$USER_ACCOUNT" -w "$_val" -U
+          echo "  ✓  $_key loaded from shared config"
+        else
+          echo "  ✓  $_key already set (skipping)"
+        fi
+      fi
+    done
+  else
+    echo "  ! Could not fetch shared keys — will prompt manually"
+  fi
+  echo ""
+fi
+
 # ── Required secrets ──────────────────────────────────────────────
 echo "── REQUIRED ─────────────────────────────────────────────────"
 echo ""
+# Open Anthropic console in browser so user can get their key without leaving the installer
+existing_anthropic=$(security find-generic-password -s "$SERVICE_PREFIX/ANTHROPIC_API_KEY" -a "$USER_ACCOUNT" -w 2>/dev/null || echo "")
+if [ -z "$existing_anthropic" ]; then
+  echo "  Opening Anthropic console to get your API key..."
+  open "https://console.anthropic.com/settings/keys" 2>/dev/null || true
+  echo "  Create a new key, copy it, then paste it below."
+  echo ""
+fi
 prompt_and_store "ANTHROPIC_API_KEY"     "Anthropic API key (sk-ant-...)"     1
 prompt_and_store "DASHBOARD_USERNAME"    "Dashboard HTTP Basic Auth username" 0
 prompt_and_store "DASHBOARD_PASSWORD"    "Dashboard HTTP Basic Auth password" 1
@@ -175,6 +213,13 @@ fi
 # ── Optional secrets ──────────────────────────────────────────────
 echo "── OPTIONAL (press Enter to skip) ───────────────────────────"
 echo ""
+existing_assemblyai=$(security find-generic-password -s "$SERVICE_PREFIX/ASSEMBLYAI_API_KEY" -a "$USER_ACCOUNT" -w 2>/dev/null || echo "")
+if [ -z "$existing_assemblyai" ]; then
+  echo "  Opening AssemblyAI dashboard to get your API key..."
+  open "https://www.assemblyai.com/dashboard" 2>/dev/null || true
+  echo "  Sign up (free), copy your API key, then paste it below (or Enter to skip)."
+  echo ""
+fi
 prompt_and_store "ASSEMBLYAI_API_KEY"    "AssemblyAI key for podcast transcription"  1
 prompt_and_store "SMTP_PASSWORD"         "SMTP app password for briefing emails"      1
 prompt_and_store "TWILIO_AUTH_TOKEN"     "Twilio auth token for phone recording"      1

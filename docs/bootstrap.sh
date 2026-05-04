@@ -28,6 +28,17 @@ die()  { echo -e "${R}ABORT:${RESET} $1" >&2; exit 1; }
 
 REPO_URL="https://github.com/ygontownik/Dashboard.git"
 DEST="$HOME/cos-pipeline"
+SHARED_KEYS_URL=""   # set via --shared-keys=<url> for admin-managed key distribution
+GH_TOKEN=""
+
+# Parse args (bootstrap.sh is usually piped from curl so args come from the wrapping call)
+# Usage: curl ... | bash -s -- --shared-keys=<url>
+for arg in "$@"; do
+  case "$arg" in
+    --shared-keys=*) SHARED_KEYS_URL="${arg#*=}" ;;
+    --shared-keys)   SHARED_KEYS_URL="__prompt__" ;;  # will ask for URL interactively
+  esac
+done
 
 echo ""
 echo "═══════════════════════════════════════════════════════════"
@@ -86,6 +97,7 @@ else
   read -rs GH_TOKEN
   echo ""
 
+  GH_TOKEN="$GH_TOKEN"
   CLONE_URL="https://${GH_USER}:${GH_TOKEN}@github.com/ygontownik/Dashboard.git"
   info "Cloning pipeline repo → ~/cos-pipeline ..."
   if git clone "$CLONE_URL" "$DEST" 2>&1 | grep -v "Cloning\|remote:\|Receiving\|Resolving\|Unpacking" || true; then
@@ -100,4 +112,21 @@ echo "  Cloning complete. Handing off to the interactive setup..."
 echo ""
 
 cd "$DEST"
-exec bash setup.sh "$@"
+
+# Pass shared-key config to setup_keychain.sh via env if admin mode is active
+if [ -n "$SHARED_KEYS_URL" ] && [ "$SHARED_KEYS_URL" != "__prompt__" ]; then
+  export TCIP_SHARED_KEYS_URL="$SHARED_KEYS_URL"
+  export TCIP_GH_TOKEN="${GH_TOKEN:-}"
+  info "Shared-key mode active — API keys will be loaded from admin config"
+fi
+
+# Strip our own flags before forwarding to setup.sh
+SETUP_ARGS=()
+for arg in "$@"; do
+  case "$arg" in
+    --shared-keys*) ;;
+    *) SETUP_ARGS+=("$arg") ;;
+  esac
+done
+
+exec bash setup.sh "${SETUP_ARGS[@]+"${SETUP_ARGS[@]}"}"
