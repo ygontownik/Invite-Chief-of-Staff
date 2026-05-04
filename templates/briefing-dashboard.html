@@ -1,0 +1,765 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tomac Cove — Briefing</title>
+<style>
+  /* Per-template tweaks only. Tokens & components live in design-system.css. */
+
+  .brief-hero {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 24px;
+    padding: 24px 0 18px;
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 20px;
+  }
+  .brief-hero h1 {
+    font-family: var(--font-display);
+    font-size: 32px;
+    font-weight: 700;
+    line-height: 1.1;
+    color: var(--ink);
+    margin: 0 0 6px;
+  }
+  .brief-hero .brief-stamp {
+    font-family: var(--font-data);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: var(--ink-faint);
+    margin-bottom: 10px;
+  }
+  /* Secondary tab strip — same visual grammar as .tc-topnav-tab */
+  .tc-subtabs {
+    display: flex;
+    gap: 2px;
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 20px;
+  }
+  .tc-subtab {
+    appearance: none;
+    background: transparent;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    padding: 10px 18px;
+    font-family: var(--font-data);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: var(--ink-faint);
+    cursor: pointer;
+    transition: color 0.12s ease, border-color 0.12s ease;
+  }
+  .tc-subtab:hover { color: var(--ink-mid); }
+  .tc-subtab.is-active {
+    color: var(--ink);
+    border-bottom-color: var(--gold);
+  }
+
+  .tc-view { display: none; }
+  .tc-view.is-active { display: block; }
+
+  /* Deal flash item rows */
+  .flash-row {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--rule-light);
+    font-size: 14px;
+  }
+  .flash-row:last-child { border-bottom: 0; }
+  .flash-row .flash-text { flex: 1; color: var(--ink); }
+  .flash-row .flash-owner {
+    font-family: var(--font-data);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--ink-faint);
+  }
+  .flash-ticker {
+    font-family: var(--font-data);
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    padding: 3px 8px;
+    border: 1px solid var(--navy-border);
+    background: var(--navy-light);
+    color: var(--navy);
+    border-radius: 999px;
+    text-decoration: none;
+    transition: background 0.1s ease;
+  }
+  .flash-ticker:hover { background: var(--gold-light); color: var(--gold); border-color: var(--gold-border); }
+
+  /* Milestone-row dot pills */
+  .miles-row {
+    display: grid;
+    grid-template-columns: 18px 1fr 1fr auto auto;
+    gap: 12px;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--rule-light);
+  }
+  .miles-row:last-child { border-bottom: 0; }
+  .miles-row .miles-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--slate);
+    display: inline-block;
+  }
+  .miles-row .miles-dot--green { background: var(--green); }
+  .miles-row .miles-dot--amber { background: var(--amber); }
+  .miles-row .miles-dot--red   { background: var(--red); }
+  .miles-row .miles-name {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--ink);
+  }
+  .miles-row .miles-what { color: var(--ink-mid); font-size: 13px; }
+  .miles-row .miles-owner {
+    font-family: var(--font-data);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--ink-faint);
+  }
+  .miles-row .miles-days {
+    font-family: var(--font-data);
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--ink);
+  }
+
+  /* Amber staleness strip (built per-template from amber tokens) */
+  .tc-strip-amber {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding: 9px 14px;
+    font-family: var(--font-data);
+    font-size: 12px;
+    letter-spacing: 0.03em;
+    background: var(--amber-bg);
+    color: var(--amber);
+    border: 1px solid var(--amber-bd);
+    border-radius: var(--radius-sm);
+    margin: 6px 0;
+  }
+  .tc-strip-amber .tc-strip-label {
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    font-size: 10px;
+    font-weight: 700;
+  }
+  .tc-strip-amber .tc-strip-deal {
+    font-weight: 700;
+    color: var(--ink);
+  }
+  .tc-strip-amber .tc-strip-msg {
+    color: var(--ink-mid);
+    font-family: var(--font-body);
+    font-size: 13px;
+    font-style: italic;
+  }
+
+  /* Capital at stake table */
+  .cap-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 6px;
+  }
+  .cap-table th, .cap-table td {
+    padding: 8px 10px;
+    text-align: right;
+    border-bottom: 1px solid var(--rule-light);
+    font-family: var(--font-data);
+    font-size: 13px;
+  }
+  .cap-table th {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--ink-faint);
+    font-weight: 700;
+    border-bottom: 1px solid var(--rule);
+  }
+  .cap-table td:first-child, .cap-table th:first-child {
+    text-align: left;
+    font-family: var(--font-body);
+    font-size: 14px;
+    color: var(--ink);
+  }
+  .cap-table tr.cap-total td {
+    border-top: 2px solid var(--rule);
+    border-bottom: 0;
+    font-weight: 700;
+    color: var(--ink);
+    padding-top: 10px;
+  }
+
+  /* Follow-ups checkboxes (read-only) */
+  .followup-row {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--rule-light);
+  }
+  .followup-row input[type=checkbox] {
+    margin-top: 4px;
+    accent-color: var(--gold);
+  }
+  .followup-row .fu-text { flex: 1; color: var(--ink); font-size: 14px; }
+  .followup-row .fu-meta {
+    font-family: var(--font-data);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--ink-faint);
+    margin-top: 2px;
+  }
+
+  .brief-placeholder {
+    padding: 28px 20px;
+    text-align: center;
+    color: var(--ink-faint);
+    font-family: var(--font-body);
+    font-style: italic;
+    font-size: 14px;
+  }
+  .brief-placeholder code {
+    font-size: 11px;
+    background: var(--rule-light);
+    padding: 1px 6px;
+    border-radius: var(--radius-sm);
+    color: var(--ink-mid);
+  }
+
+  @media print {
+    .brief-hero { border-bottom: 1px solid #999; }
+    .tc-subtabs { display: none; }
+    .tc-view { display: block !important; page-break-before: always; }
+    .tc-view:first-of-type { page-break-before: auto; }
+  }
+</style>
+</head>
+<body>
+<div class="tc-shell">
+  {{TOPNAV}}
+  <main class="tc-shell-inner">
+
+    <section class="brief-hero">
+      <div>
+        <h1>Briefing</h1>
+        <div class="brief-stamp" id="brief-stamp">—</div>
+      </div>
+      <div class="tc-no-print">
+        <button class="tc-btn tc-btn--gold" onclick="window.print()">Print briefing</button>
+        <button id="brief-sync-btn" onclick="briefSyncAll()" style="background:none;border:1px solid var(--navy-border,#c6d4e8);color:var(--navy,#0f1e38);font-size:11px;font-family:inherit;padding:5px 12px;border-radius:4px;cursor:pointer;display:inline-flex;align-items:center;gap:5px">
+          <svg id="brief-sync-icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+          Sync
+        </button>
+      </div>
+    </section>
+
+    <div class="tc-subtabs tc-no-print" role="tablist">
+      <button class="tc-subtab is-active" data-view="intel" role="tab">Daily Briefing</button>
+      <button class="tc-subtab" data-view="deal" role="tab">Deal Flash</button>
+    </div>
+
+    <!-- ===== DEAL FLASH ===== -->
+    <section class="tc-view" id="view-deal">
+
+      <div class="tc-card tc-card-accent-red">
+        <div class="tc-section-label">⚡ Today</div>
+        <div id="flash-today"><div class="brief-placeholder">Loading&hellip;</div></div>
+      </div>
+
+      <div class="tc-card tc-card-accent-amber">
+        <div class="tc-section-label">This Week</div>
+        <div id="flash-week"><div class="brief-placeholder">Loading&hellip;</div></div>
+      </div>
+
+      <div class="tc-card">
+        <div class="tc-section-label">Next Milestones by Deal</div>
+        <div id="flash-milestones"><div class="brief-placeholder">Loading&hellip;</div></div>
+      </div>
+
+      <div class="tc-card tc-card-accent-amber">
+        <div class="tc-section-label">Staleness Alerts</div>
+        <div id="flash-staleness"><div class="brief-placeholder">Loading&hellip;</div></div>
+      </div>
+
+      <div class="tc-card tc-card-accent-gold">
+        <div class="tc-section-label">Capital at Stake — TCIP Profit ($M)</div>
+        <div id="flash-capital"><div class="brief-placeholder">Loading&hellip;</div></div>
+      </div>
+
+    </section>
+
+    <!-- ===== DAILY BRIEFING ===== -->
+    <section class="tc-view is-active" id="view-intel">
+      <div class="tc-section-label" id="intel-label">DAILY BRIEFING LOG</div>
+      <div id="intel-list">
+        <div class="tc-card"><div class="brief-placeholder">Loading&hellip;</div></div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+function briefSyncAll() {
+  var btn = document.getElementById('brief-sync-btn');
+  var icon = document.getElementById('brief-sync-icon');
+  btn.disabled = true;
+  icon.style.animation = 'tc-spin 0.6s linear infinite';
+  fetch(''+window.location.origin+'/refresh-all', {method: 'POST'})
+    .then(function() { setTimeout(function() { window.location.reload(); }, 150); })
+    .catch(function() { setTimeout(function() { window.location.reload(); }, 300); });
+}
+</script>
+<script>
+(function () {
+  'use strict';
+
+  const esc = s => (s ?? '').toString().replace(/[&<>"']/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
+
+  const $ = sel => document.querySelector(sel);
+
+  // ---- Tab switching ----
+  document.querySelectorAll('.tc-subtab').forEach(t => {
+    t.addEventListener('click', () => {
+      document.querySelectorAll('.tc-subtab').forEach(x => x.classList.remove('is-active'));
+      document.querySelectorAll('.tc-view').forEach(x => x.classList.remove('is-active'));
+      t.classList.add('is-active');
+      $('#view-' + t.dataset.view).classList.add('is-active');
+    });
+  });
+
+  // ---- Helpers ----
+  const MS_DAY = 86400000;
+  const todayISO = (() => {
+    const d = new Date();
+    return d.toISOString().slice(0, 10);
+  })();
+
+  const parseDate = s => {
+    if (!s) return null;
+    const d = new Date(s + 'T00:00:00');
+    return isNaN(d.getTime()) ? null : d;
+  };
+
+  const daysUntil = iso => {
+    const d = parseDate(iso);
+    if (!d) return null;
+    const now = new Date(todayISO + 'T00:00:00');
+    return Math.round((d - now) / MS_DAY);
+  };
+
+  const dotClass = iso => {
+    const n = daysUntil(iso);
+    if (n === null) return '';
+    if (n < 0) return 'miles-dot--red';
+    if (n <= 7) return 'miles-dot--red';
+    if (n <= 21) return 'miles-dot--amber';
+    return 'miles-dot--green';
+  };
+
+  const fmtDays = iso => {
+    const n = daysUntil(iso);
+    if (n === null) return '—';
+    if (n < 0) return Math.abs(n) + 'd OVERDUE';
+    if (n === 0) return 'TODAY';
+    return 'in ' + n + 'd';
+  };
+
+  const fmtUSD = n => {
+    if (n === null || n === undefined || isNaN(n)) return '—';
+    const m = n / 1_000_000;
+    if (Math.abs(m) >= 100) return '$' + m.toFixed(0) + 'M';
+    return '$' + m.toFixed(1) + 'M';
+  };
+
+  const tickerPill = deal =>
+    `<a class="flash-ticker" href="/tomac-cove/?deal=${esc(deal.id)}">${esc(deal.ticker || deal.id)}</a>`;
+
+  // ---- Render hero stamp (date + compile timestamp only — portfolio stats live on TC Pipeline) ----
+  function renderHero(data) {
+    const p = data.portfolio || {};
+    const generated = p.generated_at || new Date().toISOString();
+    $('#brief-stamp').textContent = `${todayISO} · compiled ${esc(generated)}`;
+  }
+
+  // ---- Render deal flash sections ----
+  function collectActions(deals) {
+    const all = [];
+    deals.forEach(d => {
+      (d.actions || []).forEach(a => {
+        if ((a.status || '').toLowerCase() === 'done' || (a.status || '').toLowerCase() === 'closed') return;
+        const due = a.due || a.date_due;
+        const n = daysUntil(due);
+        all.push({
+          deal: d,
+          due, n,
+          owner: a.owner || d.owner || '',
+          text: a.action || a.text || '',
+          priority: (a.priority || '').toLowerCase(),
+          critical: a.critical === true || (a.priority || '').toLowerCase() === 'critical',
+        });
+      });
+    });
+    return all;
+  }
+
+  function renderFlashList(container, items, emptyMsg) {
+    if (!items.length) {
+      container.innerHTML = `<div class="brief-placeholder">${esc(emptyMsg)}</div>`;
+      return;
+    }
+    container.innerHTML = items.map(it => {
+      const critPill = it.critical ? '<span class="tc-pill tc-pill--red">Critical</span>' : '';
+      const duePill = it.due ? `<span class="tc-pill tc-pill--slate">${esc(fmtDays(it.due))}</span>` : '';
+      return `
+        <div class="flash-row">
+          ${tickerPill(it.deal)}
+          <div class="flash-text">${esc(it.text)}</div>
+          ${critPill}
+          ${duePill}
+          <div class="flash-owner">${esc(it.owner)}</div>
+        </div>`;
+    }).join('');
+  }
+
+  function renderDealFlash(data) {
+    const deals = data.deals || [];
+    const actions = collectActions(deals);
+
+    const today = actions.filter(a => a.n !== null && a.n <= 0);
+    const week  = actions.filter(a => a.n !== null && a.n > 0 && a.n <= 7);
+
+    // sort critical-first, then by days
+    const prio = a => (a.critical ? 0 : 1);
+    today.sort((a, b) => prio(a) - prio(b) || (a.n ?? 0) - (b.n ?? 0));
+    week .sort((a, b) => prio(a) - prio(b) || (a.n ?? 0) - (b.n ?? 0));
+
+    renderFlashList($('#flash-today'), today, 'No actions due today.');
+    renderFlashList($('#flash-week'),  week,  'No actions due this week.');
+
+    // Next milestones by deal
+    const miles = deals.map(d => ({
+      deal: d,
+      label: d.next_milestone || '—',
+      due: d.next_milestone_due || null,
+      owner: d.owner || '',
+    })).sort((a, b) => (daysUntil(a.due) ?? 9999) - (daysUntil(b.due) ?? 9999));
+
+    $('#flash-milestones').innerHTML = miles.map(m => `
+      <div class="miles-row">
+        <span class="miles-dot ${dotClass(m.due)}"></span>
+        <div class="miles-name">${tickerPill(m.deal)} ${esc(m.deal.name || '')}</div>
+        <div class="miles-what">${esc(m.label)}</div>
+        <div class="miles-owner">${esc(m.owner)}</div>
+        <div class="miles-days">${esc(fmtDays(m.due))}</div>
+      </div>
+    `).join('') || '<div class="brief-placeholder">No milestones.</div>';
+
+    // Staleness alerts
+    const flags = [];
+    deals.forEach(d => {
+      (d.staleness_flags || []).forEach(f => {
+        const msg = typeof f === 'string' ? f : (f.message || f.reason || f.flag || JSON.stringify(f));
+        flags.push({ deal: d, msg });
+      });
+    });
+    if (!flags.length) {
+      $('#flash-staleness').innerHTML = '<div class="brief-placeholder">No staleness flags — all deals are current.</div>';
+    } else {
+      $('#flash-staleness').innerHTML = flags.map(f => `
+        <div class="tc-strip-amber">
+          <span class="tc-strip-label">Stale</span>
+          <span class="tc-strip-deal">${esc(f.deal.ticker)}</span>
+          <span class="tc-strip-msg">${esc(f.msg)}</span>
+        </div>
+      `).join('');
+    }
+
+    // Capital at stake — tcip_profit.total low/mid/high per deal
+    let tLow = 0, tMid = 0, tHigh = 0;
+    const rows = deals.map(d => {
+      const t = (d.tcip_profit && d.tcip_profit.total) || d.tcip_profit || {};
+      const low = t.low ?? 0, mid = t.mid ?? 0, high = t.high ?? 0;
+      tLow += low; tMid += mid; tHigh += high;
+      return `<tr>
+        <td>${tickerPill(d)} ${esc(d.name || '')}</td>
+        <td class="tc-mono">${fmtUSD(low)}</td>
+        <td class="tc-mono">${fmtUSD(mid)}</td>
+        <td class="tc-mono">${fmtUSD(high)}</td>
+      </tr>`;
+    }).join('');
+
+    $('#flash-capital').innerHTML = `
+      <table class="cap-table">
+        <thead>
+          <tr><th>Deal</th><th>Low</th><th>Mid</th><th>High</th></tr>
+        </thead>
+        <tbody>
+          ${rows}
+          <tr class="cap-total">
+            <td>Portfolio total</td>
+            <td class="tc-mono">${fmtUSD(tLow)}</td>
+            <td class="tc-mono">${fmtUSD(tMid)}</td>
+            <td class="tc-mono">${fmtUSD(tHigh)}</td>
+          </tr>
+        </tbody>
+      </table>
+    `;
+  }
+
+  // ---- DAILY BRIEFING tab ----
+  // Strips [Source Name] citation tags from text so body prose is clean.
+  function _stripCites(s) {
+    return (s || '').replace(/\s*\[[^\]]{1,60}\]/g, '').trim();
+  }
+
+  // Render the KEY TAKEAWAY banner (navy background, gold accent).
+  function _takeawayCard(text) {
+    return `<div class="tc-card" style="background:var(--navy);color:#fff;margin-bottom:14px;border-left:4px solid var(--gold);padding:14px 16px">
+      <div style="font-family:var(--font-data);font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.18em;color:var(--gold);margin-bottom:8px">Key Takeaway</div>
+      <div style="font-size:14px;line-height:1.65;font-style:italic">${esc(text)}</div>
+    </div>`;
+  }
+
+  // Narrative section (paragraphs of analysis text).
+  function _narrativeCard(title, paragraphs) {
+    const body = paragraphs.map(p =>
+      `<p style="margin:0 0 10px;font-size:13.5px;line-height:1.65;color:var(--ink)">${esc(_stripCites(p))}</p>`
+    ).join('');
+    return `<div class="tc-card" style="margin-bottom:12px">
+      <div style="font-family:var(--font-data);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.14em;color:#4a9eff;margin-bottom:10px">${esc(title)}</div>
+      ${body}
+    </div>`;
+  }
+
+  // Company Watch section — parsed into entity / sector / detail grid.
+  function _companyWatchCard(title, items) {
+    const hdr = `<div style="display:grid;grid-template-columns:200px 110px 1fr;gap:12px;padding-bottom:8px;border-bottom:1px solid var(--rule);margin-bottom:2px">
+      ${['Company','Sector','Note'].map(n =>
+        `<div style="font-family:var(--font-data);font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.14em;color:var(--ink-faint)">${n}</div>`
+      ).join('')}
+    </div>`;
+    const rows = items.map(raw => {
+      const clean = _stripCites(raw);
+      const pipeIdx = clean.indexOf('|');
+      const colonIdx = clean.indexOf(':');
+      let entity = clean, sector = '', detail = '';
+      if (pipeIdx > 0 && colonIdx > pipeIdx) {
+        entity = clean.slice(0, pipeIdx).trim();
+        sector = clean.slice(pipeIdx + 1, colonIdx).trim();
+        detail = clean.slice(colonIdx + 1).trim();
+      } else if (colonIdx > 0) {
+        entity = clean.slice(0, colonIdx).trim();
+        detail = clean.slice(colonIdx + 1).trim();
+      }
+      return `<div style="display:grid;grid-template-columns:200px 110px 1fr;gap:12px;padding:9px 0;border-bottom:1px solid var(--rule-light);align-items:baseline">
+        <div style="font-family:var(--font-display);font-weight:700;font-size:13px;color:var(--ink)">${esc(entity)}</div>
+        <div>${sector ? `<span class="tc-pill tc-pill--slate" style="font-size:10px">${esc(sector)}</span>` : ''}</div>
+        <div style="font-size:13px;color:var(--ink-mid);line-height:1.45">${esc(detail)}</div>
+      </div>`;
+    }).join('');
+    return `<div class="tc-card" style="margin-bottom:12px;overflow-x:auto">
+      <div style="font-family:var(--font-data);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.14em;color:#4a9eff;margin-bottom:10px">${esc(title)}</div>
+      ${hdr}${rows}
+    </div>`;
+  }
+
+  // Power Markets section — fixed-width columnar table.
+  function _powerMarketsCard(title, pmLines) {
+    const headerIdx = pmLines.findIndex(l => /Entity/i.test(l) && /Signal/i.test(l));
+    if (headerIdx < 0) {
+      const plain = pmLines.filter(l => l.trim() && !/^[─\-]{5,}/.test(l.trim()))
+        .map(l => `<div style="font-size:12px;font-family:var(--font-data);color:var(--ink-mid);padding:3px 0">${esc(l.trim())}</div>`).join('');
+      return `<div class="tc-card" style="margin-bottom:12px">
+        <div style="font-family:var(--font-data);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.14em;color:#4a9eff;margin-bottom:10px">${esc(title)}</div>
+        ${plain}
+      </div>`;
+    }
+    const headerLine = pmLines[headerIdx];
+    // Determine column start positions from the header.
+    const colNames = ['Entity', 'Event', 'Banks', 'Signal'];
+    const colStarts = colNames.map(n => headerLine.indexOf(n)).filter(p => p >= 0);
+    const splitRow = line => {
+      const cols = [];
+      for (let i = 0; i < colStarts.length; i++) {
+        const s = colStarts[i];
+        const e = i + 1 < colStarts.length ? colStarts[i + 1] : undefined;
+        cols.push((line.slice(s, e) || '').trim());
+      }
+      return cols;
+    };
+    const sepIdx = pmLines.findIndex((l, i) => i > headerIdx && /^[─\-]{10,}/.test(l.trim()));
+    const dataStart = sepIdx >= 0 ? sepIdx + 1 : headerIdx + 1;
+    const dataLines = pmLines.slice(dataStart).filter(l => l.trim() && !/^[─\-]{5,}/.test(l.trim()));
+    const grid = 'grid-template-columns:180px 1fr 1fr 1fr';
+    const hdr = `<div style="display:grid;${grid};gap:10px;padding-bottom:8px;border-bottom:1px solid var(--rule)">
+      ${colNames.map(n => `<div style="font-family:var(--font-data);font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.14em;color:var(--ink-faint)">${n}</div>`).join('')}
+    </div>`;
+    const rows = dataLines.map(line => {
+      const cols = splitRow(line);
+      while (cols.length < 4) cols.push('');
+      const cells = cols.map((c, i) => {
+        const style = i === 0
+          ? 'font-weight:700;font-family:var(--font-display);font-size:13px;color:var(--ink)'
+          : 'font-size:12.5px;color:var(--ink-mid);line-height:1.4';
+        return `<div style="${style}">${esc(c)}</div>`;
+      });
+      return `<div style="display:grid;${grid};gap:10px;padding:9px 0;border-bottom:1px solid var(--rule-light)">${cells.join('')}</div>`;
+    }).join('');
+    return `<div class="tc-card" style="margin-bottom:12px;overflow-x:auto">
+      <div style="font-family:var(--font-data);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.14em;color:#4a9eff;margin-bottom:10px">${esc(title)}</div>
+      ${hdr}${rows}
+    </div>`;
+  }
+
+  // Parse the full briefing plain-text file and return rendered HTML cards.
+  function _parseBriefingFullText(text) {
+    const lines = text.split('\n');
+    const cards = [];
+    let curTitle = '', curItems = [], isPM = false, pmLines = [];
+
+    const flush = () => {
+      if (!curTitle) return;
+      if (isPM) {
+        cards.push(_powerMarketsCard(curTitle, pmLines));
+      } else if (/COMPANY WATCH/i.test(curTitle)) {
+        cards.push(_companyWatchCard(curTitle, curItems.filter(Boolean)));
+      } else {
+        cards.push(_narrativeCard(curTitle, curItems.filter(Boolean)));
+      }
+      curTitle = ''; curItems = []; pmLines = []; isPM = false;
+    };
+
+    for (const raw of lines) {
+      const trimmed = raw.trim();
+      if (!trimmed) continue;
+
+      // KEY TAKEAWAY — strip trailing date stamp and citation tags
+      if (trimmed.startsWith('KEY TAKEAWAY:')) {
+        let kt = trimmed.slice('KEY TAKEAWAY:'.length).trim();
+        kt = kt.replace(/\s*\d{4}-\d{2}-\d{2}\s*[—–\-]\s*.+$/, '').trim();
+        cards.push(_takeawayCard(_stripCites(kt)));
+        continue;
+      }
+
+      // Numbered section header: "4. COMPANY WATCH" or "1. US DIGITAL INFRA..."
+      const secM = trimmed.match(/^(\d+)\.\s+([A-Z][A-Z ,&/\-]+(?:\s*[—–]\s*[A-Za-z ,0-9]+)?)(.*)/);
+      if (secM) {
+        flush();
+        curTitle = secM[2].trim();
+        isPM = /POWER MARKET/i.test(curTitle);
+        const rest = secM[3].trim();
+        if (!isPM && rest) curItems.push(rest);
+        continue;
+      }
+
+      if (!curTitle) continue;
+      if (isPM) { pmLines.push(raw); }
+      else { curItems.push(trimmed); }
+    }
+    flush();
+    return cards;
+  }
+
+  // COS Pipeline activity card (new transcripts, action items from today's run).
+  function _cosPipelineCard(cap) {
+    const items = (cap.actionItems || []).filter(s => s && s !== '(no new transcripts processed)');
+    const transcripts = [
+      ...(cap.tomac    || []).filter(s => s && !s.startsWith('(none')),
+      ...(cap.recruiting || []).filter(s => s && !s.startsWith('(none')),
+      ...(cap.other    || []).filter(s => s && !s.startsWith('(none')),
+    ];
+    if (!items.length && !transcripts.length) return '';
+
+    const mkRow = text => {
+      const clean = text.replace(/\*\*/g, '');
+      return `<div style="padding:9px 0;border-bottom:1px solid var(--rule-light);font-size:13px;line-height:1.6;color:var(--ink)">${esc(clean)}</div>`;
+    };
+
+    const xRows = transcripts.length
+      ? `<div style="font-family:var(--font-data);font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.14em;color:var(--ink-faint);margin:10px 0 4px">New Transcripts</div>
+         ${transcripts.map(mkRow).join('')}`
+      : '';
+    const aRows = items.length
+      ? `<div style="font-family:var(--font-data);font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.14em;color:var(--ink-faint);margin:10px 0 4px">Highlights &amp; Actions</div>
+         ${items.map(mkRow).join('')}`
+      : '';
+
+    return `<div class="tc-card" style="margin-bottom:14px;border-left:3px solid var(--navy)">
+      <div style="font-family:var(--font-data);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.14em;color:var(--navy);margin-bottom:2px">COS Pipeline · ${esc(cap.date || '')}</div>
+      ${xRows}${aRows}
+    </div>`;
+  }
+
+  function renderBriefingIntel(data) {
+    const date = data.date || '';
+    const fullText = data.fullText || '';
+    const mc = data.marketCommentary || null;
+    const synopsis = data.synopsis || {};
+    $('#intel-label').textContent = `DAILY BRIEFING${date ? ' · ' + date : ''}`;
+
+    const parts = [];
+
+    // COS capture summary (pipeline run output — calls processed, action items)
+    const cap = synopsis.captureSummary;
+    if (cap) {
+      const cosCard = _cosPipelineCard(cap);
+      if (cosCard) parts.push(cosCard);
+    }
+
+    // Market briefing — full text preferred; fall back to truncated marketCommentary
+    if (fullText) {
+      parts.push(..._parseBriefingFullText(fullText));
+    } else if (mc && (mc.takeaway || (mc.sections && mc.sections.length))) {
+      if (mc.takeaway) parts.push(_takeawayCard(mc.takeaway));
+      for (const s of (mc.sections || [])) {
+        if (!s.items || !s.items.length) continue;
+        parts.push(_narrativeCard(s.title || '', s.items));
+      }
+    } else {
+      parts.push('<div class="tc-card"><div class="brief-placeholder">No market briefing for today — pipeline runs at 7:51am.</div></div>');
+    }
+
+    $('#intel-list').innerHTML = parts.join('');
+  }
+
+  function renderBriefingIntelError(err) {
+    $('#intel-list').innerHTML = `<div class="tc-card tc-muted">Could not load daily briefing: ${esc(String(err).slice(0,180))}</div>`;
+  }
+
+  // ---- Fetch ----
+  fetch('/dashboard-data.json', { credentials: 'include' })
+    .then(r => r.ok ? r.json() : Promise.reject('dashboard-data.json ' + r.status))
+    .then(data => {
+      renderHero(data);
+      renderDealFlash(data);
+    })
+    .catch(err => {
+      $('#brief-stamp').textContent = 'Load error: ' + String(err).slice(0, 120);
+    });
+
+  fetch('/briefing/intel.json', { credentials: 'include' })
+    .then(r => r.ok ? r.json() : Promise.reject('briefing/intel.json ' + r.status))
+    .then(renderBriefingIntel)
+    .catch(renderBriefingIntelError);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tomac Cove — All Views</title>
+  <style>
+    /* Per-route tweaks only. Global tokens live in design-system.css. */
+    .tc-all-hero {
+      padding: 28px 0 20px;
+      border-bottom: 1px solid var(--rule-light);
+      margin-bottom: 28px;
+    }
+    .tc-all-hero h1 {
+      font-family: var(--font-display);
+      font-size: 32px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+    .tc-all-hero .tc-all-sub {
+      margin-top: 6px;
+      font-family: var(--font-body);
+      font-style: italic;
+      color: var(--ink-mid);
+      font-size: 15px;
+    }
+    .tc-all-hero .tc-all-meta {
+      margin-top: 10px;
+      font-family: var(--font-data);
+      font-size: 10.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--ink-faint);
+    }
+    .tc-all-hero .tc-all-meta strong { color: var(--ink); font-weight: 700; }
+
+    .tc-tile-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 18px;
+    }
+    .tc-tile-card {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 20px 22px 22px;
+      text-decoration: none;
+      color: inherit;
+      min-height: 160px;
+    }
+    .tc-tile-card:hover { color: inherit; }
+    .tc-tile-card h2 {
+      font-family: var(--font-display);
+      font-size: 20px;
+      margin: 0;
+    }
+    .tc-tile-card p {
+      font-family: var(--font-body);
+      font-size: 14px;
+      color: var(--ink-mid);
+      line-height: 1.5;
+      margin: 0;
+      flex: 1;
+    }
+    .tc-tile-card .tc-tile-route {
+      font-family: var(--font-data);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--gold);
+      margin-bottom: 2px;
+    }
+    .tc-all-footer {
+      margin-top: 40px;
+      padding-top: 18px;
+      border-top: 1px solid var(--rule-light);
+      font-family: var(--font-data);
+      font-size: 10.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--ink-ghost);
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="tc-shell">
+    {{TOPNAV}}
+    <main class="tc-shell-inner">
+      <section class="tc-all-hero">
+        <h1>Dashboards</h1>
+        <div class="tc-all-sub">One platform for the Tomac Cove investment process — from daily coordination to live deal execution.</div>
+        <div class="tc-all-meta">Signed in as <strong>{{USER}}</strong> · {{TILE_COUNT}} views</div>
+      </section>
+      <div class="tc-tile-grid">
+        {{TILES}}
+      </div>
+      <footer class="tc-all-footer">yonis-mac-mini:7777 · tile permissions in config/dashboard-tiles.yaml</footer>
+    </main>
+  </div>
+</body>
+</html>

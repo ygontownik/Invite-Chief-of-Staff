@@ -1,0 +1,2113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tomac Cove — Admin</title>
+  <style>
+    .adm-wrap    { max-width: 860px; margin: 0 auto; padding: 32px 24px 60px; }
+    .adm-hero    { margin-bottom: 24px; }
+    .adm-hero h1 { font-family: var(--font-display); font-size: 1.9rem; font-weight: 700;
+                   color: var(--ink); margin: 0 0 4px; }
+    .adm-hero p  { font-family: var(--font-body); font-size: .875rem; color: var(--ink-mid); margin: 0; }
+
+    /* Flash */
+    .adm-flash     { padding: 10px 16px; border-radius: 6px; font-family: var(--font-body);
+                     font-size: .875rem; margin-bottom: 20px; display: none; }
+    .adm-flash.ok  { background: var(--green-bg); border: 1px solid var(--green-bd);
+                     color: var(--green); display: block; }
+    .adm-flash.err { background: var(--red-bg); border: 1px solid var(--red-bd);
+                     color: var(--red); display: block; }
+
+    /* Tabs */
+    .adm-tabs      { display: flex; gap: 2px; margin-bottom: 28px; border-bottom: 1px solid var(--rule); }
+    .adm-tab       { font-family: var(--font-data); font-size: .72rem; font-weight: 700;
+                     text-transform: uppercase; letter-spacing: .07em; padding: 8px 16px;
+                     border: none; background: none; cursor: pointer; color: var(--ink-faint);
+                     border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all .12s; }
+    .adm-tab:hover  { color: var(--ink-mid); }
+    .adm-tab.active { color: var(--navy); border-bottom-color: var(--navy); }
+    .adm-tab-panel  { display: none; }
+    .adm-tab-panel.visible { display: block; }
+
+    /* Form fields */
+    .adm-row   { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+    .adm-field { display: flex; flex-direction: column; gap: 5px; }
+    .adm-field label { font-family: var(--font-data); font-size: .7rem; text-transform: uppercase;
+                       letter-spacing: .06em; color: var(--ink-faint); }
+    .adm-field input, .adm-field select {
+      background: var(--white); border: 1px solid var(--rule); border-radius: 5px;
+      color: var(--ink); padding: 8px 10px; font-size: .875rem; font-family: var(--font-body);
+      outline: none; min-width: 160px; }
+    .adm-field input:focus, .adm-field select:focus { border-color: var(--navy); }
+    .adm-field .adm-hint { font-family: var(--font-body); font-size: .75rem;
+                           color: var(--ink-ghost); margin-top: 2px; }
+
+    /* Section label */
+    .adm-section-label { font-family: var(--font-data); font-size: .72rem; font-weight: 700;
+                         text-transform: uppercase; letter-spacing: .07em; color: var(--ink-faint);
+                         margin: 0 0 14px; }
+
+    /* Tile pills */
+    .adm-tiles      { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+    .adm-tile-check { display: flex; align-items: center; gap: 6px; background: var(--white);
+                      border: 1px solid var(--rule); border-radius: 5px; padding: 6px 12px;
+                      cursor: pointer; user-select: none; font-family: var(--font-body);
+                      font-size: .8rem; }
+    .adm-tile-check input { accent-color: var(--navy); cursor: pointer; }
+    .adm-tile-check:has(input:checked) { border-color: var(--navy); color: var(--navy);
+                                         background: var(--navy-light); }
+
+    /* Grouped dashboard access (invite form + edit panel) */
+    .adm-dashboard-groups { display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; }
+    .adm-dashboard-group  { display: flex; flex-direction: column; gap: 4px; }
+    .adm-subtabs          { display: flex; flex-wrap: wrap; gap: 6px; padding-left: 20px; }
+    .adm-subtab-check     { font-size: .75rem; background: var(--bg); border-style: dashed; padding: 4px 10px; }
+    .adm-subtab-check:has(input:checked) { border-color: var(--navy); color: var(--navy);
+                                           background: var(--navy-light); border-style: solid; }
+
+    /* Tables */
+    .adm-table { width: 100%; border-collapse: collapse; }
+    .adm-table thead th { font-family: var(--font-data); font-size: .68rem; text-transform: uppercase;
+                          letter-spacing: .07em; color: var(--ink-faint); text-align: left;
+                          padding: 0 12px 10px 0; border-bottom: 1px solid var(--rule); }
+    .adm-table tbody td { padding: 12px 12px 12px 0; border-bottom: 1px solid var(--rule-light);
+                          vertical-align: top; font-family: var(--font-body); font-size: .875rem; }
+    .adm-table tbody tr:last-child td { border-bottom: none; }
+    .adm-user-name  { font-weight: 600; color: var(--ink); }
+    .adm-user-email { font-size: .8rem; color: var(--ink-mid); }
+    .adm-user-un    { font-family: var(--font-data); font-size: .75rem; color: var(--ink-faint); }
+    .adm-tags       { display: flex; flex-wrap: wrap; gap: 4px; }
+    .adm-tag        { background: var(--navy-light); border: 1px solid var(--navy-border);
+                      border-radius: 4px; padding: 2px 8px; font-family: var(--font-data);
+                      font-size: .68rem; color: var(--navy); text-transform: uppercase;
+                      letter-spacing: .04em; }
+
+    /* Inline edit panel */
+    .adm-edit-row              { display: none; }
+    .adm-edit-row.open         { display: table-row; }
+    .adm-edit-panel            { background: var(--bg); border-radius: 7px; padding: 16px;
+                                 border: 1px solid var(--rule); }
+    .adm-edit-panel .adm-tiles { margin-bottom: 14px; }
+
+    /* Action buttons */
+    .adm-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .btn-edit   { font-family: var(--font-data); font-size: .7rem; text-transform: uppercase;
+                  letter-spacing: .05em; padding: 5px 12px; border-radius: 4px; cursor: pointer;
+                  border: 1px solid var(--navy-border); color: var(--navy);
+                  background: var(--navy-light); }
+    .btn-edit:hover { background: var(--navy); color: var(--white); }
+    .btn-save   { font-family: var(--font-data); font-size: .7rem; text-transform: uppercase;
+                  letter-spacing: .05em; padding: 5px 14px; border-radius: 4px; cursor: pointer;
+                  border: none; background: var(--navy); color: var(--white); }
+    .btn-save:hover { opacity: .88; }
+    .btn-cancel { font-family: var(--font-data); font-size: .7rem; text-transform: uppercase;
+                  letter-spacing: .05em; padding: 5px 12px; border-radius: 4px; cursor: pointer;
+                  border: 1px solid var(--rule); background: transparent; color: var(--ink-mid); }
+    .btn-cancel:hover { border-color: var(--ink-mid); }
+    .btn-revoke { font-family: var(--font-data); font-size: .7rem; text-transform: uppercase;
+                  letter-spacing: .05em; padding: 5px 12px; border-radius: 4px; cursor: pointer;
+                  border: 1px solid var(--red-bd); color: var(--red); background: transparent; }
+    .btn-revoke:hover { background: var(--red-bg); }
+
+    /* Status tiles */
+    .status-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;
+                   margin-bottom: 28px; }
+    .status-tile { background: var(--paper); border: 1px solid var(--rule); border-radius: 8px;
+                   padding: 16px 18px; }
+    .status-tile .st-label { font-family: var(--font-data); font-size: .68rem; text-transform: uppercase;
+                             letter-spacing: .07em; color: var(--ink-faint); margin-bottom: 6px; }
+    .status-tile .st-value { font-family: var(--font-data); font-size: 1.1rem; font-weight: 700;
+                             color: var(--ink); margin-bottom: 3px; }
+    .status-tile .st-sub   { font-family: var(--font-body); font-size: .78rem; color: var(--ink-mid); }
+    .status-tile.ok   .st-value { color: #059669; }
+    .status-tile.warn .st-value { color: #d97706; }
+    .status-tile.err  .st-value { color: var(--red); }
+
+    /* Call badges */
+    .badge-upcoming { background:#EFF6FF;color:#1E40AF;border:1px solid #BFDBFE;border-radius:4px;
+                      padding:2px 7px;font-family:var(--font-data);font-size:.65rem;font-weight:700;
+                      text-transform:uppercase;letter-spacing:.04em; }
+    .badge-done     { background:#ECFDF5;color:#065F46;border:1px solid #A7F3D0;border-radius:4px;
+                      padding:2px 7px;font-family:var(--font-data);font-size:.65rem;font-weight:700;
+                      text-transform:uppercase;letter-spacing:.04em; }
+    .badge-past     { background:#F1F5F9;color:#64748B;border:1px solid #CBD5E1;border-radius:4px;
+                      padding:2px 7px;font-family:var(--font-data);font-size:.65rem;font-weight:700;
+                      text-transform:uppercase;letter-spacing:.04em; }
+    .badge-tomac    { background:#FFFBEB;color:#92400E;border:1px solid #FDE68A;border-radius:4px;
+                      padding:2px 7px;font-family:var(--font-data);font-size:.65rem;font-weight:700;
+                      text-transform:uppercase;letter-spacing:.04em; }
+    .badge-recruit  { background:#F5F3FF;color:#4C1D95;border:1px solid #DDD6FE;border-radius:4px;
+                      padding:2px 7px;font-family:var(--font-data);font-size:.65rem;font-weight:700;
+                      text-transform:uppercase;letter-spacing:.04em; }
+    .badge-other    { background:#F1F5F9;color:#475569;border:1px solid #CBD5E1;border-radius:4px;
+                      padding:2px 7px;font-family:var(--font-data);font-size:.65rem;font-weight:700;
+                      text-transform:uppercase;letter-spacing:.04em; }
+
+    .adm-empty { font-family:var(--font-body);font-style:italic;color:var(--ink-ghost);
+                 font-size:.875rem;padding:20px 0;text-align:center; }
+
+    /* Sync Preview tab */
+    .sp-stats    { display:flex;gap:14px;margin-bottom:22px;flex-wrap:wrap; }
+    .sp-stat     { background:var(--paper);border:1px solid var(--rule);border-radius:7px;
+                   padding:12px 18px;min-width:100px;text-align:center; }
+    .sp-stat .sp-n  { font-family:var(--font-data);font-size:1.4rem;font-weight:700;color:var(--ink); }
+    .sp-stat .sp-lbl{ font-family:var(--font-data);font-size:.65rem;text-transform:uppercase;
+                      letter-spacing:.07em;color:var(--ink-faint);margin-top:2px; }
+    .sp-stat.adds    .sp-n { color:#059669; }
+    .sp-stat.mods    .sp-n { color:#d97706; }
+    .sp-stat.dels    .sp-n { color:var(--red); }
+
+    .sp-group-hdr { font-family:var(--font-data);font-size:.68rem;text-transform:uppercase;
+                    letter-spacing:.07em;color:var(--ink-faint);padding:10px 0 6px;
+                    border-bottom:1px solid var(--rule);margin-top:18px; }
+    .sp-group-hdr:first-child { margin-top:0; }
+
+    .sp-table    { width:100%;border-collapse:collapse;margin-top:4px; }
+    .sp-table th { font-family:var(--font-data);font-size:.65rem;text-transform:uppercase;
+                   letter-spacing:.07em;color:var(--ink-faint);text-align:left;
+                   padding:0 10px 8px 0;border-bottom:1px solid var(--rule); }
+    .sp-table td { padding:9px 10px 9px 0;border-bottom:1px solid var(--rule-light);
+                   vertical-align:top;font-family:var(--font-body);font-size:.825rem; }
+    .sp-table tr:last-child td { border-bottom:none; }
+
+    .sp-badge-add { background:#ECFDF5;color:#065F46;border:1px solid #A7F3D0;border-radius:4px;
+                    padding:2px 7px;font-family:var(--font-data);font-size:.62rem;font-weight:700;
+                    text-transform:uppercase;letter-spacing:.04em;white-space:nowrap; }
+    .sp-badge-mod { background:#FFFBEB;color:#92400E;border:1px solid #FDE68A;border-radius:4px;
+                    padding:2px 7px;font-family:var(--font-data);font-size:.62rem;font-weight:700;
+                    text-transform:uppercase;letter-spacing:.04em;white-space:nowrap; }
+    .sp-badge-del { background:#FEF2F2;color:#991B1B;border:1px solid #FECACA;border-radius:4px;
+                    padding:2px 7px;font-family:var(--font-data);font-size:.62rem;font-weight:700;
+                    text-transform:uppercase;letter-spacing:.04em;white-space:nowrap; }
+    .sp-owner    { font-family:var(--font-data);font-size:.72rem;color:var(--navy);white-space:nowrap; }
+    .sp-due      { font-family:var(--font-data);font-size:.72rem;color:var(--ink-faint);white-space:nowrap; }
+    .sp-detail   { font-size:.8rem;color:var(--ink-mid);margin-top:2px; }
+    .sp-loading  { font-family:var(--font-body);font-size:.875rem;color:var(--ink-mid);
+                   padding:32px 0;text-align:center;display:none; }
+    .sp-loading.visible { display:block; }
+    .sp-freshnote{ font-family:var(--font-body);font-size:.75rem;color:var(--ink-ghost);margin-top:12px; }
+
+    .rh-row  { display:flex;gap:12px;align-items:baseline;padding:8px 0;
+               border-bottom:1px solid var(--rule-light);font-family:var(--font-body);font-size:.825rem; }
+    .rh-row:last-child { border-bottom:none; }
+    .rh-time { font-family:var(--font-data);font-size:.7rem;color:var(--ink-faint);min-width:130px; }
+    .rh-type { font-family:var(--font-data);font-size:.68rem;text-transform:uppercase;
+               letter-spacing:.05em;color:var(--navy);min-width:48px; }
+    .rh-stat { color:var(--ink-mid);font-size:.78rem; }
+
+    /* ── Routines sub-tab ───────────────────────────────── */
+    /* Tab-button mini badge: count of failing tier-1 tasks. */
+    .rt-tab-badge          { display:inline-block;min-width:14px;height:14px;
+                             padding:0 4px;margin-left:4px;border-radius:9px;
+                             background:var(--red);color:var(--white);
+                             font-family:var(--font-data);font-size:.55rem;font-weight:700;
+                             line-height:14px;text-align:center;vertical-align:middle;
+                             letter-spacing:0; }
+    .rt-tab-badge.empty    { display:none; }
+
+    /* Yesterday's Issues digest — first thing visible in the sub-tab. */
+    .rt-digest             { background:var(--paper);border:1px solid var(--rule);
+                             border-radius:7px;padding:18px 20px;margin-bottom:24px;
+                             position:relative; }
+    .rt-digest.is-clean    { border-color:var(--green-bd);background:var(--green-bg); }
+    .rt-digest.has-fails   { border-color:var(--red-bd);background:var(--red-bg); }
+    .rt-digest-header      { display:flex;align-items:center;justify-content:space-between;
+                             gap:12px;flex-wrap:wrap;margin-bottom:10px; }
+    .rt-digest-title       { font-family:var(--font-display);font-size:1.05rem;font-weight:700;
+                             color:var(--ink);margin:0; }
+    .rt-digest-meta        { font-family:var(--font-data);font-size:.68rem;color:var(--ink-faint);
+                             text-transform:uppercase;letter-spacing:.07em; }
+    .rt-digest-counts      { display:flex;gap:14px;flex-wrap:wrap;margin-bottom:10px;
+                             font-family:var(--font-data);font-size:.78rem; }
+    .rt-digest-counts span { display:inline-flex;gap:4px;align-items:baseline; }
+    .rt-digest-counts b    { font-size:.95rem;font-weight:700; }
+    .rt-c-ok b             { color:var(--green); }
+    .rt-c-fail b           { color:var(--red); }
+    .rt-c-t2 b             { color:var(--amber); }
+    .rt-digest-failures    { margin:8px 0 0;padding:0;list-style:none;
+                             font-family:var(--font-body);font-size:.825rem; }
+    .rt-digest-failures li { padding:6px 0;border-top:1px solid rgba(122,32,32,.18); }
+    .rt-digest-failures li:first-child { border-top:none; }
+    .rt-digest-failure-task{ font-family:var(--font-data);font-weight:700;color:var(--red); }
+    .rt-digest-failure-time{ font-family:var(--font-data);font-size:.7rem;color:var(--ink-faint);
+                             margin-left:6px; }
+    .rt-digest-failure-fix { font-size:.78rem;color:var(--ink-mid);margin-top:2px;
+                             font-family:var(--font-body); }
+    .rt-digest-failure-fix code {
+                             font-family:var(--font-data);font-size:.78rem;
+                             background:rgba(122,32,32,.08);color:var(--ink);
+                             padding:1px 5px;border-radius:3px; }
+    .rt-digest-actions     { margin-top:12px;display:flex;gap:8px;flex-wrap:wrap; }
+    .rt-empty              { font-family:var(--font-body);color:var(--green);font-size:.85rem; }
+
+    /* Per-task table */
+    .rt-toolbar            { display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+                             margin-bottom:10px; }
+    .rt-toolbar-meta       { font-family:var(--font-data);font-size:.7rem;
+                             color:var(--ink-faint);letter-spacing:.05em; }
+    .rt-table              { width:100%;border-collapse:collapse;font-size:.83rem; }
+    .rt-table thead th     { font-family:var(--font-data);font-size:.65rem;text-transform:uppercase;
+                             letter-spacing:.07em;color:var(--ink-faint);text-align:left;
+                             padding:0 10px 8px 0;border-bottom:1px solid var(--rule); }
+    .rt-table tbody td     { padding:10px 10px 10px 0;border-bottom:1px solid var(--rule-light);
+                             vertical-align:top;font-family:var(--font-body); }
+    .rt-table tbody tr:last-child td { border-bottom:none; }
+    .rt-row                { cursor:pointer;transition:background .12s; }
+    .rt-row:hover          { background:var(--bg); }
+    .rt-row.rt-status-fail { background:rgba(122,32,32,.05); }
+    .rt-row.rt-status-fail:hover  { background:rgba(122,32,32,.10); }
+    .rt-row.rt-status-expected_fail { background:rgba(139,90,14,.06); }
+    .rt-row.rt-status-expected_fail:hover { background:rgba(139,90,14,.11); }
+    .rt-row.rt-status-running { background:rgba(43,94,58,.06); }
+    .rt-task-name          { font-family:var(--font-data);font-weight:700;color:var(--ink); }
+    .rt-task-tier2         { color:var(--amber);margin-left:6px;font-size:.62rem;
+                             text-transform:uppercase;letter-spacing:.07em;font-weight:700; }
+    .rt-sched              { font-family:var(--font-data);color:var(--ink-mid);
+                             font-size:.76rem;letter-spacing:.02em; }
+    .rt-when               { font-family:var(--font-data);font-size:.76rem;color:var(--ink-mid); }
+    .rt-runtime            { font-family:var(--font-data);font-size:.76rem;color:var(--ink-faint); }
+    .rt-status-pill        { display:inline-flex;align-items:center;gap:5px;
+                             padding:3px 9px;border-radius:99px;
+                             font-family:var(--font-data);font-size:.65rem;
+                             font-weight:700;text-transform:uppercase;letter-spacing:.07em;
+                             border:1px solid;white-space:nowrap; }
+    .rt-status-pill.ok      { background:var(--green-bg);color:var(--green);border-color:var(--green-bd); }
+    .rt-status-pill.fail    { background:var(--red-bg);color:var(--red);border-color:var(--red-bd); }
+    .rt-status-pill.expected_fail { background:var(--amber-bg);color:var(--amber);border-color:var(--amber-bd); }
+    .rt-status-pill.never_run { background:var(--slate-bg);color:var(--slate);border-color:var(--slate-bd); }
+    .rt-status-pill.running { background:var(--navy-light);color:var(--navy);border-color:var(--navy-border); }
+    .rt-status-pill::before { content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor; }
+
+    /* 7-run history sparkline of dots */
+    .rt-spark              { display:inline-flex;gap:3px;align-items:center;height:14px; }
+    .rt-spark-dot          { width:8px;height:8px;border-radius:50%;background:var(--ink-ghost);
+                             flex-shrink:0;cursor:default; }
+    .rt-spark-dot.ok       { background:var(--green); }
+    .rt-spark-dot.fail     { background:var(--red); }
+    .rt-spark-dot.expected_fail { background:var(--amber); }
+    .rt-spark-dot.empty    { background:transparent;border:1px dashed var(--rule); }
+
+    /* Action buttons in row */
+    .rt-actions            { display:flex;gap:6px;flex-wrap:wrap; }
+    .rt-btn                { font-family:var(--font-data);font-size:.65rem;text-transform:uppercase;
+                             letter-spacing:.05em;padding:4px 10px;border-radius:4px;cursor:pointer;
+                             border:1px solid var(--navy-border);color:var(--navy);
+                             background:var(--navy-light);transition:all .12s; }
+    .rt-btn:hover          { background:var(--navy);color:var(--white); }
+    .rt-btn:disabled       { opacity:.45;cursor:not-allowed; }
+    .rt-btn-fix            { border-color:var(--gold-border);color:var(--gold);
+                             background:var(--gold-light); }
+    .rt-btn-fix:hover      { background:var(--gold);color:var(--white); }
+
+    /* Inline expanded detail */
+    .rt-detail             { display:none; }
+    .rt-detail.open        { display:table-row; }
+    .rt-detail-cell        { background:var(--bg);padding:16px 18px !important;
+                             border-left:3px solid var(--navy);border-bottom:1px solid var(--rule); }
+    .rt-detail h4          { font-family:var(--font-display);font-size:.95rem;margin:0 0 8px;
+                             color:var(--ink); }
+    .rt-detail-meta        { display:flex;gap:18px;flex-wrap:wrap;font-family:var(--font-data);
+                             font-size:.72rem;color:var(--ink-mid);margin-bottom:14px; }
+    .rt-detail-meta b      { color:var(--ink); }
+    .rt-detail-meta a      { font-family:var(--font-data);color:var(--navy);
+                             text-decoration:underline;text-decoration-style:dotted; }
+    .rt-tshoot             { background:var(--gold-light);border:1px solid var(--gold-border);
+                             border-radius:5px;padding:12px 14px;margin-bottom:14px; }
+    .rt-tshoot-label       { font-family:var(--font-data);font-size:.66rem;text-transform:uppercase;
+                             letter-spacing:.08em;color:var(--gold);font-weight:700;margin-bottom:6px; }
+    .rt-tshoot-item        { font-size:.83rem;color:var(--ink);margin-bottom:6px;
+                             font-family:var(--font-body); }
+    .rt-tshoot-item:last-child { margin-bottom:0; }
+    .rt-tshoot-item b      { font-family:var(--font-body); }
+    .rt-tshoot-item code   { font-family:var(--font-data);background:var(--white);
+                             border:1px solid var(--gold-border);padding:1px 6px;border-radius:3px;
+                             font-size:.76rem;color:var(--ink);cursor:pointer;
+                             transition:all .12s; }
+    .rt-tshoot-item code:hover { background:var(--gold);color:var(--white);border-color:var(--gold); }
+    .rt-tshoot-item code:active { transform:translateY(1px); }
+    .rt-tshoot-clean       { color:var(--green);font-family:var(--font-body);font-size:.83rem;
+                             font-style:italic; }
+
+    .rt-log-toggle         { display:flex;gap:0;margin-bottom:6px; }
+    .rt-log-toggle button  { font-family:var(--font-data);font-size:.65rem;text-transform:uppercase;
+                             letter-spacing:.05em;padding:4px 12px;border:1px solid var(--rule);
+                             background:var(--white);color:var(--ink-mid);cursor:pointer; }
+    .rt-log-toggle button:first-child { border-radius:4px 0 0 4px; }
+    .rt-log-toggle button:nth-child(2)  { border-left:none; }
+    .rt-log-toggle button:last-child  { border-radius:0 4px 4px 0;border-left:none; }
+    .rt-log-toggle button.active { background:var(--navy);color:var(--white);border-color:var(--navy); }
+    .rt-log-box            { background:var(--ink);color:#E8E2D6;font-family:var(--font-data);
+                             font-size:.72rem;line-height:1.45;border-radius:4px;padding:12px 14px;
+                             max-height:400px;overflow:auto;white-space:pre;word-break:break-all; }
+    .rt-log-box .rt-l-err  { color:#FFB3B3;background:rgba(220,80,80,.18);display:block;
+                             padding:0 4px;margin:0 -4px; }
+    .rt-log-box .rt-l-warn { color:#FFD896;background:rgba(220,160,40,.18);display:block;
+                             padding:0 4px;margin:0 -4px; }
+    .rt-log-empty          { color:var(--ink-faint);font-style:italic;font-family:var(--font-body); }
+
+    /* Modal for "Ask Claude to Fix" prompt */
+    .rt-modal-veil         { display:none;position:fixed;inset:0;background:rgba(24,21,15,.55);
+                             z-index:200;align-items:center;justify-content:center;padding:24px; }
+    .rt-modal-veil.open    { display:flex; }
+    .rt-modal              { background:var(--paper);border:1px solid var(--rule);border-radius:8px;
+                             max-width:760px;width:100%;max-height:85vh;overflow:auto;
+                             padding:22px 24px;box-shadow:0 10px 40px rgba(24,21,15,.25); }
+    .rt-modal h3           { font-family:var(--font-display);font-size:1.15rem;margin:0 0 4px; }
+    .rt-modal-sub          { font-family:var(--font-body);font-size:.825rem;color:var(--ink-mid);
+                             margin:0 0 14px; }
+    .rt-modal textarea     { width:100%;min-height:280px;font-family:var(--font-data);
+                             font-size:.78rem;border:1px solid var(--rule);border-radius:4px;
+                             padding:12px;background:var(--bg);color:var(--ink);resize:vertical;
+                             line-height:1.45; }
+    .rt-modal-actions      { display:flex;gap:8px;margin-top:14px;justify-content:flex-end;
+                             flex-wrap:wrap; }
+    .rt-toast              { position:fixed;left:50%;bottom:32px;transform:translateX(-50%);
+                             background:var(--ink);color:var(--white);font-family:var(--font-body);
+                             font-size:.85rem;padding:10px 18px;border-radius:6px;
+                             box-shadow:0 4px 18px rgba(0,0,0,.22);z-index:300;
+                             opacity:0;pointer-events:none;transition:opacity .18s; }
+    .rt-toast.show         { opacity:1; }
+
+    /* Mobile: collapse table to cards */
+    @media (max-width: 780px) {
+      .rt-table thead       { display:none; }
+      .rt-table, .rt-table tbody, .rt-table tr, .rt-table td { display:block;width:100%; }
+      .rt-table tr          { background:var(--paper);border:1px solid var(--rule);
+                              border-radius:6px;padding:12px;margin-bottom:10px; }
+      .rt-table tbody td    { padding:4px 0;border:none; }
+      .rt-table tbody td::before {
+                              content:attr(data-label) ":";
+                              font-family:var(--font-data);font-size:.62rem;text-transform:uppercase;
+                              letter-spacing:.06em;color:var(--ink-faint);display:inline-block;
+                              min-width:78px;margin-right:6px; }
+      .rt-table tbody td.rt-cell-name::before { content:""; min-width:0; margin:0; }
+      .rt-row.rt-status-fail,
+      .rt-row.rt-status-expected_fail,
+      .rt-row.rt-status-running { padding-left:9px; }
+      .rt-detail-cell       { border-left:none;border-radius:6px; }
+    }
+    /* ── Auth Health tab ─────────────────────────────────────── */
+    .ah-chip            { display:inline-flex;align-items:center;gap:8px;padding:9px 14px;
+                          border-radius:8px;border:1px solid var(--rule);background:var(--paper);
+                          font-family:var(--font-data);font-size:.8rem;font-weight:700; }
+    .ah-chip::before    { content:"";display:inline-block;width:8px;height:8px;border-radius:50%;
+                          background:currentColor;flex-shrink:0; }
+    .ah-chip.ok         { color:var(--green);background:var(--green-bg);border-color:var(--green-bd); }
+    .ah-chip.stale      { color:var(--amber);background:var(--amber-bg);border-color:var(--amber-bd); }
+    .ah-chip.failed     { color:var(--red);background:var(--red-bg);border-color:var(--red-bd); }
+    .ah-chip.loading    { color:var(--ink-ghost);border-style:dashed; }
+    .ah-chip.loading::before { background:var(--ink-ghost); }
+    .ah-tbody td        { padding:11px 12px 11px 0;border-bottom:1px solid var(--rule-light);
+                          vertical-align:top; }
+    .ah-tbody tr:last-child td { border-bottom:none; }
+    .ah-err-text        { font-family:var(--font-body);font-size:.8rem;color:var(--ink-mid);
+                          max-width:500px;word-break:break-word; }
+  </style>
+</head>
+<body>
+<div class="tc-shell">
+  {{TOPNAV}}
+  <main class="tc-shell-inner">
+    <div class="adm-wrap">
+
+      <div class="adm-hero">
+        <h1>Admin</h1>
+        <p>Owner-only. Manage access, schedule recordings, and monitor pipeline status.</p>
+      </div>
+
+      {{FLASH}}
+
+      <!-- Tab nav -->
+      <div class="adm-tabs">
+        <button class="adm-tab" onclick="switchTab('access',this)">Access Management</button>
+        <button class="adm-tab" onclick="switchTab('schedule',this)">Schedule Recording</button>
+        <button class="adm-tab" onclick="switchTab('calls',this)">Call History</button>
+        <button class="adm-tab" onclick="switchTab('status',this)">Dashboard Status</button>
+        <button class="adm-tab" onclick="switchTab('routines',this)">
+          Routines <span class="rt-tab-badge" id="rt-tab-badge"></span>
+        </button>
+        <button class="adm-tab" onclick="switchTab('setup',this)">Setup &amp; Repos</button>
+        <button class="adm-tab" onclick="switchTab('auth-health',this)" id="auth-health-tab-btn">
+          Auth Health <span class="rt-tab-badge" id="auth-tab-badge"></span>
+        </button>
+      </div>
+
+      <!-- ══ TAB 1: Access Management ══════════════════════════ -->
+      <div id="tab-access" class="adm-tab-panel">
+
+        <div class="tc-card" style="margin-bottom:28px">
+          <div class="adm-section-label" style="margin-bottom:16px">Invite someone</div>
+          <form method="POST" action="/admin/invite">
+            <div class="adm-row">
+              <div class="adm-field">
+                <label>Full name</label>
+                <input type="text" name="name" placeholder="First Last" required>
+              </div>
+              <div class="adm-field">
+                <label>Email</label>
+                <input type="email" name="email" placeholder="name@example.com" required>
+              </div>
+            </div>
+            <div class="adm-row">
+              <div class="adm-field">
+                <label>Role <span style="font-weight:400;color:var(--ink-ghost)">(sets GitHub access)</span></label>
+                <select name="role" id="invite-role" onchange="updateRoleHint()" style="padding:8px 10px;border:1px solid var(--rule);border-radius:6px;background:var(--bg);font-size:.85rem;width:100%">
+                  <option value="viewer">Viewer — dashboard only, no GitHub</option>
+                  <option value="tc_team">TC Team — deal pipeline read + framework</option>
+                  <option value="subscriber">Subscriber — framework only</option>
+                </select>
+              </div>
+              <div class="adm-field">
+                <label>GitHub handle <span style="font-weight:400;color:var(--ink-ghost)">(optional, for repo access)</span></label>
+                <input type="text" name="github_handle" id="invite-github" placeholder="@username" style="font-family:var(--font-data)">
+              </div>
+            </div>
+            <div id="role-hint" style="font-size:.78rem;color:var(--ink-mid);background:var(--bg);border-radius:5px;padding:8px 12px;margin-bottom:14px;display:none"></div>
+            <div class="adm-field" style="margin-bottom:12px">
+              <label>Dashboard access</label>
+            </div>
+            <div class="adm-dashboard-groups">{{DASHBOARD_SECTIONS}}</div>
+            <button type="submit" class="tc-btn tc-btn--gold">Send invite</button>
+          </form>
+        </div>
+
+        <div class="tc-card">
+          <div class="adm-section-label" style="margin-bottom:16px">Active users</div>
+          <table class="adm-table" id="users-table">
+            <thead><tr><th>Person</th><th>Login</th><th>Role</th><th>GitHub</th><th>Access</th><th></th></tr></thead>
+            <tbody>{{USERS_TABLE}}</tbody>
+          </table>
+        </div>
+
+      </div>
+
+      <!-- ══ TAB 2: Schedule Recording ══════════════════════════ -->
+      <div id="tab-schedule" class="adm-tab-panel">
+
+        <div class="tc-card" style="margin-bottom:28px">
+          <div class="adm-section-label" style="margin-bottom:4px">Schedule a dial-in recording</div>
+          <p style="font-family:var(--font-body);font-size:.825rem;color:var(--ink-mid);margin:0 0 20px">
+            The recorder dials in and captures audio automatically at the scheduled time.
+            Leave phone blank for computer-audio recording (Teams / Zoom / Meet).
+          </p>
+          <form method="POST" action="/admin/schedule-dial-in" id="schedule-form">
+            <div class="adm-row">
+              <div class="adm-field" style="flex:1;min-width:100%">
+                <label>Paste invite — auto-fills title, date, time, phone, PIN, platform, category</label>
+                <textarea id="invite-parser" placeholder="Paste any meeting invite (Outlook, Google Calendar, Teams, Zoom, WebEx) and the form fills automatically." rows="4" style="width:100%;font:13px var(--font-body);padding:10px;border:1px solid var(--rule);border-radius:6px;background:var(--bg)"></textarea>
+                <div style="margin-top:6px;display:flex;gap:8px;align-items:center">
+                  <button type="button" class="tc-btn" onclick="parseInvite()">Fill from invite</button>
+                  <button type="button" class="tc-btn" onclick="document.getElementById('invite-parser').value='';document.getElementById('parse-feedback').style.display='none'">Clear</button>
+                  <span id="parse-feedback" style="display:none;font-size:.78rem;font-family:var(--font-body);margin-left:4px"></span>
+                </div>
+              </div>
+            </div>
+            <div class="adm-row">
+              <div class="adm-field" style="flex:1;min-width:240px">
+                <label>Call title <span style="color:var(--red)">*</span></label>
+                <input type="text" name="title" placeholder="e.g. Stonepeak intro call" required>
+              </div>
+              <div class="adm-field">
+                <label>Category</label>
+                <select name="category">
+                  <option value="Tomac Cove">Tomac Cove</option>
+                  <option value="Recruiting">Recruiting</option>
+                  <option value="Other" selected>Other</option>
+                </select>
+              </div>
+              <div class="adm-field">
+                <label>Platform</label>
+                <select name="platform">
+                  <option value="standard" selected>Standard (pinreg.com)</option>
+                  <option value="zoom">Zoom</option>
+                  <option value="freeconferencecall">FreeConferenceCall</option>
+                  <option value="computer">Computer audio only</option>
+                </select>
+              </div>
+            </div>
+            <div class="adm-row">
+              <div class="adm-field">
+                <label>Date (ET) <span style="color:var(--red)">*</span></label>
+                <input type="date" name="date" required>
+              </div>
+              <div class="adm-field">
+                <label>Start time (ET) <span style="color:var(--red)">*</span></label>
+                <input type="time" name="start_time" required>
+              </div>
+              <div class="adm-field">
+                <label>End time (ET)</label>
+                <input type="time" name="end_time" placeholder="auto-end at this time">
+                <span class="adm-hint">Leave blank to use duration below</span>
+              </div>
+              <div class="adm-field">
+                <label>Duration</label>
+                <select name="duration_min">
+                  <option value="30">30 min</option>
+                  <option value="45">45 min</option>
+                  <option value="60" selected>1 hour</option>
+                  <option value="90">90 min</option>
+                  <option value="120">2 hours</option>
+                </select>
+              </div>
+            </div>
+            <div class="adm-row">
+              <div class="adm-field">
+                <label>Dial-in number</label>
+                <input type="tel" name="phone" placeholder="+1 (555) 000-0000">
+                <span class="adm-hint">Leave blank for computer audio only</span>
+              </div>
+              <div class="adm-field">
+                <label>Access code</label>
+                <input type="text" name="access_code" placeholder="Meeting ID / access code">
+              </div>
+              <div class="adm-field">
+                <label>PIN / Passcode</label>
+                <input type="text" name="pin" placeholder="Optional">
+              </div>
+            </div>
+            <button type="submit" class="tc-btn tc-btn--gold" style="margin-top:4px">
+              Schedule Recording
+            </button>
+          </form>
+          <script>
+          function parseInvite() {
+            const txt = document.getElementById('invite-parser').value || '';
+            const fb  = document.getElementById('parse-feedback');
+            if (!txt.trim()) { if (fb) { fb.style.display='none'; } return; }
+            const form   = document.getElementById('schedule-form');
+            const filled = [];
+            const set = (name, val) => {
+              const el = form.elements[name];
+              if (el && val != null && String(val).trim()) { el.value = String(val).trim(); filled.push(name); }
+            };
+
+            // Title — prefer explicit Subject/Meeting/Title line, else first sensible line
+            const lines = txt.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+            const subjectLine = lines.find(l => /^(subject|meeting|title|event)\s*:/i.test(l));
+            if (subjectLine) {
+              set('title', subjectLine.replace(/^(subject|meeting|title|event)\s*:\s*/i, ''));
+            } else {
+              const skipPat = /^(https?:|tel:|\+?\d|when|where|who|time|date|call\s*in|dial\s*in|access|meeting\s*id|conference\s*id|passcode|pin|password|duration|organizer|location|invitees|attendees|event\s*(name|host|date|time)|additional\s*speak|click\s+here|dial.in)/i;
+              const titleLine = lines.find(l => !skipPat.test(l) && l.length >= 4 && l.length < 120);
+              if (titleLine) set('title', titleLine.replace(/^(re:|fw:|fwd:)\s*/i, ''));
+            }
+
+            // Date — ISO → US numeric → natural language
+            const MONTHS = {jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
+            let dateSet = false;
+            const isoM = txt.match(/\b(20\d{2})-(\d{2})-(\d{2})\b/);
+            if (isoM) { set('date', `${isoM[1]}-${isoM[2]}-${isoM[3]}`); dateSet = true; }
+            if (!dateSet) {
+              const usM = txt.match(/\b(\d{1,2})\/(\d{1,2})\/(20\d{2})\b/);
+              if (usM) { set('date', `${usM[3]}-${usM[1].padStart(2,'0')}-${usM[2].padStart(2,'0')}`); dateSet = true; }
+            }
+            if (!dateSet) {
+              // "Monday, April 21, 2026" / "Apr 21 2026" / "April 21st, 2026"
+              const nlM = txt.match(/(?:(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[a-z]*,?\s+)?([A-Z][a-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(20\d{2})/);
+              if (nlM) {
+                const mon = MONTHS[nlM[1].slice(0,3).toLowerCase()];
+                if (mon) { set('date', `${nlM[3]}-${String(mon).padStart(2,'0')}-${nlM[2].padStart(2,'0')}`); dateSet = true; }
+              }
+            }
+
+            // Times — try range first ("2:00 PM – 3:00 PM"), then single
+            const toHM = (h, m, ap) => {
+              let hh = parseInt(h, 10);
+              const a = (ap||'').toLowerCase();
+              if (a === 'pm' && hh < 12) hh += 12;
+              if (a === 'am' && hh === 12) hh = 0;
+              return { h: hh, ms: String(hh).padStart(2,'0') + ':' + m };
+            };
+            const rangeM = txt.match(/\b(\d{1,2}):(\d{2})\s*(am|pm)?\s*[-–—](?:\s*to\s*)?\s*(\d{1,2}):(\d{2})\s*(am|pm)?/i);
+            if (rangeM) {
+              const ap2 = (rangeM[6] || rangeM[3] || '').toLowerCase();
+              const ap1 = (rangeM[3] || ap2 || '').toLowerCase();
+              const s = toHM(rangeM[1], rangeM[2], ap1);
+              const e = toHM(rangeM[4], rangeM[5], ap2);
+              set('start_time', s.ms);
+              set('end_time',   e.ms);
+              const durMin = (e.h * 60 + parseInt(rangeM[5],10)) - (s.h * 60 + parseInt(rangeM[2],10));
+              const durEl = form.elements['duration_min'];
+              if (durEl && durMin > 0) {
+                const closest = [30,45,60,90,120].reduce((a,b) => Math.abs(b-durMin) < Math.abs(a-durMin) ? b : a);
+                durEl.value = String(closest);
+              }
+            } else {
+              const tm = txt.match(/\b(\d{1,2}):(\d{2})\s*(am|pm)/i);
+              if (tm) { const s = toHM(tm[1], tm[2], tm[3]); set('start_time', s.ms); }
+            }
+
+            // Phone — first US-style number (avoid grabbing meeting IDs by requiring it not be preceded by ID/code labels)
+            const phM = txt.match(/(?:^|[^:\w])(\+?1?[ -]?\(?\d{3}\)?[ -]?\d{3}[ -]?\d{4})/m);
+            if (phM) set('phone', phM[1].trim());
+
+            // Access code / meeting ID
+            const ac = txt.match(/(?:access\s*code|meeting\s*id|conference\s*id)[:\s#]+([\d\s\-]{4,20})/i);
+            if (ac) set('access_code', ac[1].replace(/[^\d]/g,''));
+
+            // PIN / passcode
+            const pinM = txt.match(/(?:^|[^\w])(?:pin|passcode|password)\s*[:\s]+([^\s\n,]+)/im);
+            if (pinM) set('pin', pinM[1]);
+
+            // Platform sniff
+            const platform = form.elements['platform'];
+            if      (/zoom\.us/i.test(txt))                                    platform.value = 'zoom';
+            else if (/freeconferencecall/i.test(txt))                          platform.value = 'freeconferencecall';
+            else if (/pinreg/i.test(txt))                                      platform.value = 'standard';
+            else if (/teams\.microsoft\.com|teams\.live\.com|microsoft teams/i.test(txt)) platform.value = 'computer';
+            else if (/meet\.google\.com|google meet/i.test(txt))               platform.value = 'computer';
+            else if (/webex\.com|cisco webex/i.test(txt))                      platform.value = 'computer';
+            else if (/gotomeeting\.com/i.test(txt))                            platform.value = 'computer';
+
+            // Category inference
+            const catEl  = form.elements['category'];
+            const titleVal = (form.elements['title']||{}).value || '';
+            const hay    = (titleVal + ' ' + txt).toLowerCase();
+            if (catEl) {
+              if (/stonepeak|i squared|ecp|quantum|kkr|tpg|arclight|ls power|brookfield|nuveen|ridgewood|tomac|deal|loi|nda|term sheet|diligence|co-invest|lp |limited partner|fund raise|pitch deck/i.test(hay)) {
+                catEl.value = 'Tomac Cove';
+              } else if (/interview|recruiter|recruiting|headhunter|search firm|offer letter|hr |talent|hiring/i.test(hay)) {
+                catEl.value = 'Recruiting';
+              }
+            }
+
+            // Feedback
+            if (fb) {
+              if (filled.length) {
+                fb.textContent = 'Filled: ' + filled.join(', ');
+                fb.style.color = 'var(--green,#2a7a2a)';
+              } else {
+                fb.textContent = 'No fields detected — check invite format.';
+                fb.style.color = 'var(--red)';
+              }
+              fb.style.display = 'inline';
+            }
+          }
+
+          // Auto-parse on paste (debounced 350ms)
+          (function() {
+            const ta = document.getElementById('invite-parser');
+            if (ta) ta.addEventListener('input', function() {
+              clearTimeout(this._pt);
+              this._pt = setTimeout(parseInvite, 350);
+            });
+          })();
+          </script>
+        </div>
+
+        <div class="tc-card">
+          <div class="adm-section-label" style="margin-bottom:16px">Upcoming scheduled recordings</div>
+          <div id="upcoming-calls-list"></div>
+        </div>
+
+      </div>
+
+      <!-- ══ TAB 3: Call History ══════════════════════════════ -->
+      <div id="tab-calls" class="adm-tab-panel">
+        <div class="tc-card">
+          <div class="adm-section-label" style="margin-bottom:16px">Scheduled calls</div>
+          <div id="all-scheduled-list"></div>
+        </div>
+      </div>
+
+      <!-- ══ TAB 4: Dashboard Status ══════════════════════════ -->
+      <div id="tab-status" class="adm-tab-panel">
+        <div class="status-grid" id="status-tiles"></div>
+        <div class="tc-card" style="margin-bottom:24px">
+          <div class="adm-section-label" style="margin-bottom:14px">Recent pipeline runs</div>
+          <div id="run-history-list"></div>
+        </div>
+
+        <!-- Change ledger: what would the next Full Refresh do? -->
+        <div class="tc-card" style="margin-bottom:24px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;gap:12px;flex-wrap:wrap">
+            <div class="adm-section-label" style="margin-bottom:0">Change Ledger</div>
+            <button class="btn-edit" id="sp-run-btn" onclick="loadSyncPreview(this)" style="white-space:nowrap">Preview next refresh</button>
+          </div>
+          <p style="font-family:var(--font-body);font-size:.8rem;color:var(--ink-mid);margin:0 0 14px">
+            What would change if you hit Full Refresh right now.
+          </p>
+
+          <div id="sp-loading" class="sp-loading">Reading Google Docs…</div>
+          <div id="sp-error" style="display:none;font-family:var(--font-body);font-size:.875rem;color:var(--red);padding:8px 0"></div>
+          <div id="sp-stats" style="display:none">
+            <div class="sp-stats">
+              <div class="sp-stat adds"><div class="sp-n" id="sp-n-adds">0</div><div class="sp-lbl">Adds</div></div>
+              <div class="sp-stat mods"><div class="sp-n" id="sp-n-mods">0</div><div class="sp-lbl">Modifies</div></div>
+              <div class="sp-stat dels"><div class="sp-n" id="sp-n-dels">0</div><div class="sp-lbl">Deletes</div></div>
+            </div>
+            <div id="sp-results"></div>
+            <div class="sp-freshnote" id="sp-freshnote"></div>
+          </div>
+        </div>
+
+        <div class="tc-card">
+          <div class="adm-section-label" style="margin-bottom:14px">Quick actions</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <button class="btn-save" onclick="triggerWarmup(this)">⟳ Full Refresh</button>
+            <button class="btn-edit" onclick="triggerFastRefresh(this)">↻ Fast Refresh</button>
+          </div>
+          <div id="action-feedback"
+               style="margin-top:12px;font-family:var(--font-body);font-size:.825rem;color:var(--ink-mid)"></div>
+        </div>
+      </div>
+
+      <!-- ══ TAB 5: Routines ══════════════════════════════════ -->
+      <div id="tab-routines" class="adm-tab-panel">
+
+        <!-- ── Delayed Jobs (Batch API pending results) ──────── -->
+        <div class="tc-card" id="delayed-jobs-card" style="display:none;margin-bottom:24px;border-left:3px solid var(--amber)">
+          <div class="rt-toolbar" style="margin-bottom:12px">
+            <div class="adm-section-label" style="margin-bottom:0;color:var(--amber)">
+              ⏳ Delayed Jobs — Pending Batch Results
+            </div>
+            <span class="rt-toolbar-meta" id="dj-toolbar-meta">—</span>
+            <button class="rt-btn" onclick="loadBatchJobs()" type="button" style="margin-left:auto">Refresh</button>
+          </div>
+          <div style="font-size:.8rem;color:var(--ink-mid);margin-bottom:12px">
+            These routines submitted Claude calls to the Anthropic Batch API (50% off). Results arrive in minutes–hours.
+            <b>Force sync</b> retrieves results now and writes them to Google Docs.
+          </div>
+          <div id="delayed-jobs-list"></div>
+        </div>
+
+        <!-- Yesterday's Issues digest (auto-refresh 5 min, first thing visible) -->
+        <div class="rt-digest" id="rt-digest">
+          <div class="rt-digest-header">
+            <h2 class="rt-digest-title">Yesterday's Issues</h2>
+            <span class="rt-digest-meta" id="rt-digest-meta">Loading…</span>
+          </div>
+          <div class="rt-digest-counts" id="rt-digest-counts"></div>
+          <div id="rt-digest-body"></div>
+          <div class="rt-digest-actions" id="rt-digest-actions"></div>
+        </div>
+
+        <!-- Per-task table (auto-refresh 60s when visible) -->
+        <div class="tc-card">
+          <div class="rt-toolbar">
+            <div class="adm-section-label" style="margin-bottom:0">All Routines</div>
+            <span class="rt-toolbar-meta" id="rt-toolbar-meta">—</span>
+            <button class="rt-btn" onclick="loadRoutines(true)" type="button"
+                    style="margin-left:auto">Refresh now</button>
+          </div>
+          <table class="rt-table" id="rt-table">
+            <thead>
+              <tr>
+                <th style="width:24%">Task</th>
+                <th style="width:12%">Schedule</th>
+                <th style="width:13%">Last run</th>
+                <th style="width:8%">Runtime</th>
+                <th style="width:13%">Status</th>
+                <th style="width:11%">Last 7</th>
+                <th style="width:9%">Next</th>
+                <th style="width:10%">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="rt-tbody">
+              <tr><td colspan="8" style="text-align:center;padding:24px 0;color:var(--ink-faint);font-style:italic">Loading routines…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- "Ask Claude to Fix" modal -->
+      <div class="rt-modal-veil" id="rt-modal-veil" onclick="closeAskClaude(event)">
+        <div class="rt-modal" onclick="event.stopPropagation()">
+          <h3>Ask Claude to Fix</h3>
+          <p class="rt-modal-sub">
+            Diagnostic prompt for <b id="rt-modal-task">—</b>. Review or edit, then copy and paste into a new Claude Code session.
+          </p>
+          <textarea id="rt-modal-prompt" spellcheck="false"></textarea>
+          <div class="rt-modal-actions">
+            <button class="btn-cancel" type="button" onclick="closeAskClaude()">Close</button>
+            <button class="btn-save" type="button" onclick="copyAskClaude()">Copy to clipboard</button>
+          </div>
+        </div>
+      </div>
+      <div class="rt-toast" id="rt-toast"></div>
+
+      <div class="tc-card" style="margin-top:24px">
+        <div class="adm-section-label" style="margin-bottom:14px">Recover Deleted</div>
+        <div style="font-size:.825rem;color:var(--ink-mid);margin-bottom:10px">
+          Items deleted from the Status dashboard. Last 50 shown. Restore to make the item reappear on the next render.
+        </div>
+        {{DELETIONS_PANEL}}
+      </div>
+
+      <!-- ══ TAB 6: Setup & Repos ══════════════════════════════ -->
+      <div id="tab-setup" class="adm-tab-panel">
+
+        <!-- Repo map -->
+        <div class="tc-card" style="margin-bottom:24px">
+          <div class="adm-section-label" style="margin-bottom:16px">GitHub Repositories</div>
+          <table class="adm-table">
+            <thead><tr>
+              <th>Repo</th>
+              <th>Access</th>
+              <th>Who</th>
+              <th>Maps to locally</th>
+            </tr></thead>
+            <tbody>
+              <tr>
+                <td><code style="font-size:.8rem">Invite-Chief-of-Staff</code></td>
+                <td><span style="background:#e8f4e8;color:#2a6b2a;padding:2px 8px;border-radius:3px;font-size:.72rem;font-weight:700">INVITE</span></td>
+                <td style="font-size:.82rem;color:var(--ink-mid)">Subscribers you add</td>
+                <td style="font-size:.82rem;color:var(--ink-mid)"><code>~/cos-pipeline</code></td>
+              </tr>
+              <tr>
+                <td><code style="font-size:.8rem">Private-Yoni-Dashboard</code></td>
+                <td><span style="background:#f0f0f0;color:#444;padding:2px 8px;border-radius:3px;font-size:.72rem;font-weight:700">PRIVATE</span></td>
+                <td style="font-size:.82rem;color:var(--ink-mid)">Yoni only</td>
+                <td style="font-size:.82rem;color:var(--ink-mid)"><code>~/dashboards</code></td>
+              </tr>
+              <tr>
+                <td><code style="font-size:.8rem">Read-Tomac-Deal-Pipeline</code></td>
+                <td><span style="background:#e8eef8;color:#1a3d7c;padding:2px 8px;border-radius:3px;font-size:.72rem;font-weight:700">READ</span></td>
+                <td style="font-size:.82rem;color:var(--ink-mid)">Yoni writes · Mark + Nik read</td>
+                <td style="font-size:.82rem;color:var(--ink-mid)"><code>~/tomac-cove-pipeline</code></td>
+              </tr>
+              <tr>
+                <td><code style="font-size:.8rem">Private-Yoni-Config</code></td>
+                <td><span style="background:#f0f0f0;color:#444;padding:2px 8px;border-radius:3px;font-size:.72rem;font-weight:700">PRIVATE</span></td>
+                <td style="font-size:.82rem;color:var(--ink-mid)">Yoni only</td>
+                <td style="font-size:.82rem;color:var(--ink-mid)"><code>~/cos-pipeline-config-tomac</code></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Naming convention -->
+        <div class="tc-card" style="margin-bottom:24px">
+          <div class="adm-section-label" style="margin-bottom:12px">Naming Convention</div>
+          <div style="font-size:.83rem;color:var(--ink-mid);margin-bottom:14px">
+            All repos follow <code style="background:var(--bg);padding:2px 5px;border-radius:3px">[Access]-[Person/Scope]-[What]</code>
+          </div>
+          <table class="adm-table">
+            <thead><tr><th>Prefix</th><th>Meaning</th><th>Example</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><code style="font-size:.8rem">Invite-</code></td>
+                <td style="font-size:.82rem;color:var(--ink-mid)">Private repo, you add subscribers individually</td>
+                <td style="font-size:.82rem;color:var(--ink-mid)"><code>Invite-Chief-of-Staff</code></td>
+              </tr>
+              <tr>
+                <td><code style="font-size:.8rem">Read-</code></td>
+                <td style="font-size:.82rem;color:var(--ink-mid)">Private repo, specific people have read-only access</td>
+                <td style="font-size:.82rem;color:var(--ink-mid)"><code>Read-Tomac-Deal-Pipeline</code></td>
+              </tr>
+              <tr>
+                <td><code style="font-size:.8rem">Private-[Name]-</code></td>
+                <td style="font-size:.82rem;color:var(--ink-mid)">Private repo, one person only — never shared</td>
+                <td style="font-size:.82rem;color:var(--ink-mid)"><code>Private-Mark-Dashboard</code></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Onboarding instructions -->
+        <div class="tc-card" style="margin-bottom:24px">
+          <div class="adm-section-label" style="margin-bottom:16px">Onboarding a Team Member (Mark or Nik)</div>
+
+          <div style="font-size:.8rem;font-weight:700;color:var(--navy);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">They run — one command</div>
+          <div style="background:var(--bg);border-radius:6px;padding:12px 16px;font-family:var(--font-data);font-size:.82rem;color:var(--ink);margin-bottom:20px">
+            ./setup.sh --instance=[firstname] --domain=infra-pe
+          </div>
+
+          <div style="font-size:.8rem;font-weight:700;color:var(--navy);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">What setup.sh does automatically</div>
+          <ol style="font-size:.82rem;color:var(--ink-mid);padding-left:20px;line-height:1.9;margin-bottom:20px">
+            <li>Installs GitHub CLI (<code>gh</code>) via Homebrew if missing</li>
+            <li>Runs <code>gh auth login</code> if not authenticated</li>
+            <li>Creates <code>Private-[Name]-Dashboard</code> and <code>Private-[Name]-Config</code> under their GitHub account</li>
+            <li>Wires their local config dir to the new config repo and pushes first commit</li>
+            <li>Installs Python deps, Google OAuth, API keys, LaunchAgents</li>
+          </ol>
+
+          <div style="font-size:.8rem;font-weight:700;color:var(--navy);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">You do — one command after they finish</div>
+          <div style="background:var(--bg);border-radius:6px;padding:12px 16px;font-family:var(--font-data);font-size:.82rem;color:var(--ink);margin-bottom:4px">
+            gh repo add-collaborator ygontownik/Read-Tomac-Deal-Pipeline &lt;their-github-handle&gt; --permission read
+          </div>
+          <div style="font-size:.75rem;color:var(--ink-ghost);margin-top:6px">Gives them read-only access to the deal pipeline. They cannot push.</div>
+        </div>
+
+        <!-- Future repos reference -->
+        <div class="tc-card">
+          <div class="adm-section-label" style="margin-bottom:12px">Repos Created Per Person</div>
+          <table class="adm-table">
+            <thead><tr><th>Person</th><th>Dashboard repo</th><th>Config repo</th><th>Deal pipeline</th></tr></thead>
+            <tbody>
+              <tr>
+                <td style="font-weight:600;font-size:.83rem">Yoni</td>
+                <td style="font-size:.82rem;color:var(--ink-mid)"><code>Private-Yoni-Dashboard</code> ✓</td>
+                <td style="font-size:.82rem;color:var(--ink-mid)"><code>Private-Yoni-Config</code> ✓</td>
+                <td style="font-size:.82rem;color:var(--ink-mid)">Owner (write)</td>
+              </tr>
+              <tr>
+                <td style="font-weight:600;font-size:.83rem">Mark</td>
+                <td style="font-size:.82rem;color:var(--ink-mid)"><code>Private-Mark-Dashboard</code> — when onboarded</td>
+                <td style="font-size:.82rem;color:var(--ink-mid)"><code>Private-Mark-Config</code> — when onboarded</td>
+                <td style="font-size:.82rem;color:var(--ink-mid)">Read-only</td>
+              </tr>
+              <tr>
+                <td style="font-weight:600;font-size:.83rem">Nik</td>
+                <td style="font-size:.82rem;color:var(--ink-mid)"><code>Private-Nik-Dashboard</code> — when onboarded</td>
+                <td style="font-size:.82rem;color:var(--ink-mid)"><code>Private-Nik-Config</code> — when onboarded</td>
+                <td style="font-size:.82rem;color:var(--ink-mid)">Read-only</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div><!-- /tab-setup -->
+
+      <!-- ══ TAB 7: Auth Health ══════════════════════════════════ -->
+      <div id="tab-auth-health" class="adm-tab-panel">
+        <div class="tc-card" style="margin-bottom:24px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:12px;flex-wrap:wrap">
+            <div class="adm-section-label" style="margin-bottom:0">Credential Health</div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <span id="ah-last-checked" style="font-family:var(--font-data);font-size:.72rem;color:var(--ink-ghost)">—</span>
+              <button class="rt-btn" onclick="loadAuthHealth(true)" type="button">Refresh now</button>
+            </div>
+          </div>
+          <div id="ah-chips" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px">
+            <div class="ah-chip ah-loading">Loading…</div>
+          </div>
+          <div id="ah-detail" style="display:none">
+            <table style="width:100%;border-collapse:collapse;font-size:.83rem" id="ah-table">
+              <thead>
+                <tr>
+                  <th style="text-align:left;font-family:var(--font-data);font-size:.65rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-mid);padding:0 12px 10px 0;border-bottom:1px solid var(--rule)">Credential</th>
+                  <th style="text-align:left;font-family:var(--font-data);font-size:.65rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-mid);padding:0 12px 10px 0;border-bottom:1px solid var(--rule)">Status</th>
+                  <th style="text-align:left;font-family:var(--font-data);font-size:.65rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-mid);padding:0 0 10px 0;border-bottom:1px solid var(--rule)">Detail / Error</th>
+                </tr>
+              </thead>
+              <tbody id="ah-tbody"></tbody>
+            </table>
+          </div>
+          <div id="ah-error" style="display:none;font-family:var(--font-body);font-size:.875rem;color:var(--red);padding:8px 0"></div>
+        </div>
+
+        <div class="tc-card">
+          <div class="adm-section-label" style="margin-bottom:10px">How to use</div>
+          <p style="font-family:var(--font-body);font-size:.82rem;color:var(--ink-mid);margin:0 0 8px">
+            Call <code style="background:var(--bg);padding:1px 5px;border-radius:3px">check_all()</code> from
+            <code style="background:var(--bg);padding:1px 5px;border-radius:3px">_auth_watchdog</code> at the top of any pipeline
+            script to gate auth-dependent sections:
+          </p>
+          <div style="background:var(--bg);border-radius:6px;padding:12px 16px;font-family:var(--font-data);font-size:.78rem;color:var(--ink);line-height:1.7">
+            from _auth_watchdog import check_all<br>
+            health = check_all()&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;# writes auth_health.json<br>
+            if health['jefferies']['status'] == 'failed':<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;print('Jefferies auth expired — skipping'); skip_jefferies = True
+          </div>
+          <p style="font-family:var(--font-body);font-size:.78rem;color:var(--ink-ghost);margin:10px 0 0">
+            Dashboard auto-refreshes every 60 s while this tab is open.
+            Watchdog writes <code style="background:var(--bg);padding:1px 4px;border-radius:3px">~/credentials/auth_health.json</code>;
+            this tile reads it.
+          </p>
+        </div>
+      </div><!-- /tab-auth-health -->
+
+    </div><!-- /adm-wrap -->
+  </main>
+</div>
+
+<script>
+var ALL_TILES       = {{ALL_TILES_JSON}};
+var ADMIN_TABS      = {{ADMIN_TABS_JSON}};
+var SCHEDULED_CALLS = {{SCHEDULED_CALLS_JSON}};
+var PROCESSED_CALLS = {{PROCESSED_CALLS_JSON}};
+var RUN_STATE       = {{RUN_STATE_JSON}};
+
+// ── Tab switching ──────────────────────────────────────────────
+function updateRoleHint() {
+  var role  = document.getElementById('invite-role').value;
+  var hint  = document.getElementById('role-hint');
+  var ghFld = document.getElementById('invite-github').closest('.adm-field');
+  var msgs  = {
+    viewer:     null,
+    tc_team:    'GitHub: will be added to <strong>Read-Tomac-Deal-Pipeline</strong> (read) + <strong>Invite-Chief-of-Staff</strong> (read). Email includes setup.sh instructions.',
+    subscriber: 'GitHub: will be added to <strong>Invite-Chief-of-Staff</strong> (read). Email includes setup.sh instructions.',
+  };
+  var msg = msgs[role];
+  if (msg) {
+    hint.innerHTML = msg;
+    hint.style.display = 'block';
+    ghFld.querySelector('label').innerHTML = 'GitHub handle <span style="font-weight:400;color:var(--red)">*required for repo access</span>';
+  } else {
+    hint.style.display = 'none';
+    ghFld.querySelector('label').innerHTML = 'GitHub handle <span style="font-weight:400;color:var(--ink-ghost)">(optional)</span>';
+  }
+}
+
+function switchTab(name, btn) {
+  document.querySelectorAll('.adm-tab-panel').forEach(function(p){ p.classList.remove('visible'); });
+  document.querySelectorAll('.adm-tab').forEach(function(b){ b.classList.remove('active'); });
+  document.getElementById('tab-' + name).classList.add('visible');
+  if (btn) btn.classList.add('active');
+  localStorage.setItem('adm_tab', name);
+}
+
+// ── Access tab: inline edit panels ────────────────────────────
+function toggleEdit(username) {
+  var editRow = document.getElementById('edit-' + username);
+  var isOpen  = editRow.classList.contains('open');
+  document.querySelectorAll('.adm-edit-row.open').forEach(function(r){ r.classList.remove('open'); });
+  if (!isOpen) editRow.classList.add('open');
+}
+
+function buildEditPanel(username, currentTiles, currentTabAccess) {
+  var groups = ALL_TILES.map(function(t) {
+    var checked = currentTiles.indexOf(t.url) >= 0 ? 'checked' : '';
+    // data-tile-id on the parent lets the cascade handler find matching children.
+    var html = '<div class="adm-dashboard-group" data-tile-id="' + t.id + '">'
+      + '<label class="adm-tile-check"><input type="checkbox" name="tile" value="' + t.url + '" ' + checked
+      + ' onchange="cascadeTileCheck(this)">' + t.title + '</label>';
+    if (t.tabs && t.tabs.length) {
+      html += '<div class="adm-subtabs">';
+      var tabsForTile = (currentTabAccess||{})[t.id] || [];
+      t.tabs.forEach(function(tab) {
+        var tabChecked = tabsForTile.indexOf(tab.id) >= 0 ? 'checked' : '';
+        html += '<label class="adm-tile-check adm-subtab-check"><input type="checkbox" name="tab_access" value="'
+          + t.id + ':' + tab.id + '" ' + tabChecked
+          + ' onchange="cascadeTabCheck(this)">' + tab.title + '</label>';
+      });
+      html += '</div>';
+    }
+    html += '</div>';
+    return html;
+  }).join('');
+  return '<div class="adm-edit-panel">'
+    + '<div style="margin-bottom:10px;font-family:var(--font-data);font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint)">Edit access for ' + username + '</div>'
+    + '<div style="font-family:var(--font-data);font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-ghost);margin-bottom:8px">Dashboard access</div>'
+    + '<div class="adm-dashboard-groups">' + groups + '</div>'
+    + '<div class="adm-actions">'
+    + '<button class="btn-save" onclick="saveAccess(\'' + username + '\',this)">Save</button>'
+    + '<button class="btn-cancel" onclick="toggleEdit(\'' + username + '\')">Cancel</button>'
+    + '</div></div>';
+}
+
+// Parent → children: checking a tile grants access to every sub-tab; unchecking
+// revokes all of them. This matches the user's mental model ("if I click the
+// broader category, the sub-tabs are covered") and prevents the orphan state
+// where a tile is unchecked but some of its sub-tabs are still granted.
+function cascadeTileCheck(cb) {
+  var group = cb.closest('.adm-dashboard-group');
+  if (!group) return;
+  var children = group.querySelectorAll('input[name="tab_access"]');
+  children.forEach(function(child){ child.checked = cb.checked; });
+}
+
+// Child → parent: checking any sub-tab implies the tile itself; unchecking the
+// last remaining sub-tab does NOT auto-revoke the tile (user may still want
+// tile-level access without sub-tab overrides).
+function cascadeTabCheck(cb) {
+  var group = cb.closest('.adm-dashboard-group');
+  if (!group) return;
+  if (cb.checked) {
+    var parent = group.querySelector('input[name="tile"]');
+    if (parent) parent.checked = true;
+  }
+}
+
+function saveAccess(username, btn) {
+  var row       = document.getElementById('edit-' + username);
+  var tiles     = Array.from(row.querySelectorAll('input[name=tile]:checked')).map(function(i){ return i.value; });
+  var tabAccess = Array.from(row.querySelectorAll('input[name=tab_access]:checked')).map(function(i){ return i.value; });
+  var form = document.createElement('form');
+  form.method = 'POST'; form.action = '/admin/update';
+  var u = document.createElement('input');
+  u.type = 'hidden'; u.name = 'username'; u.value = username;
+  form.appendChild(u);
+  tiles.forEach(function(tile){
+    var ti = document.createElement('input');
+    ti.type = 'hidden'; ti.name = 'tile'; ti.value = tile;
+    form.appendChild(ti);
+  });
+  tabAccess.forEach(function(ta){
+    var ai = document.createElement('input');
+    ai.type = 'hidden'; ai.name = 'tab_access'; ai.value = ta;
+    form.appendChild(ai);
+  });
+  document.body.appendChild(form);
+  form.submit();
+}
+
+// ── Helpers ────────────────────────────────────────────────────
+function fmtDate(isoStr) {
+  if (!isoStr) return '—';
+  try {
+    var d = new Date(isoStr);
+    return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})
+         + ' ' + d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true});
+  } catch(e) { return isoStr.slice(0,16); }
+}
+
+function timeAgo(isoStr) {
+  if (!isoStr) return '';
+  var diff = Date.now() - new Date(isoStr).getTime();
+  var m = Math.round(diff / 60000);
+  if (m < 1)   return 'just now';
+  if (m < 60)  return m + 'm ago';
+  var h = Math.round(m / 60);
+  if (h < 24)  return h + 'h ago';
+  return Math.round(h / 24) + 'd ago';
+}
+
+function catBadge(cat) {
+  if (!cat) return '';
+  var cls = cat === 'Tomac Cove' ? 'badge-tomac' : cat === 'Recruiting' ? 'badge-recruit' : 'badge-other';
+  return '<span class="' + cls + '">' + cat + '</span>';
+}
+
+function asArray(val) {
+  return Array.isArray(val) ? val : (val && typeof val === 'object' ? Object.values(val) : []);
+}
+
+// ── Schedule tab: upcoming calls ───────────────────────────────
+function renderUpcomingCalls() {
+  var now      = Date.now();
+  var upcoming = asArray(SCHEDULED_CALLS)
+    .filter(function(c){ return new Date(c.start).getTime() >= now - 3600000; })
+    .sort(function(a,b){ return new Date(a.start) - new Date(b.start); });
+
+  var el = document.getElementById('upcoming-calls-list');
+  if (!upcoming.length) {
+    el.innerHTML = '<div class="adm-empty">No upcoming recordings scheduled.</div>';
+    return;
+  }
+  var rows = upcoming.map(function(c) {
+    var badge    = new Date(c.start).getTime() < now
+                   ? '<span class="badge-past">In Progress / Past</span>'
+                   : '<span class="badge-upcoming">Scheduled</span>';
+    var dialInfo = c.phone
+                   ? ' &nbsp;<span style="font-family:var(--font-data);font-size:.72rem;color:var(--ink-mid)">'
+                     + c.phone + (c.pin ? ' · PIN ' + c.pin : '') + '</span>'
+                   : '';
+    return '<tr>'
+      + '<td><div style="font-weight:600;color:var(--ink)">' + esc(c.title||'Untitled') + '</div>'
+      + '<div style="font-size:.78rem;color:var(--ink-mid);margin-top:2px">' + fmtDate(c.start) + dialInfo + '</div></td>'
+      + '<td>' + catBadge(c.category) + '</td>'
+      + '<td>' + badge + '</td>'
+      + '</tr>';
+  }).join('');
+  el.innerHTML = '<table class="adm-table"><thead><tr><th>Call</th><th>Category</th><th>Status</th></tr></thead>'
+               + '<tbody>' + rows + '</tbody></table>';
+}
+
+// ── Call History tab ───────────────────────────────────────────
+function renderCallHistory() {
+  var now   = Date.now();
+  var allSc = asArray(SCHEDULED_CALLS).sort(function(a,b){ return new Date(b.start)-new Date(a.start); });
+
+  var schedEl = document.getElementById('all-scheduled-list');
+  if (!allSc.length) {
+    schedEl.innerHTML = '<div class="adm-empty">No scheduled calls found.</div>';
+  } else {
+    var rows = allSc.map(function(c) {
+      var badge    = new Date(c.start).getTime() > now
+                     ? '<span class="badge-upcoming">Upcoming</span>'
+                     : '<span class="badge-past">Past</span>';
+      var dialInfo = c.phone ? (' · ' + c.phone + (c.pin ? ' PIN '+c.pin : '')) : '';
+      var src      = c.source === 'admin-schedule' ? 'Admin' : 'Google Calendar';
+      return '<tr>'
+        + '<td><div style="font-weight:600;color:var(--ink)">' + esc(c.title||'Untitled') + '</div>'
+        + '<div style="font-size:.78rem;color:var(--ink-mid);margin-top:2px">' + fmtDate(c.start)
+        + (dialInfo ? '<span style="font-family:var(--font-data);font-size:.7rem">' + esc(dialInfo) + '</span>' : '')
+        + '</div></td>'
+        + '<td style="font-size:.8rem;color:var(--ink-mid)">' + src + '</td>'
+        + '<td>' + catBadge(c.category) + '</td>'
+        + '<td>' + badge + '</td>'
+        + '</tr>';
+    }).join('');
+    schedEl.innerHTML = '<table class="adm-table"><thead><tr><th>Call</th><th>Source</th><th>Category</th><th>Status</th></tr></thead>'
+                      + '<tbody>' + rows + '</tbody></table>';
+  }
+
+  // Processed transcripts list lives on Status > Calls; not duplicated here.
+}
+
+// ── Dashboard Status tab ───────────────────────────────────────
+function renderStatus() {
+  var fullRun = RUN_STATE.lastFullRunAt || null;
+  var miniRun = RUN_STATE.lastMiniRunAt || null;
+
+  function ageClass(isoStr, warnH, errH) {
+    if (!isoStr) return 'err';
+    var h = (Date.now() - new Date(isoStr).getTime()) / 3600000;
+    return h < warnH ? 'ok' : h < errH ? 'warn' : 'err';
+  }
+
+  var procCount = 0;
+  try { procCount = asArray(PROCESSED_CALLS).length; } catch(e){}
+
+  var tiles = [
+    { label:'Last Full Run',       value: fullRun ? timeAgo(fullRun) : 'Never',
+      sub: fullRun ? fmtDate(fullRun) : 'Run inbox-capture',
+      cls: ageClass(fullRun, 25, 50) },
+    { label:'Last Mini Run',       value: miniRun ? timeAgo(miniRun) : 'Never',
+      sub: miniRun ? fmtDate(miniRun) : 'Run morning-briefing',
+      cls: ageClass(miniRun, 6, 24) },
+    { label:'Transcripts Processed', value: procCount, sub: 'total in dedup tracker', cls:'' },
+  ];
+
+  document.getElementById('status-tiles').innerHTML = tiles.map(function(t){
+    return '<div class="status-tile ' + t.cls + '">'
+      + '<div class="st-label">' + t.label + '</div>'
+      + '<div class="st-value">' + t.value + '</div>'
+      + '<div class="st-sub">' + t.sub + '</div>'
+      + '</div>';
+  }).join('');
+
+  var histEl = document.getElementById('run-history-list');
+  var hist = RUN_STATE.runHistory;
+  if (!hist) {
+    histEl.innerHTML = '<div class="adm-empty">No run history available.</div>';
+    return;
+  }
+  try {
+    var arr = typeof hist === 'string' ? JSON.parse(hist) : hist;
+    var rows = arr.slice().reverse().slice(0, 25).map(function(r) {
+      return '<div class="rh-row">'
+        + '<span class="rh-time">' + (r.at||'').slice(0,16).replace('T',' ') + '</span>'
+        + '<span class="rh-type">' + (r.type||'run') + '</span>'
+        + '<span class="rh-stat">'
+        + (r.transcripts !== undefined ? r.transcripts + ' transcripts' : '')
+        + (r.followups   !== undefined ? ' &middot; ' + r.followups + ' follow-ups' : '')
+        + (r.contacts    !== undefined ? ' &middot; ' + r.contacts + ' contacts' : '')
+        + (r.error ? ' &middot; <span style="color:var(--red)">' + esc(r.error) + '</span>' : '')
+        + '</span></div>';
+    }).join('');
+    histEl.innerHTML = rows || '<div class="adm-empty">No entries.</div>';
+  } catch(e) {
+    histEl.innerHTML = '<div class="adm-empty">Could not parse run history.</div>';
+  }
+}
+
+// ── Quick actions ──────────────────────────────────────────────
+function triggerWarmup(btn) {
+  var fb = document.getElementById('action-feedback');
+  btn.disabled = true; btn.textContent = '⟳ Running…';
+  fetch('/warmup', {method:'POST'})
+    .then(function(r){ return r.json(); })
+    .then(function(){ fb.textContent = '✓ Full refresh triggered — takes 20-30s to complete.'; btn.disabled=false; btn.textContent='⟳ Full Refresh'; })
+    .catch(function(){ fb.textContent = 'Failed to trigger refresh.'; btn.disabled=false; btn.textContent='⟳ Full Refresh'; });
+}
+
+function triggerFastRefresh(btn) {
+  var fb = document.getElementById('action-feedback');
+  btn.disabled = true; btn.textContent = '↻ Running…';
+  fetch('/refresh', {method:'POST'})
+    .then(function(r){ return r.json(); })
+    .then(function(){ fb.textContent = '✓ Fast refresh done.'; btn.disabled=false; btn.textContent='↻ Fast Refresh'; })
+    .catch(function(){ fb.textContent = 'Failed.'; btn.disabled=false; btn.textContent='↻ Fast Refresh'; });
+}
+
+function esc(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Sync Preview ───────────────────────────────────────────────
+function loadSyncPreview(btn) {
+  var loading = document.getElementById('sp-loading');
+  var errDiv  = document.getElementById('sp-error');
+  var stats   = document.getElementById('sp-stats');
+  loading.classList.add('visible');
+  errDiv.style.display   = 'none';
+  stats.style.display    = 'none';
+  if (btn) { btn.disabled = true; btn.textContent = '⟳ Loading…'; }
+
+  fetch('/sync-preview')
+    .then(function(r) {
+      if (!r.ok) return r.text().then(function(t){ throw new Error('HTTP ' + r.status + ': ' + t); });
+      return r.json();
+    })
+    .then(function(data) {
+      loading.classList.remove('visible');
+      if (btn) { btn.disabled = false; btn.textContent = '⟳ Preview Changes'; }
+      if (!data.ok) { errDiv.textContent = data.error || 'Unknown error'; errDiv.style.display='block'; return; }
+      renderSyncPreview(data);
+    })
+    .catch(function(e) {
+      loading.classList.remove('visible');
+      if (btn) { btn.disabled = false; btn.textContent = '⟳ Preview Changes'; }
+      errDiv.textContent = 'Failed to load preview: ' + e.message;
+      errDiv.style.display = 'block';
+    });
+}
+
+function renderSyncPreview(data) {
+  var stats   = document.getElementById('sp-stats');
+  var results = document.getElementById('sp-results');
+  var note    = document.getElementById('sp-freshnote');
+
+  var s = data.stats || {};
+  document.getElementById('sp-n-adds').textContent = s.adds || 0;
+  document.getElementById('sp-n-mods').textContent = s.modifies || 0;
+  document.getElementById('sp-n-dels').textContent = s.deletes || 0;
+
+  var changes = data.changes || [];
+  if (!changes.length) {
+    results.innerHTML = '<div class="adm-empty">No changes detected — dashboard is up to date.</div>';
+    stats.style.display = 'block';
+    note.textContent = 'As of ' + (data.generatedAt || '—');
+    return;
+  }
+
+  // Group by Tab → Subtab (or just Tab if no subtab)
+  var grouped = {};
+  changes.forEach(function(c) {
+    var key = c.tab + (c.subtab ? ' › ' + c.subtab : '');
+    (grouped[key] = grouped[key] || []).push(c);
+  });
+
+  // Sort groups: Tomac first, then alpha
+  var keys = Object.keys(grouped).sort(function(a,b) {
+    var ta = a.indexOf('Tomac') >= 0 ? 0 : 1;
+    var tb = b.indexOf('Tomac') >= 0 ? 0 : 1;
+    return ta !== tb ? ta - tb : a.localeCompare(b);
+  });
+
+  var html = '';
+  keys.forEach(function(groupKey) {
+    var rows = grouped[groupKey];
+    html += '<div class="sp-group-hdr">' + esc(groupKey) + ' &nbsp;·&nbsp; ' + rows.length + ' change' + (rows.length !== 1 ? 's' : '') + '</div>';
+    html += '<table class="sp-table"><thead><tr>'
+          + '<th>Action</th><th>Owner</th><th>Item / Who</th><th>Detail / What</th><th>Due</th>'
+          + '</tr></thead><tbody>';
+    rows.forEach(function(c) {
+      var badgeCls = c.action === 'ADD' ? 'sp-badge-add' : c.action === 'DELETE' ? 'sp-badge-del' : 'sp-badge-mod';
+      html += '<tr>'
+        + '<td><span class="' + badgeCls + '">' + esc(c.action) + '</span></td>'
+        + '<td><span class="sp-owner">' + esc(c.owner || '—') + '</span></td>'
+        + '<td><div style="font-weight:600;color:var(--ink)">' + esc(c.item || '—') + '</div></td>'
+        + '<td><div style="color:var(--ink)">' + esc(c.detail || '—') + '</div></td>'
+        + '<td><span class="sp-due">' + esc(c.due || '—') + '</span></td>'
+        + '</tr>';
+    });
+    html += '</tbody></table>';
+  });
+
+  results.innerHTML = html;
+  stats.style.display = 'block';
+  note.textContent = 'Computed ' + (data.generatedAt || '—') + ' · Not yet applied. Hit Full Refresh on Dashboard Status tab to apply.';
+}
+
+// ── Routines sub-tab ──────────────────────────────────────────
+var ROUTINES_DATA   = [];
+var ROUTINES_HEALTH = null;
+var RT_TABLE_TIMER  = null;   // 60s when sub-tab visible
+var RT_HEALTH_TIMER = null;   // 5min always (drives top-nav badge too if added)
+var RT_KICKSTART_LOCK = {};   // { taskname: true } during 30s lockout
+var RT_OPEN_TASK    = null;   // currently expanded task name
+var RT_LOG_TYPE     = {};     // { taskname: 'stdout'|'stderr'|'run' }
+
+// Static fix-pattern matchers — run client-side over log text.
+var RT_FIX_PATTERNS = [
+  { rx: /Token has been expired or revoked|invalid_grant|refresh.token.+(expired|revoked)/i,
+    label: 'OAuth token expired or revoked',
+    fix:   'python3 ~/credentials/oauth_reauth.py' },
+  { rx: /ModuleNotFoundError: No module named ['"]([\w_.-]+)['"]/,
+    label: 'Python module missing',
+    fix_template: function(m){ return 'pip3 install ' + m[1] + ' --break-system-packages'; } },
+  { rx: /claude: command not found|No such file or directory.*\.local\/bin\/claude/i,
+    label: 'Claude CLI missing from PATH',
+    fix:   'export PATH=$PATH:~/.local/bin' },
+  { rx: /(Connection refused|Failed to connect).{0,40}(localhost|127\.0\.0\.1).{0,5}:7777/i,
+    label: 'Dashboard server unreachable on :7777',
+    fix:   'launchctl list | grep cosdashboard' },
+  { rx: /mcp__Claude_in_Chrome__|Claude in Chrome.*not (available|registered|connected)/i,
+    label: 'Tier 2 — Claude_in_Chrome MCP unavailable',
+    fix:   'Reinstall the Claude desktop app to restore the Chrome MCP server.' },
+  { rx: /\b(429|RATE_LIMIT_EXCEEDED|RESOURCE_EXHAUSTED)\b.{0,80}(Gemini|generativelanguage|google\.api)/i,
+    label: 'Gemini API quota (429)',
+    fix:   'Built-in backoff handles transient 429s. Re-run, or wait ~1h.' },
+  { rx: /quotaExceeded|userRateLimitExceeded|dailyLimitExceeded/i,
+    label: 'Google API quota exceeded',
+    fix:   'Wait 24h, or check console.cloud.google.com quota dashboard.' },
+  { rx: /Traceback \(most recent call last\)/,
+    label: 'Python traceback in log',
+    fix:   '(See full traceback in stderr/log below.)' }
+];
+
+// Pretty-format helpers
+function rtFmtRelative(iso) {
+  if (!iso) return '—';
+  // "YYYY-MM-DD HH:MM:SS TZ" or ISO
+  var d;
+  try {
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(iso)) {
+      // wrapper-banner format; treat as local time
+      var p = iso.split(' ');
+      d = new Date(p[0] + 'T' + p[1]);
+    } else {
+      d = new Date(iso);
+    }
+    if (isNaN(d.getTime())) return iso;
+  } catch(e) { return iso; }
+  var diff = (Date.now() - d.getTime()) / 1000;
+  if (diff < 0) {
+    var ahead = -diff;
+    if (ahead < 60)        return 'in ' + Math.round(ahead) + 's';
+    if (ahead < 3600)      return 'in ' + Math.round(ahead/60) + 'm';
+    if (ahead < 86400)     return 'in ' + Math.round(ahead/3600) + 'h';
+    return 'in ' + Math.round(ahead/86400) + 'd · ' + d.toLocaleString([], {weekday:'short', hour:'2-digit', minute:'2-digit'});
+  }
+  if (diff < 60)    return Math.round(diff) + 's ago';
+  if (diff < 3600)  return Math.round(diff/60) + 'm ago';
+  if (diff < 86400) return Math.round(diff/3600) + 'h ago';
+  if (diff < 7*86400) return Math.round(diff/86400) + 'd ago';
+  return d.toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'});
+}
+function rtFmtRuntime(s) {
+  if (s == null) return '—';
+  if (s < 60) return s + 's';
+  var m = Math.floor(s/60), r = s % 60;
+  return m + 'm ' + (r < 10 ? '0' : '') + r + 's';
+}
+function rtEsc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Pattern-match log text → recommendations array
+function rtAnalyzeLog(text, isTier2) {
+  if (!text) return [];
+  var hits = [];
+  RT_FIX_PATTERNS.forEach(function(p){
+    var m = text.match(p.rx);
+    if (m) {
+      var fix = p.fix_template ? p.fix_template(m) : p.fix;
+      hits.push({ label: p.label, fix: fix });
+    }
+  });
+  // Dedup by label
+  var seen = {};
+  return hits.filter(function(h){
+    if (seen[h.label]) return false;
+    seen[h.label] = true;
+    return true;
+  });
+}
+
+// ── Render: Yesterday's Issues digest ─────────────────────
+function renderRoutinesDigest(h) {
+  var card    = document.getElementById('rt-digest');
+  var meta    = document.getElementById('rt-digest-meta');
+  var counts  = document.getElementById('rt-digest-counts');
+  var body    = document.getElementById('rt-digest-body');
+  var actions = document.getElementById('rt-digest-actions');
+  var badge   = document.getElementById('rt-tab-badge');
+  if (!h) {
+    meta.textContent = 'unavailable';
+    body.innerHTML   = '<div class="rt-empty">No data.</div>';
+    counts.innerHTML = '';
+    actions.innerHTML = '';
+    return;
+  }
+  var d24 = h.last_24h || {};
+  var failures = (d24.failures || []);
+
+  // Top-of-tab badge with failing count
+  if (badge) {
+    if (h.failing > 0) { badge.textContent = h.failing; badge.classList.remove('empty'); }
+    else { badge.textContent = ''; badge.classList.add('empty'); }
+  }
+
+  // Card chrome
+  card.classList.remove('is-clean','has-fails');
+  if (failures.length === 0 && h.failing === 0) card.classList.add('is-clean');
+  if (failures.length > 0  || h.failing > 0)    card.classList.add('has-fails');
+
+  meta.textContent = 'Checked ' + rtFmtRelative(h.last_checked);
+
+  counts.innerHTML =
+    '<span class="rt-c-ok">runs<b>' + (d24.runs||0) + '</b></span>' +
+    '<span class="rt-c-ok">ok<b>' + (d24.ok||0) + '</b></span>' +
+    '<span class="rt-c-fail">tier-1 failed<b>' + (d24.failed_t1||0) + '</b></span>' +
+    '<span class="rt-c-t2">tier-2 expected-fail<b>' + (d24.failed_t2||0) + '</b></span>';
+
+  if (failures.length === 0) {
+    body.innerHTML = '<div class="rt-empty">No tier-1 failures in the last 24 hours.</div>';
+    actions.innerHTML = '';
+    return;
+  }
+
+  var items = failures.map(function(f) {
+    // Run static analysis on the last few output lines (best we have for the digest)
+    var sample = (f.last_lines || []).join('\n');
+    var fixes = rtAnalyzeLog(sample, false);
+    var fix_html = '';
+    if (fixes.length) {
+      fix_html = '<div class="rt-digest-failure-fix"><b>' + rtEsc(fixes[0].label) +
+                 ':</b> <code>' + rtEsc(fixes[0].fix) + '</code></div>';
+    } else if (f.last_lines && f.last_lines.length) {
+      fix_html = '<div class="rt-digest-failure-fix">' +
+                 rtEsc(f.last_lines[f.last_lines.length-1]).slice(0,180) + '</div>';
+    }
+    return '<li>' +
+      '<span class="rt-digest-failure-task">' + rtEsc(f.task) + '</span>' +
+      '<span class="rt-digest-failure-time">exit ' + (f.exit_code != null ? f.exit_code : '?') +
+      ' · ' + rtFmtRelative(f.time) + '</span>' +
+      fix_html + '</li>';
+  }).join('');
+  body.innerHTML = '<ul class="rt-digest-failures">' + items + '</ul>';
+
+  actions.innerHTML =
+    '<button class="rt-btn rt-btn-fix" type="button" onclick="askClaudeFixAll()">' +
+      '🔍 Ask Claude to Fix All</button>' +
+    '<button class="rt-btn" type="button" onclick="loadRoutines(true);loadRoutinesHealth()">' +
+      'Re-check now</button>';
+}
+
+// ── Render: per-task table ────────────────────────────────
+function renderRoutinesTable(rows) {
+  var tbody = document.getElementById('rt-tbody');
+  var meta  = document.getElementById('rt-toolbar-meta');
+  if (!rows || !rows.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px 0;color:var(--ink-faint);font-style:italic">No routines found.</td></tr>';
+    meta.textContent = 'no plists detected';
+    return;
+  }
+  meta.textContent = rows.length + ' tasks · auto-refresh every 60s';
+  tbody.innerHTML = rows.map(function(r){
+    var tier2lbl = r.tier === 2 ? '<span class="rt-task-tier2">tier 2</span>' : '';
+    // Sparkline of last 7 runs (oldest left, newest right)
+    var sparkDots = '';
+    for (var i = 0; i < 7; i++) {
+      var idx = r.history.length - (7 - i);  // align to right
+      if (idx < 0) {
+        sparkDots += '<span class="rt-spark-dot empty"></span>';
+      } else {
+        var run = r.history[idx];
+        var cls = 'empty';
+        if (run.exit_code === 0)      cls = 'ok';
+        else if (run.exit_code != null) cls = (r.tier === 2 ? 'expected_fail' : 'fail');
+        var t = (run.start || '') + ' · exit ' + (run.exit_code == null ? '?' : run.exit_code) +
+                (run.runtime_s != null ? (' · ' + rtFmtRuntime(run.runtime_s)) : '');
+        sparkDots += '<span class="rt-spark-dot ' + cls + '" title="' + rtEsc(t) + '"></span>';
+      }
+    }
+    var locked = RT_KICKSTART_LOCK[r.task] === true;
+    var actionsHtml =
+      '<button class="rt-btn" onclick="event.stopPropagation();kickstartRoutine(\'' +
+        rtEsc(r.task) + '\',this)" ' + (locked ? 'disabled' : '') + ' type="button">Run now</button>';
+    return (
+      '<tr class="rt-row rt-status-' + r.status + '" data-task="' + rtEsc(r.task) +
+        '" onclick="toggleRoutineDetail(\'' + rtEsc(r.task) + '\')">' +
+        '<td class="rt-cell-name" data-label="Task"><span class="rt-task-name">' + rtEsc(r.label || r.task) + '</span>' + tier2lbl + '</td>' +
+        '<td data-label="Schedule"><span class="rt-sched">' + rtEsc(r.schedule_human) + '</span></td>' +
+        '<td data-label="Last run"><span class="rt-when">' + rtEsc(rtFmtRelative(r.last_run)) + '</span></td>' +
+        '<td data-label="Runtime"><span class="rt-runtime">' + rtEsc(rtFmtRuntime(r.last_runtime_s)) + '</span></td>' +
+        '<td data-label="Status"><span class="rt-status-pill ' + r.status + '">' + r.status.replace('_',' ') + '</span></td>' +
+        '<td data-label="Last 7"><span class="rt-spark">' + sparkDots + '</span></td>' +
+        '<td data-label="Next"><span class="rt-when">' + rtEsc(rtFmtRelative(r.next_run)) + '</span></td>' +
+        '<td data-label=""><div class="rt-actions">' + actionsHtml + '</div></td>' +
+      '</tr>' +
+      '<tr class="rt-detail" id="rt-detail-' + rtEsc(r.task) + '">' +
+        '<td class="rt-detail-cell" colspan="8"><div id="rt-detail-body-' + rtEsc(r.task) + '"></div></td>' +
+      '</tr>'
+    );
+  }).join('');
+  // Re-open the previously expanded row, if any
+  if (RT_OPEN_TASK) {
+    var det = document.getElementById('rt-detail-' + RT_OPEN_TASK);
+    if (det) { det.classList.add('open'); buildRoutineDetail(RT_OPEN_TASK); }
+  }
+}
+
+// ── Expand a row inline ───────────────────────────────────
+function toggleRoutineDetail(task) {
+  var det = document.getElementById('rt-detail-' + task);
+  if (!det) return;
+  var was = det.classList.contains('open');
+  // Close all
+  document.querySelectorAll('.rt-detail.open').forEach(function(d){ d.classList.remove('open'); });
+  RT_OPEN_TASK = null;
+  if (!was) {
+    det.classList.add('open');
+    RT_OPEN_TASK = task;
+    buildRoutineDetail(task);
+  }
+}
+
+function buildRoutineDetail(task) {
+  var box = document.getElementById('rt-detail-body-' + task);
+  if (!box) return;
+  var r = ROUTINES_DATA.find(function(x){ return x.task === task; });
+  if (!r) { box.innerHTML = '<em>Task not found.</em>'; return; }
+  var logType = RT_LOG_TYPE[task] || 'stdout';
+  var meta =
+    '<div class="rt-detail-meta">' +
+      '<span><b>Tier:</b> ' + r.tier + (r.tier===2 ? ' (Chrome MCP, expected-fail)' : '') + '</span>' +
+      '<span><b>Last exit:</b> ' + (r.last_exit_code == null ? '—' : r.last_exit_code) + '</span>' +
+      '<span><b>Runtime:</b> ' + rtFmtRuntime(r.last_runtime_s) + '</span>' +
+      '<span><b>Started:</b> ' + rtEsc(r.last_start || '—') + '</span>' +
+      '<span><b>Ended:</b> ' + rtEsc(r.last_run || '—') + '</span>' +
+      '<span><b>Skill:</b> <a href="#" onclick="copyText(this.dataset.path);return false" data-path="' +
+        rtEsc(r.skill_path) + '" title="Click to copy path">' + rtEsc(r.skill_path) + '</a></span>' +
+    '</div>';
+  var tshoot = '<div class="rt-tshoot">' +
+    '<div class="rt-tshoot-label">Troubleshooting</div>' +
+    '<div id="rt-tshoot-' + task + '" class="rt-tshoot-clean">Pattern-matching log…</div></div>';
+  var toggle = '<div class="rt-log-toggle">' +
+    '<button type="button" class="' + (logType==='stdout'?'active':'') + '" onclick="setRoutineLogType(\'' + task + '\',\'stdout\')">stdout</button>' +
+    '<button type="button" class="' + (logType==='stderr'?'active':'') + '" onclick="setRoutineLogType(\'' + task + '\',\'stderr\')">stderr</button>' +
+    '<button type="button" class="' + (logType==='run'?'active':'')    + '" onclick="setRoutineLogType(\'' + task + '\',\'run\')">run.log</button>' +
+    '</div>';
+  var fixBtn = '<button class="rt-btn rt-btn-fix" type="button" onclick="askClaudeFix(\'' + task + '\')">🔍 Ask Claude to Fix</button>';
+  var actions = '<div style="margin-top:12px">' + fixBtn + '</div>';
+
+  box.innerHTML = meta + tshoot + toggle +
+                  '<div class="rt-log-box rt-log-empty" id="rt-log-' + task + '">Loading log…</div>' +
+                  actions;
+  loadRoutineLog(task, logType);
+}
+
+function setRoutineLogType(task, type) {
+  RT_LOG_TYPE[task] = type;
+  buildRoutineDetail(task);
+}
+
+function loadRoutineLog(task, type) {
+  fetch('/routines/' + encodeURIComponent(task) + '/log?type=' + type + '&lines=200', {cache:'no-store'})
+    .then(function(r){ return r.ok ? r.text() : Promise.reject(r.status); })
+    .then(function(text) {
+      var pre = document.getElementById('rt-log-' + task);
+      if (!pre) return;
+      pre.classList.remove('rt-log-empty');
+      if (!text.trim()) {
+        pre.classList.add('rt-log-empty');
+        pre.textContent = '(empty)';
+      } else {
+        pre.innerHTML = text.split('\n').map(function(l){
+          var esc = rtEsc(l);
+          if (/(\bERROR\b|Traceback|Exception:)/.test(l)) return '<span class="rt-l-err">' + esc + '</span>';
+          if (/(\bWARNING\b|\bWARN\b|deprecat)/i.test(l))  return '<span class="rt-l-warn">' + esc + '</span>';
+          return esc;
+        }).join('\n');
+        pre.scrollTop = pre.scrollHeight;
+      }
+      var t = document.getElementById('rt-tshoot-' + task);
+      var r = ROUTINES_DATA.find(function(x){ return x.task === task; });
+      var fixes = rtAnalyzeLog(text, r && r.tier === 2);
+      if (t) {
+        if (!fixes.length) {
+          t.className = 'rt-tshoot-clean';
+          t.textContent = (r && r.last_exit_code === 0)
+            ? 'Last run succeeded. No issues detected.'
+            : 'No known patterns matched. Open the log above and look for ERROR/Traceback lines.';
+        } else {
+          t.className = '';
+          t.innerHTML = fixes.map(function(f){
+            return '<div class="rt-tshoot-item"><b>' + rtEsc(f.label) + ':</b> ' +
+                   '<code onclick="copyText(this.textContent)" title="click to copy">' +
+                   rtEsc(f.fix) + '</code></div>';
+          }).join('');
+        }
+      }
+    })
+    .catch(function(err){
+      var pre = document.getElementById('rt-log-' + task);
+      if (pre) {
+        pre.classList.add('rt-log-empty');
+        pre.textContent = 'Failed to load log (' + err + ')';
+      }
+    });
+}
+
+// ── "Run now" — fire kickstart with confirmation guard ────
+function kickstartRoutine(task, btn) {
+  if (RT_KICKSTART_LOCK[task]) return;
+  if (!confirm('Run ' + task + ' now? This invokes launchctl kickstart -k.')) return;
+  btn.disabled = true; btn.textContent = '…';
+  RT_KICKSTART_LOCK[task] = true;
+  fetch('/routines/' + encodeURIComponent(task) + '/kickstart',
+    { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ confirm: 'yes' }) })
+    .then(function(r){ return r.json(); })
+    .then(function(j) {
+      btn.textContent = j.kicked ? 'fired' : 'failed';
+      rtToast(j.kicked ? task + ' fired — refreshing in 30s' : ('Kickstart failed: ' + (j.error || '?')));
+      setTimeout(function(){
+        delete RT_KICKSTART_LOCK[task];
+        loadRoutines();
+        if (RT_OPEN_TASK === task) buildRoutineDetail(task);
+      }, 30000);
+    })
+    .catch(function(){
+      btn.disabled = false; btn.textContent = 'Run now';
+      delete RT_KICKSTART_LOCK[task];
+      rtToast('Network error — kickstart not sent');
+    });
+}
+
+// ── "Ask Claude to Fix" prompt builder + clipboard ────────
+function askClaudeFix(task) {
+  var r = ROUTINES_DATA.find(function(x){ return x.task === task; });
+  if (!r) return;
+  // Pull a fresh stdout tail for the prompt — best-effort
+  fetch('/routines/' + encodeURIComponent(task) + '/log?type=stdout&lines=100', {cache:'no-store'})
+    .then(function(rr){ return rr.ok ? rr.text() : ''; })
+    .then(function(stdoutText) {
+      fetch('/routines/' + encodeURIComponent(task) + '/log?type=stderr&lines=100', {cache:'no-store'})
+        .then(function(rr){ return rr.ok ? rr.text() : ''; })
+        .then(function(stderrText) {
+          var fixes = rtAnalyzeLog(stdoutText + '\n' + stderrText, r.tier === 2);
+          var fixSummary = fixes.length
+            ? fixes.map(function(f){ return '- ' + f.label + ': ' + f.fix; }).join('\n')
+            : '(no static pattern matched)';
+          var prompt = [
+            "You are debugging a failed scheduled task on Yoni's Mac.",
+            "",
+            "TASK NAME: " + r.task,
+            "SKILL FILE: " + r.skill_path,
+            "WRAPPER:    ~/dashboards/scripts/run-claude-task.sh",
+            "TIER:       " + r.tier + (r.tier === 2 ? "  (Tier 2 — Chrome MCP dependency, expected to fail until that MCP is restored)" : ""),
+            "LAST RUN:   start=" + (r.last_start||'?') + ", end=" + (r.last_run||'?') +
+              ", exit=" + (r.last_exit_code==null ? '?' : r.last_exit_code) +
+              ", runtime=" + rtFmtRuntime(r.last_runtime_s),
+            "STATUS:     " + r.status,
+            "",
+            "STATIC PATTERN MATCH:",
+            fixSummary,
+            "",
+            "LAST 100 LINES OF STDOUT:",
+            "----------------------------------------",
+            (stdoutText || '(empty)').slice(-12000),
+            "----------------------------------------",
+            "",
+            "LAST 100 LINES OF STDERR:",
+            "----------------------------------------",
+            (stderrText || '(empty)').slice(-6000),
+            "----------------------------------------",
+            "",
+            "Diagnose this failure. Explain in plain English what went wrong and give exact commands to fix it.",
+            "If code changes are needed, show a unified diff against the relevant file.",
+            "If re-auth is needed, walk me through it step-by-step.",
+            "Don't speculate — base your answer on the log content above. If the log is too thin to diagnose, say so and tell me which command to run to gather more info."
+          ].join('\n');
+          openAskClaudeModal(task, prompt);
+        });
+    });
+}
+
+function askClaudeFixAll() {
+  if (!ROUTINES_HEALTH || !ROUTINES_HEALTH.last_24h ||
+      !ROUTINES_HEALTH.last_24h.failures.length) {
+    rtToast('No tier-1 failures in last 24h to fix');
+    return;
+  }
+  var failures = ROUTINES_HEALTH.last_24h.failures;
+  // Aggregate prompt: ask Claude to triage all failures in order
+  var sections = failures.map(function(f, i) {
+    return [
+      '── Failure #' + (i+1) + ': ' + f.task + ' ──',
+      'Time: ' + f.time + '  exit=' + (f.exit_code==null?'?':f.exit_code),
+      'Last lines:',
+      (f.last_lines||[]).join('\n')
+    ].join('\n');
+  }).join('\n\n');
+  var prompt = [
+    "You are triaging " + failures.length + " failed scheduled tasks on Yoni's Mac from the last 24 hours.",
+    "All wrappers: ~/dashboards/scripts/run-claude-task.sh",
+    "All SKILL files: ~/.claude/scheduled-tasks/<task>/SKILL.md",
+    "Logs: ~/dashboards/logs/claude-tasks/<task>.{stdout,stderr,run}.log",
+    "",
+    "FAILURES:",
+    "",
+    sections,
+    "",
+    "For each failure, give: (1) one-sentence root cause, (2) exact shell command(s) to fix, (3) whether it's a one-off or systemic. Group by root cause if multiple share one. Don't speculate beyond the log content."
+  ].join('\n');
+  openAskClaudeModal('multiple tasks (' + failures.length + ')', prompt);
+}
+
+function openAskClaudeModal(task, prompt) {
+  document.getElementById('rt-modal-task').textContent = task;
+  document.getElementById('rt-modal-prompt').value = prompt;
+  document.getElementById('rt-modal-veil').classList.add('open');
+}
+function closeAskClaude(e) {
+  if (e && e.target.id !== 'rt-modal-veil' && e.target !== undefined) {
+    if (e.type === 'click' && e.target.id !== 'rt-modal-veil') return;
+  }
+  document.getElementById('rt-modal-veil').classList.remove('open');
+}
+function copyAskClaude() {
+  var ta = document.getElementById('rt-modal-prompt');
+  ta.focus(); ta.select();
+  var ok = false;
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(ta.value).then(function(){
+      rtToast('Copied — paste into a Claude Code session');
+      closeAskClaude();
+    }).catch(function(){ try { document.execCommand('copy'); rtToast('Copied'); closeAskClaude(); } catch(e) {} });
+  } else {
+    try { document.execCommand('copy'); rtToast('Copied — paste into a Claude Code session'); closeAskClaude(); } catch(e) {}
+  }
+}
+function copyText(text) {
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(function(){ rtToast('Copied: ' + text); });
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta);
+    ta.select(); try { document.execCommand('copy'); } catch(e) {}
+    document.body.removeChild(ta);
+    rtToast('Copied');
+  }
+}
+function rtToast(msg) {
+  var t = document.getElementById('rt-toast');
+  if (!t) return;
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(rtToast._h);
+  rtToast._h = setTimeout(function(){ t.classList.remove('show'); }, 2400);
+}
+
+// ── Polling ───────────────────────────────────────────────
+function loadRoutines(force) {
+  fetch('/routines', {cache:'no-store'})
+    .then(function(r){ return r.json(); })
+    .then(function(j){
+      ROUTINES_DATA = j.routines || [];
+      renderRoutinesTable(ROUTINES_DATA);
+    })
+    .catch(function(){
+      var tbody = document.getElementById('rt-tbody');
+      if (tbody) tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--red);padding:20px 0">Failed to load /routines — server unreachable?</td></tr>';
+    });
+}
+function loadRoutinesHealth() {
+  fetch('/routines/health', {cache:'no-store'})
+    .then(function(r){ return r.json(); })
+    .then(function(j){
+      ROUTINES_HEALTH = j;
+      renderRoutinesDigest(j);
+    })
+    .catch(function(){
+      var meta = document.getElementById('rt-digest-meta');
+      if (meta) meta.textContent = 'health endpoint unreachable';
+    });
+}
+
+// Start/stop polling based on whether the Routines sub-tab is visible.
+function rtStartPolling() {
+  if (!RT_TABLE_TIMER) {
+    RT_TABLE_TIMER = setInterval(loadRoutines, 60 * 1000);
+  }
+  // Health timer always runs even when sub-tab hidden, so the tab badge stays current.
+}
+function rtStopPolling() {
+  if (RT_TABLE_TIMER) { clearInterval(RT_TABLE_TIMER); RT_TABLE_TIMER = null; }
+}
+
+// Hook into existing switchTab — wrap it once
+(function () {
+  var orig = window.switchTab;
+  window.switchTab = function(name, btn) {
+    var ret = orig.apply(this, arguments);
+    if (name === 'routines') {
+      loadRoutines();
+      loadRoutinesHealth();
+      loadBatchJobs();
+      rtStartPolling();
+    } else {
+      rtStopPolling();
+    }
+    return ret;
+  };
+})();
+
+// ── Delayed Jobs (Batch API) ────────────────────────────────────────────────
+var DJ_LOCK = {};   // batch_id → true while force-sync in flight
+
+function loadBatchJobs() {
+  fetch('/batch-jobs', {cache:'no-store'})
+    .then(function(r){ return r.ok ? r.json() : Promise.reject(r.status); })
+    .then(function(data) {
+      var jobs = data.jobs || [];
+      var card = document.getElementById('delayed-jobs-card');
+      var list = document.getElementById('delayed-jobs-list');
+      var meta = document.getElementById('dj-toolbar-meta');
+      if (!jobs.length) {
+        card.style.display = 'none';
+        return;
+      }
+      card.style.display = '';
+      meta.textContent = jobs.length + ' pending';
+      list.innerHTML = jobs.map(function(j) {
+        var locked = DJ_LOCK[j.batch_id] === true;
+        var statusCls = j.status === 'ended' ? 'color:var(--green)' :
+                        j.status === 'in_progress' ? 'color:var(--amber)' : 'color:var(--ink-mid)';
+        var episodes = j.requests.map(function(r){
+          return '<span style="font-style:italic">' + rtEsc((r.show ? r.show + ' — ' : '') + (r.title || r.custom_id)) + '</span>';
+        }).join(', ');
+        var subAt = j.submitted_at ? j.submitted_at.replace('T',' ').slice(0,16) + ' UTC' : '—';
+        return '<div style="display:flex;align-items:flex-start;gap:16px;padding:10px 0;border-bottom:1px solid var(--rule)">' +
+          '<div style="flex:1;min-width:0">' +
+            '<div style="font-family:var(--font-data);font-size:.78rem;color:var(--ink-faint);margin-bottom:3px">' +
+              rtEsc(j.routine) + ' · submitted ' + rtEsc(subAt) + ' · ' + j.request_count + ' request(s)' +
+            '</div>' +
+            '<div style="font-size:.85rem;color:var(--ink);margin-bottom:4px">' + episodes + '</div>' +
+            '<div style="font-family:var(--font-data);font-size:.75rem;' + statusCls + '">' +
+              '● ' + rtEsc(j.status) +
+            '</div>' +
+          '</div>' +
+          '<div style="flex-shrink:0">' +
+            '<button class="rt-btn" type="button" ' + (locked ? 'disabled' : '') +
+              ' onclick="forceBatchSync(\'' + rtEsc(j.batch_id) + '\',this)">' +
+              (locked ? 'Syncing…' : 'Force sync now') +
+            '</button>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+    })
+    .catch(function(){ /* silently ignore — batch endpoint may not exist yet */ });
+}
+
+function forceBatchSync(batchId, btn) {
+  if (DJ_LOCK[batchId]) return;
+  DJ_LOCK[batchId] = true;
+  btn.disabled = true;
+  btn.textContent = 'Syncing…';
+  fetch('/batch-jobs/' + encodeURIComponent(batchId) + '/force',
+    {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'}
+  )
+  .then(function(r){ return r.json(); })
+  .then(function(data) {
+    rtToast(data.message || (data.ok ? 'Retrieve started' : 'Failed'));
+    if (data.ok) {
+      // Poll for completion — reload batch jobs after 30s
+      setTimeout(function(){ DJ_LOCK[batchId] = false; loadBatchJobs(); }, 30000);
+    } else {
+      DJ_LOCK[batchId] = false;
+      btn.disabled = false;
+      btn.textContent = 'Force sync now';
+    }
+  })
+  .catch(function(){
+    DJ_LOCK[batchId] = false;
+    btn.disabled = false;
+    btn.textContent = 'Force sync now';
+    rtToast('Network error');
+  });
+}
+
+// ── Auth Health ────────────────────────────────────────────────
+var AH_TIMER = null;
+var AH_LABEL = { google: 'Google API', chrome_cdp: 'Chrome CDP', jefferies: 'Jefferies' };
+
+function loadAuthHealth(manual) {
+  fetch('/api/auth-health')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error && !data.credentials) {
+        document.getElementById('ah-error').textContent = data.error;
+        document.getElementById('ah-error').style.display = 'block';
+        document.getElementById('ah-chips').innerHTML = '';
+        return;
+      }
+      document.getElementById('ah-error').style.display = 'none';
+      renderAuthHealth(data.credentials || {});
+    })
+    .catch(function(e) {
+      document.getElementById('ah-error').textContent = 'Failed to load auth health: ' + e.message;
+      document.getElementById('ah-error').style.display = 'block';
+    });
+}
+
+function renderAuthHealth(creds) {
+  var keys = ['google', 'chrome_cdp', 'jefferies'];
+  var chips = '';
+  var rows  = '';
+  var failCount = 0;
+  var staleCount = 0;
+  var latestChecked = '';
+
+  keys.forEach(function(k) {
+    var c = creds[k] || { status: 'failed', last_error: 'no data', last_checked: null };
+    var label = AH_LABEL[k] || k;
+    var st = c.status || 'failed';
+    if (st === 'failed') failCount++;
+    if (st === 'stale')  staleCount++;
+    if (c.last_checked && c.last_checked > latestChecked) latestChecked = c.last_checked;
+
+    chips += '<div class="ah-chip ' + st + '">' + esc(label) + '</div>';
+
+    var stPill = '<span class="rt-status-pill ' + (st === 'ok' ? 'ok' : st === 'stale' ? 'expected_fail' : 'fail') + '">' + esc(st) + '</span>';
+    var errHtml = c.last_error
+      ? '<div class="ah-err-text">' + esc(c.last_error) + '</div>'
+      : '<span style="color:var(--ink-ghost);font-size:.8rem">—</span>';
+    rows += '<tr>'
+      + '<td style="font-family:var(--font-data);font-weight:700;font-size:.82rem;white-space:nowrap;padding-right:16px">' + esc(label) + '</td>'
+      + '<td style="white-space:nowrap;padding-right:16px">' + stPill + '</td>'
+      + '<td>' + errHtml + '</td>'
+      + '</tr>';
+  });
+
+  document.getElementById('ah-chips').innerHTML = chips;
+  document.getElementById('ah-tbody').innerHTML = rows;
+  document.getElementById('ah-detail').style.display = 'block';
+
+  // Tab badge: show count of non-ok credentials
+  var badge = document.getElementById('auth-tab-badge');
+  var badCount = failCount + staleCount;
+  if (badge) {
+    badge.textContent = badCount > 0 ? String(badCount) : '';
+    badge.className   = 'rt-tab-badge' + (badCount > 0 ? (failCount > 0 ? ' rt-tab-badge-fail' : '') : ' empty');
+  }
+
+  // Last checked timestamp (use the most recent across all credentials)
+  var ts = document.getElementById('ah-last-checked');
+  if (ts && latestChecked) {
+    try {
+      var d = new Date(latestChecked);
+      ts.textContent = 'checked ' + d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    } catch(e) { ts.textContent = latestChecked.slice(0, 16).replace('T', ' ') + ' UTC'; }
+  }
+}
+
+// ── Init ───────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function() {
+  // Build access tab edit panels
+  document.querySelectorAll('[data-edit-username]').forEach(function(btn) {
+    var username       = btn.dataset.editUsername;
+    var currentTiles   = JSON.parse(btn.dataset.currentTiles || '[]');
+    var currentTabAccess = JSON.parse(btn.dataset.currentTabaccess || '{}');
+    var editRow        = document.getElementById('edit-' + username);
+    if (editRow) editRow.querySelector('.adm-edit-cell').innerHTML = buildEditPanel(username, currentTiles, currentTabAccess);
+  });
+
+  renderUpcomingCalls();
+  renderCallHistory();
+  renderStatus();
+
+  // Restore active tab (default: access)
+  var saved = localStorage.getItem('adm_tab') || 'access';
+  var validTabs = ['access','schedule','calls','status','routines','setup','auth-health'];
+  var tabName   = validTabs.indexOf(saved) >= 0 ? saved : 'access';
+  var tabBtns   = document.querySelectorAll('.adm-tab');
+  var tabMap    = { access: 0, schedule: 1, calls: 2, status: 3, routines: 4, setup: 5, 'auth-health': 6 };
+  switchTab(tabName, tabBtns[tabMap[tabName]]);
+
+  // Health badge polling stays on regardless of which sub-tab is visible.
+  // First fetch immediately, then every 5 min.
+  loadRoutinesHealth();
+  if (!RT_HEALTH_TIMER) RT_HEALTH_TIMER = setInterval(loadRoutinesHealth, 5 * 60 * 1000);
+
+  // Auth health: fetch once on load, then poll every 60s when tab is visible.
+  loadAuthHealth();
+  AH_TIMER = setInterval(function() {
+    var panel = document.getElementById('tab-auth-health');
+    if (panel && panel.classList.contains('visible')) loadAuthHealth();
+  }, 60 * 1000);
+});
+</script>
+</body>
+</html>

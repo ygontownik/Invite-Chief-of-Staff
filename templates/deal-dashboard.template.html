@@ -1,0 +1,1356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{STR:topnav.brand}} — Deal Pipeline</title>
+<style>
+/* Per-route tweaks only. Tokens, fonts, topnav, body bg come from design-system.css. */
+*{box-sizing:border-box;}
+body{color:var(--ink);font-size:14px;}
+.page-wrap{padding:0;}
+/* ── Two-column pipeline grid ── */
+.deal-grid{display:grid;grid-template-columns:46fr 54fr;gap:20px;align-items:start;}
+.deal-col{min-width:0;}
+@media(max-width:1100px){.deal-grid{grid-template-columns:1fr;}}
+.deal-panel-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-bottom:9px;border-bottom:1px solid var(--rule);}
+.deal-panel-hdr>span:first-child{font-family:var(--font-data);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.16em;color:var(--ink);}
+.deal-panel-count{font-family:var(--font-data);font-size:10px;font-weight:500;color:var(--ink-faint);background:var(--bg);padding:2px 8px;border-radius:10px;}
+
+/* ── Header ── */
+.header{display:flex;justify-content:space-between;align-items:flex-start;margin:8px 0 20px;padding-bottom:18px;border-bottom:1px solid var(--rule);}
+.header-left{display:flex;align-items:flex-start;gap:14px;}
+.tc-monogram{width:42px;height:42px;border-radius:6px;background:var(--navy);border:1px solid var(--gold-border);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-size:14px;font-weight:700;color:var(--gold);letter-spacing:-0.5px;flex-shrink:0;}
+.header-title h1{font-family:var(--font-display);font-size:22px;font-weight:700;color:var(--ink);letter-spacing:-0.6px;}
+.header-title .sub{font-family:var(--font-body);font-size:12px;color:var(--ink-mid);margin-top:5px;font-weight:400;}
+.header-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;}
+.week-badge{font-family:var(--font-data);font-size:10px;padding:5px 12px;border-radius:999px;border:1px solid var(--gold-border);background:var(--gold-light);color:var(--gold);font-weight:700;text-transform:uppercase;letter-spacing:0.12em;}
+.refresh-btn{background:transparent;border:1px solid var(--rule);color:var(--ink-mid);font-family:var(--font-data);font-size:11px;text-transform:uppercase;letter-spacing:0.12em;font-weight:700;padding:6px 12px;border-radius:var(--radius-sm);cursor:pointer;display:flex;align-items:center;gap:6px;transition:all 0.15s;}
+.refresh-btn:hover{border-color:var(--gold);color:var(--gold);}
+.refresh-btn.spinning svg{animation:spin 0.6s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+/* ── Stat cards (mapped to .tc-stat-tile) ── */
+.stats-bar{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:20px;}
+.stat-card.is-dimmed{opacity:0.45;filter:grayscale(0.3);}
+
+/* ── Tabs ── */
+.tab-bar{display:flex;gap:0;margin-bottom:20px;border-bottom:1px solid var(--rule);}
+.tab-btn{background:transparent;border:none;border-bottom:2px solid transparent;color:var(--ink-mid);font-family:var(--font-body);font-size:13px;font-weight:500;padding:10px 22px;cursor:pointer;margin-bottom:-1px;transition:all 0.15s;}
+.tab-btn:hover{color:var(--ink);}
+.tab-btn.active{color:var(--ink);border-bottom-color:var(--gold);font-weight:600;}
+
+/* ── Filter rows ── */
+.filter-row{display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;align-items:center;}
+.filter-label{font-family:var(--font-data);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.16em;color:var(--ink-faint);min-width:54px;}
+
+/* legacy .card wrapper kept as alias to .tc-card */
+.card{background:var(--paper);border:1px solid var(--rule);border-radius:var(--radius-md);padding:18px 20px;box-shadow:var(--shadow-card);}
+.card:hover{border-color:var(--ink-ghost);box-shadow:var(--shadow-lift);}
+.card-section-label{font-family:var(--font-data);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.18em;color:var(--ink-faint);margin-bottom:10px;}
+
+/* ── Score colors ── */
+.sc-green{color:var(--green);}
+.sc-amber{color:var(--amber);}
+.sc-red{color:var(--red);}
+
+/* ── Status badges (legacy class names; restyled to tokens) ── */
+.status-badge{font-family:var(--font-data);font-size:9px;font-weight:700;padding:2px 8px;border-radius:999px;border:1px solid var(--rule);letter-spacing:0.12em;text-transform:uppercase;}
+.sb-active{background:var(--green-bg);color:var(--green);border-color:var(--green-bd);}
+.sb-reviewing{background:var(--amber-bg);color:var(--amber);border-color:var(--amber-bd);}
+.sb-watching{background:var(--slate-bg);color:var(--slate);border-color:var(--slate-bd);}
+.sb-new{background:var(--navy-light);color:var(--navy);border-color:var(--navy-border);}
+.sb-passed{background:var(--slate-bg);color:var(--slate);border-color:var(--slate-bd);}
+.sb-killed{background:var(--red-bg);color:var(--red);border-color:var(--red-bd);}
+
+/* ── Deal status badges (Executable / Potential / Thematic Watch) ── */
+.ds-badge{font-family:var(--font-data);font-size:8px;font-weight:700;padding:2px 7px;border-radius:999px;border:1px solid;letter-spacing:0.12em;text-transform:uppercase;}
+.ds-executable{background:var(--green-bg);color:var(--green);border-color:var(--green-bd);}
+.ds-potential{background:var(--navy-light);color:var(--navy);border-color:var(--navy-border);}
+.ds-thematic{background:var(--slate-bg);color:var(--slate);border-color:var(--slate-bd);}
+
+/* ── Investor angle ── */
+.inv-angle{font-family:var(--font-body);font-size:11px;font-style:italic;line-height:1.45;margin-top:2px;}
+
+/* ── Direction badges ── */
+.dir-new,.dir-up,.dir-down{font-family:var(--font-data);font-size:9px;padding:2px 7px;border-radius:999px;font-weight:700;border:1px solid;text-transform:uppercase;letter-spacing:0.1em;}
+.dir-new{background:var(--navy-light);color:var(--navy);border-color:var(--navy-border);}
+.dir-up{background:var(--green-bg);color:var(--green);border-color:var(--green-bd);}
+.dir-down{background:var(--red-bg);color:var(--red);border-color:var(--red-bd);}
+
+/* ── Theme card ── */
+.theme-card{background:var(--paper);border:1px solid var(--rule);border-radius:var(--radius-md);margin-bottom:16px;overflow:hidden;box-shadow:var(--shadow-card);transition:border-color 0.15s,box-shadow 0.15s;}
+.theme-card:hover{border-color:var(--ink-ghost);box-shadow:var(--shadow-lift);}
+.theme-header{padding:18px 20px;}
+.theme-week-panel{background:var(--bg);border-top:1px solid var(--rule-light);padding:12px 20px;}
+.theme-struct-toggle{background:var(--bg);border-top:1px solid var(--rule-light);padding:8px 20px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;}
+.theme-struct-body{background:var(--bg);border-top:1px solid var(--rule-light);padding:12px 20px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;}
+.struct-label{font-family:var(--font-data);font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.16em;color:var(--ink-faint);margin-bottom:4px;}
+.struct-val{font-family:var(--font-body);font-size:12px;color:var(--ink-mid);line-height:1.5;}
+
+/* ── Conviction / timing chips (mapped to pill semantics) ── */
+.chip-high{font-family:var(--font-data);font-size:10px;padding:3px 9px;background:var(--red-bg);color:var(--red);border-radius:999px;font-weight:700;border:1px solid var(--red-bd);text-transform:uppercase;letter-spacing:0.12em;}
+.chip-low{font-family:var(--font-data);font-size:10px;padding:3px 9px;background:var(--amber-bg);color:var(--amber);border-radius:999px;font-weight:700;border:1px solid var(--amber-bd);text-transform:uppercase;letter-spacing:0.12em;}
+.chip-timing{font-family:var(--font-data);font-size:10px;padding:3px 9px;background:var(--navy-light);color:var(--navy);border-radius:999px;border:1px solid var(--navy-border);text-transform:uppercase;letter-spacing:0.12em;}
+.chip-subsector{font-family:var(--font-data);font-size:10px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:0.14em;}
+
+/* ── Score large (Courier) ── */
+.score-large{font-family:var(--font-data);font-size:30px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums;}
+.score-small-label{font-family:var(--font-data);font-size:9px;color:var(--ink-faint);margin-top:2px;text-transform:uppercase;letter-spacing:0.14em;}
+
+/* ── Score bar (mapped to .tc-health-bar look) ── */
+.score-bar-wrap{display:flex;align-items:center;gap:8px;}
+.score-bar-track{width:64px;height:3px;background:var(--rule-light);border-radius:2px;overflow:hidden;}
+.score-bar-fill{height:100%;border-radius:2px;}
+.score-bar-num{font-family:var(--font-data);font-weight:700;font-size:13px;min-width:26px;font-variant-numeric:tabular-nums;color:var(--ink);}
+
+/* ── Deal row ── */
+.deal-row{border-bottom:1px solid var(--rule-light);cursor:pointer;transition:background 0.12s;}
+.deal-row:last-child{border-bottom:none;}
+.deal-row:hover{background:var(--bg);}
+.deal-row-inner{padding:11px 16px 11px 0;}
+.deal-row-expanded{background:var(--bg);padding:0 16px 14px 16px;border-bottom:1px solid var(--rule-light);}
+
+/* ── Collapsible chevron ── */
+.chevron{display:inline-block;transition:transform 0.15s ease;color:var(--ink-faint);font-size:11px;}
+.chevron.open{transform:rotate(0deg);}
+.chevron.closed{transform:rotate(-90deg);}
+
+/* ── Vote buttons (gold-on-hover ghost) ── */
+.vote-btn{background:transparent;border:1px solid var(--rule);border-radius:var(--radius-sm);cursor:pointer;padding:2px 7px;font-family:var(--font-data);font-size:12px;line-height:16px;color:var(--ink-mid);transition:all 0.12s;}
+.vote-btn:hover{border-color:var(--gold);color:var(--gold);}
+.vote-btn.up-active{border-color:var(--green-bd);color:var(--green);background:var(--green-bg);}
+.vote-btn.down-active{border-color:var(--red-bd);color:var(--red);background:var(--red-bg);}
+
+/* ── Live deal cross-link → ── */
+.live-deal-link{font-family:var(--font-data);font-size:9px;font-weight:700;color:var(--gold);text-transform:uppercase;letter-spacing:0.16em;text-decoration:none;margin-left:auto;padding-left:8px;white-space:nowrap;}
+.live-deal-link:hover{color:var(--gold-mid);text-decoration:underline;}
+
+/* ── Insight signal chips ── */
+.sig-strength{font-family:var(--font-data);font-size:9px;padding:2px 7px;background:var(--green-bg);color:var(--green);border:1px solid var(--green-bd);border-radius:999px;font-weight:700;flex-shrink:0;letter-spacing:0.1em;text-transform:uppercase;}
+.sig-weakens{font-family:var(--font-data);font-size:9px;padding:2px 7px;background:var(--red-bg);color:var(--red);border:1px solid var(--red-bd);border-radius:999px;font-weight:700;flex-shrink:0;letter-spacing:0.1em;text-transform:uppercase;}
+.sig-neutral{font-family:var(--font-data);font-size:9px;padding:2px 7px;background:var(--slate-bg);color:var(--slate);border:1px solid var(--slate-bd);border-radius:999px;font-weight:700;flex-shrink:0;letter-spacing:0.1em;text-transform:uppercase;}
+
+/* ── Glowing dots (toned down for paper aesthetic) ── */
+.dot-green{width:7px;height:7px;border-radius:50%;background:var(--green);display:inline-block;}
+.dot-blue{width:7px;height:7px;border-radius:50%;background:var(--navy);display:inline-block;}
+.dot-amber{width:7px;height:7px;border-radius:50%;background:var(--amber);display:inline-block;}
+.dot-red{width:7px;height:7px;border-radius:50%;background:var(--red);display:inline-block;}
+
+/* ── IC memo card ── */
+.memo-card{background:var(--paper);border:1px solid var(--rule);border-radius:var(--radius-md);overflow:hidden;margin-bottom:32px;box-shadow:var(--shadow-card);}
+.memo-header{padding:22px 26px;}
+.memo-body{background:var(--bg);border-top:2px solid;}
+.memo-body-inner{padding:18px 26px 10px;}
+.memo-bullet-row{display:flex;gap:0;margin-bottom:10px;border-radius:var(--radius-md);overflow:hidden;background:var(--paper);}
+.memo-bullet-label{padding:12px 10px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;min-width:92px;flex-shrink:0;}
+.memo-bullet-icon{font-family:var(--font-data);font-size:14px;margin-bottom:4px;}
+.memo-bullet-lname{font-family:var(--font-data);font-size:8px;font-weight:700;letter-spacing:0.16em;text-align:center;line-height:1.3;text-transform:uppercase;}
+.memo-bullet-content{padding:12px 14px;flex:1;font-family:var(--font-body);font-size:12px;color:var(--ink-mid);line-height:1.65;}
+.memo-footer{display:flex;justify-content:space-between;align-items:center;padding:12px 26px;border-top:1px solid var(--rule);background:var(--paper);}
+
+/* ── Changed-update box ── */
+.update-box{border-radius:0 var(--radius-sm) var(--radius-sm) 0;padding:7px 11px;margin-top:6px;font-family:var(--font-body);font-size:11.5px;line-height:1.55;color:var(--ink-mid);}
+
+/* ── Textarea / select in expanded deal ── */
+.deal-notes{width:100%;min-height:44px;background:var(--paper);border:1px solid var(--rule);border-radius:var(--radius-sm);color:var(--ink);font-family:var(--font-body);font-size:12px;padding:7px 10px;resize:vertical;box-sizing:border-box;transition:border-color 0.15s;}
+.deal-notes:focus{border-color:var(--gold);outline:none;}
+.deal-select{font-family:var(--font-data);font-size:11px;padding:3px 8px;border-radius:var(--radius-sm);border:1px solid var(--rule);background:var(--paper);color:var(--ink-mid);cursor:pointer;transition:border-color 0.15s;}
+.deal-select:focus{outline:none;border-color:var(--gold);}
+
+/* ── Loading ── */
+#root-loading{min-height:60vh;background:var(--bg);display:flex;align-items:center;justify-content:center;font-family:var(--font-body);color:var(--ink-faint);font-size:14px;}
+
+/* ── Focus banner ── */
+.focus-banner{display:flex;align-items:center;gap:10px;margin-bottom:16px;padding:9px 14px;border-radius:var(--radius-md);font-family:var(--font-body);font-size:12px;background:var(--navy-light);border:1px solid var(--navy-border);color:var(--navy);}
+.focus-clear-btn{margin-left:auto;font-family:var(--font-data);font-size:10px;text-transform:uppercase;letter-spacing:0.12em;background:transparent;border:1px solid currentColor;padding:3px 12px;border-radius:var(--radius-sm);cursor:pointer;font-weight:700;transition:opacity 0.12s;}
+.focus-clear-btn:hover{opacity:0.7;}
+
+/* ── Per-theme row layout ── */
+.theme-row-wrapper{display:flex;align-items:stretch;background:var(--paper);border:1px solid var(--rule);border-radius:var(--radius-md);overflow:hidden;margin-bottom:16px;box-shadow:var(--shadow-card);transition:border-color 0.15s,box-shadow 0.15s;position:relative;}
+.theme-row-wrapper:hover{border-color:var(--ink-ghost);box-shadow:var(--shadow-lift);}
+.theme-row-wrapper .theme-card{flex:0 0 57%;margin-bottom:0!important;border:none!important;border-radius:0!important;box-shadow:none!important;border-right:1px solid var(--rule)!important;background:transparent;}
+.theme-row-wrapper .theme-card:hover{border-color:transparent!important;box-shadow:none!important;}
+.theme-targets-panel{flex:0 0 43%;min-width:0;display:flex;flex-direction:column;background:var(--paper);}
+.theme-targets-hdr{padding:9px 14px;border-bottom:1px solid var(--rule-light);background:var(--bg);display:flex;justify-content:space-between;align-items:center;}
+.tab-btn-memos{margin-left:auto;border:1px solid var(--rule)!important;border-bottom:1px solid transparent!important;border-radius:var(--radius-sm) var(--radius-sm) 0 0;background:var(--bg)!important;}
+.tab-btn-memos:hover{color:var(--gold);}
+.tab-btn-memos.active{color:var(--gold)!important;border-color:var(--gold-border)!important;border-bottom-color:transparent!important;background:var(--paper)!important;font-weight:700!important;}
+@media(max-width:1100px){.theme-row-wrapper{flex-direction:column;}.theme-row-wrapper .theme-card{flex:none!important;border-right:none!important;border-bottom:1px solid var(--rule)!important;}.theme-targets-panel{flex:none;}}
+
+/* ── Separator ── */
+.memo-sep{display:flex;align-items:center;gap:12px;margin-bottom:32px;opacity:0.5;}
+.memo-sep-line{flex:1;height:1px;background:var(--rule);}
+
+/* ── Table of Contents card ── */
+.toc-card{background:var(--paper);border:1px solid var(--rule);border-radius:var(--radius-md);padding:22px 26px;margin-bottom:28px;box-shadow:var(--shadow-card);position:relative;overflow:hidden;}
+.toc-stripe{position:absolute;top:0;left:0;width:4px;bottom:0;background:var(--gold);}
+.toc-row{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:var(--radius-sm);cursor:pointer;margin-bottom:3px;border:1px solid transparent;transition:all 0.12s;}
+.toc-row:hover{background:var(--bg);border-color:var(--rule-light);}
+
+/* ── Empty state ── */
+.empty-state{padding:48px;text-align:center;color:var(--ink-faint);font-family:var(--font-body);font-size:14px;font-style:italic;}
+</style>
+</head>
+<body>
+{{TOPNAV}}
+<div class="tc-shell">
+  <main class="tc-shell-inner">
+    <div id="root"><div id="root-loading">Loading deal pipeline...</div></div>
+  </main>
+</div>
+
+<script>
+const DATA = {}; // __END_DATA__
+</script>
+
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script>
+(function(){
+'use strict';
+var createElement=React.createElement, useState=React.useState, useEffect=React.useEffect, useMemo=React.useMemo, useCallback=React.useCallback;
+
+// ── localStorage helpers ───────────────────────────────────
+var LS = {
+  get: function(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } },
+  set: function(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+};
+
+// ── Live-deal cross-reference (populated from /dashboard-data.json) ──
+// Maps lowercased ticker AND id -> live deal id (used to render → LIVE link).
+var LIVE_DEALS = {};
+(function(){
+  try {
+    fetch("/dashboard-data.json", {credentials:"same-origin"})
+      .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); })
+      .then(function(d){
+        var deals = (d && d.deals) || [];
+        deals.forEach(function(dl){
+          if(!dl) return;
+          var liveId = dl.id || dl.ticker;
+          if(!liveId) return;
+          if(dl.ticker) LIVE_DEALS[String(dl.ticker).toLowerCase()] = liveId;
+          if(dl.id)     LIVE_DEALS[String(dl.id).toLowerCase()]     = liveId;
+          if(dl.name)   LIVE_DEALS[String(dl.name).toLowerCase()]   = liveId;
+        });
+      })
+      .catch(function(){ /* silent — link simply does not appear */ });
+  } catch(e){ /* silent */ }
+})();
+function liveDealIdFor(t){
+  if(!t) return null;
+  var keys = [];
+  if(t.ticker) keys.push(String(t.ticker).toLowerCase());
+  if(t.id != null) keys.push(String(t.id).toLowerCase());
+  if(t.name) keys.push(String(t.name).toLowerCase());
+  for(var i=0;i<keys.length;i++){ if(LIVE_DEALS[keys[i]]) return LIVE_DEALS[keys[i]]; }
+  return null;
+}
+
+// ── Taxonomy ──────────────────────────────────────────────
+var THEME_COLORS = {
+  "miso-power":"#f0883e","pjm-power":"#7c3aed","wecc-power":"#2563eb",
+  "epc-rollup":"#16a34a","eu-lng-fsru":"#2563eb","us-lng-pf":"#d97706",
+  "dc-queue":"#dc2626","captive-power":"#d97706","der-grid-edge":"#16a34a"
+};
+var SECTORS = ["All","Power","LNG / Gas","Construction","Digital Infra"];
+var SECTOR_THEME_IDS = {
+  "Power":["miso-power","pjm-power","wecc-power"],
+  "LNG / Gas":["eu-lng-fsru","us-lng-pf"],
+  "Construction":["epc-rollup","captive-power"],
+  "Digital Infra":["dc-queue","der-grid-edge"]
+};
+var SECTOR_SUBSECTORS = {
+  "Power":["All","MISO","PJM","WECC"],
+  "LNG / Gas":["All","EU LNG & FSRU","US LNG PF"],
+  "Construction":["All","EPC Roll-up","Captive Power"],
+  "Digital Infra":["All","DC Queue","DER / Grid-Edge"]
+};
+var SUBSECTOR_ID = {
+  "MISO":"miso-power","PJM":"pjm-power","WECC":"wecc-power",
+  "EU LNG & FSRU":"eu-lng-fsru","US LNG PF":"us-lng-pf",
+  "EPC Roll-up":"epc-rollup","Captive Power":"captive-power",
+  "DC Queue":"dc-queue","DER / Grid-Edge":"der-grid-edge"
+};
+var THEME_SUBSECTOR = {
+  "miso-power":"MISO","pjm-power":"PJM","wecc-power":"WECC",
+  "eu-lng-fsru":"EU LNG & FSRU","us-lng-pf":"US LNG PF",
+  "epc-rollup":"EPC Roll-up","captive-power":"Captive Power",
+  "dc-queue":"DC Queue","der-grid-edge":"DER / Grid-Edge"
+};
+
+// ── Investor profiles ─────────────────────────────────────
+// Sourced from window.__DEAL_CONFIG__.investors at runtime.
+var DC = window.__DEAL_CONFIG__ || {};
+var _INV_RAW = (DC.investors && DC.investors.length) ? DC.investors : [];
+var INVESTORS = ["All"].concat(_INV_RAW.map(function(x){ return x.label; }));
+var INVESTOR_LABEL = _INV_RAW.reduce(function(m,x){ m[x.label] = x.group || x.label; return m; }, {"All":"All"});
+var INVESTOR_MAP   = _INV_RAW.reduce(function(m,x){ m[x.label] = x.id; return m; }, {});
+var INVESTOR_COLOR = _INV_RAW.reduce(function(m,x){ m[x.label] = x.color || '#64748b'; return m; }, {});
+
+// ── Commodity Merchant Lens ────────────────────────────
+var CCI_THEMES=["miso-power","pjm-power","wecc-power","eu-lng-fsru","us-lng-pf","dc-queue"];
+var CCI_ANGLES={
+  "miso-power":"Merchant capacity repricing + dark/spark spread optionality on coal assets. DOE forced sellers create below-book entry. Trade around conversion economics. NIPSCO GenCo template = captive off-take reduces merchant risk.",
+  "pjm-power":"Merchant peaker: interconnection rights worth multiples of steel. PJM East capacity auctions repricing structurally. High spark spread optionality in the most constrained US zone. Eddystone = pure interconnection play.",
+  "wecc-power":"Merchant thermal in BPA hydro gap. Craig entering SPP RTO West — new capacity market economics to model. Complex but significant optionality on Western power/gas spread.",
+  "eu-lng-fsru":"Physical LNG/regas infrastructure with direct commodity exposure. Ras Laffan offline through 1H 2029 creates structural TTF/Henry Hub basis play. Hoegh Evi Netherlands open season = long-duration regas capacity at spread to NBP.",
+  "us-lng-pf":"Henry Hub commodity pass-through via long-term SPAs. Ras Laffan gap strengthens CP2 FID case — JCC slope + HH basis is core commodity trade. Project-finance equity alongside 15-20yr contracted offtake.",
+  "dc-queue":"Power price optionality on queue positions. Hyperscaler demand floor creates capacity scarcity trade in MISO/ComEd. DeForest/SoftBank corridor = long power basis."
+};
+
+// ── Merchant Intelligence (Commodity Merchant lens) ────────────────
+var MERCHANT_INTEL={
+  // ── J.H. Campbell (MISO) ──────────────────────────────
+  1:{
+    commodity:"HH $3.50/MMBtu (12m strip). Coal delivered ~$55/ton PRB. MISO Michigan Hub LMP ~$40/MWh (2025 avg). MISO Zone 2 capacity: $470/MW-day (HNRG hedge) vs $130/MW-day last auction. Dark spread at current prices: 10,500 BTU/kWh heat rate → ~$46.3/MWh variable cost vs $40 LMP = −$6.3/MWh (currently uneconomic on energy alone — lives entirely on capacity premium).",
+    economics:"1,560 MW coal (3 units). At $470/MW-day capacity: $267M/yr gross capacity revenue. At $130/MW-day: $74M/yr (near breakeven). DOE forced-operation cost ~$200M borne by ratepayers, not owner. Gas conversion capex: $300–450/kW = $468–702M for full site. Post-conversion spark spread at $3.50 HH, 7,000 BTU/kWh: ~$11.63/MWh net revenue before fixed O&M (~$15–20/MWh). Breakeven capacity price on energy-only basis without conversion: ~$320/MW-day.",
+    field:"",
+    chair:"The capacity thesis is entirely binary on the MISO forward capacity curve. Show me clearing price forecasts through 2030 — I need to see $300+/MW-day as the base case before I'll sign off on the IRR. Dark spread is deeply negative today; this is not an energy play. Key question: what is the regulatory path to gas conversion? If conversion is achievable in 24 months at $400/kW, the post-conversion spark spread changes this thesis from a capacity trade to a real operating asset. I want the MISO Zone 2 forward capacity strip and a conversion cost estimate on my desk before the next IC review."
+  },
+  // ── R.M. Schahfer / NIPSCO GenCo (MISO) ───────────────
+  2:{
+    commodity:"Amazon SPA estimated $70–85/MWh fixed (not public). Gas CCGT heat rate ~6,800 BTU/kWh (F-class). HH $3.50/MMBtu → fuel cost ~$8.11/MWh. Spark spread: ~$31.89/MWh at $40 LMP vs ~$62–77/MWh contracted (contracted off-take entirely de-risks energy revenue). 45Y ITC/PTC on new CCGT: potentially $400–600M NPV benefit. All-in cost $6.4B / 2,600 MW = $2,462/kW vs merchant comp $1,100–1,300/kW.",
+    economics:"2,600 MW CCGT + 400 MW battery. Amazon contract up to 2,400 MW for 15 years. Estimated contract revenue: 2,400 MW × $75/MWh × 8,760 hrs × 85% CF = ~$1.34B/yr. Preferred equity at $300M (12% cash + 4% PIK): ~$36M/yr cash + $12M/yr PIK = ~16% annual cash yield before exit. Capital stack: 65% debt ($4.16B), Blackstone 20% common ($1.28B), ~5% preferred gap ($320M), 10% residual equity ($640M). 45Y PTC value and tax equity structure to be confirmed.",
+    field:"Blackstone Infra is the anchor (19.9% common, $1.5B). Project debt tranche: Brookfield, Carlyle, Goldman Infra, JPMorgan NIM likely participants. Preferred equity / mezz: less crowded; Ares Credit, Owl Rock, Blue Owl potential participants. Key gate: Blackstone's willingness to allow preferred instrument senior to their common equity — binary call before any further work.",
+    chair:"This is contracted infra, not merchant — I'm fine with that at the right entry. 12% cash preferred with mandatory buyout at maturity is effectively a bond with equity optionality. Two questions before I approve: (1) Does the 45Y production tax credit transfer to the preferred vehicle, or does it accrue only to Blackstone common? If it flows through, all-in yield jumps to 14–16%. (2) Is the NiSource guaranty on the full GenCo LLC or just on the preferred distribution? If guaranty covers our principal and the PTC benefits flow through, I'd approve a $150–250M check without further diligence."
+  },
+  // ── LS Power / Constellation PJM Portfolio ─────────────
+  29:{
+    commodity:"PJM MAAC capacity: $333.44/MW-day cleared 2027/28 (3rd consecutive cap-out); uncapped signal $529.80/MW-day. PJM 2025/26 clearing surged from $28 to $270/MW-day. PJM backstop reliability procurement targeting up to 20 GW nameplate CCGT. 10 GW Ohio DC announced (world's largest). Data centers = 94% of PJM peak load growth. Winter Storm Fern: 21 GW outages, wholesale >$1,800/MWh. Spark spread at $3.50 HH, 6,800 BTU/kWh: ~$47–57/MWh gross margin. Entry $1,136/kW vs $1,300–1,500/kW replacement cost (~25% discount). Gas turbine delivery 3+ years out constrains new supply.",
+    economics:"4.4 GW gas CCGTs (Bethlehem, York, Hay Road, Edge Moor); avg vintage 2002–2010, F-class. Capacity revenue at $333.44/MW-day: $536M/yr gross on 4.4 GW. Energy revenue: est. 50–65% CF on PJM East dispatch. LS Power entry at $5.0B ($1,136/kW). Co-invest at pari-passu: same entry cost, no promote. IRR per LS Power model: 18–22% base; 24–26% if uncapped $529.80/MW-day price signal is structural outcome.",
+    field:"",
+    chair:""
+  },
+  // ── Craig Station (WECC) ───────────────────────────────
+  6:{
+    commodity:"SPP RTO West LMP: $44.94/MWh avg (first 9 days in market, Apr 2026) — insufficient data for thesis support. WECC Rockies gas basis: ~$3.20/MMBtu. Coal heat rate Craig Station: ~10,200 BTU/kWh. Dark spread at current prices: deeply negative. Colorado SB 190 mandates coal closure by 2040 but DOE order supersedes near-term. First SPP West capacity auction: May 22, 2026.",
+    economics:"1,428 MW total (3 units); Unit 1 (446 MW) under DOE order, dispatching in SPP West since Apr 1. At $44.94/MWh LMP, 70% CF, Unit 1: ~$122M/yr gross energy revenue — barely above variable cost for aging coal ($40–55/MWh all-in). Five co-owner structure: Tri-State ~43%, Platte River ~18%, Yampa, Colorado-Ute, Holy Cross. Simultaneous acquisition of all five required. Tri-State book value est. $100–150M; total asset book ~$230–350M.",
+    field:"No known active buyer process. Tri-State has constitutional challenge pending (DC Circuit) — unlikely approaching buyers now. No existing Tri-State relationship identified on the team. 12–24 month horizon thesis; no near-term competition. SPP RTO West capacity market structure entirely unknown — first data point is May 22 auction.",
+    chair:"Nine days of SPP West LMP data is not a thesis. $44.94/MWh is barely above variable cost for an aging coal plant, and I don't know what capacity payments look like because the market has never cleared. This is the most speculative entry on the board. Five sellers who need to agree simultaneously, unknown capacity structure, and an active constitutional challenge. My verdict: MONITOR only. Do not engage Tri-State until (1) June 28 DOE binary event resolves and (2) SPP West May 22 auction clears at $100+/MW-day capacity. If both those boxes get checked, I'll reconsider. Until then, don't spend management bandwidth on this one."
+  },
+  // ── Hoegh Evi (EU LNG) ────────────────────────────────
+  14:{
+    commodity:"Ras Laffan T4/T6 missile damage (Mar 19): 12.8 MTPA offline 3-5 years. Strait of Hormuz traffic collapsed 70-97%. TTF $16.90/mmBtu Q2 2026 (GS). JKM $18.15/mmBtu Q2, Asian LNG spot >$20/mmBtu. NBP/TTF spread ~€0.50/MWh. FSRU regas tariff est. €1.50–2.50/MWh. Structural demand floor extended 3-5 years beyond prior estimate. Japan restarted coal plants, 15/33 nuclear reactors running. KOGAS/JERA facing force majeure on Qatari contracts.",
+    economics:"10 FSRUs + 3 LNG carriers. FSRU day rate: $140,000–165,000/day (2024 contracted). Newbuild FSRU replacement value: ~$350–400M. Gandria on 10-yr Egypt charter. Netherlands open season: if LT capacity reservation at €2.50/MWh tariff × 8 bcm/yr → ~€200M/yr throughput revenue. Hoegh fleet NAV: 10 FSRUs × ~$300M avg = $3B; est. enterprise value $2.5–3B net debt. 50/50 MSIP JV: Morgan Stanley Infrastructure holds 50% — co-invest requires MSIP consent.",
+    field:"Excelerate Energy (public) is direct comp — smaller fleet, lower CF. New Fortress Energy: aggressive but reputational issues on delivery. BW LNG, Golar LNG: active in similar regas markets. Key structural advantage: Hoegh Evi is the best-operated FSRU fleet globally. MSIP ownership means any co-invest is bilateral with Morgan Stanley — no competitive process.",
+    chair:"This is the most actionable LNG infrastructure play in the pipeline. Ras Laffan creates a 3-year structural demand floor for European regas and Hoegh Evi is the best-positioned operator. My question is entry structure: are we co-investing at the vessel level on the Netherlands FSRU, or buying into the HoldCo? At $300M/FSRU and €2.50/MWh regas tariff on 1 bcm/yr throughput, vessel-level IRR is 12–15% — acceptable. The upside is if TTF/NBP basis stays elevated and they capture commodity spread alongside the tariff. I want the Zeeland open season term sheet on my desk. This one I want to move on this quarter."
+  },
+  // ── Brunsbuttel Onshore Terminal (EU LNG) ─────────────
+  17:{
+    commodity:"German gas demand: ~80 bcm/yr (2025). LNG import gap vs Russian pipeline default: ~35 bcm/yr structural. TTF terminal gate: €44.46/MWh + ~€2–3/MWh regasification tariff. State aid: EU approved €4.06B. LT capacity reservation target: €3–4/MWh tariff × 10+ bcm/yr send-out. Construction timeline: first LNG Q4 2026–2027 (est.).",
+    economics:"€4.06B project cost; JV: Gasunie (NL state), Fluxys (Belgian TSO), Vopak (listed NL). Project equity: ~€1.2–1.5B at 70% project debt. 20-yr capacity reservation at €3.50/MWh × 10 bcm/yr = €350M/yr → ~14–16% unlevered IRR on infra equity. External equity participation unlikely in the construction JV; opportunity is likely LT capacity offtake or a secondary stake in Vopak's project equity post-FID.",
+    field:"Established utility JV — Gasunie, Fluxys, Vopak. Equinor and EDF active in German LNG terminal capacity. Vopak is the most accessible partner (publicly listed, known to be exploring partnerships). Project finance will absorb most external capital; equity co-invest path requires Vopak or Fluxys relationship introduction.",
+    chair:"This is a capacity reservation play, not an equity investment. We'd be taking a long-term throughput commitment — that's a shipping/trading decision for the gas desk, not an IC item. If there is a secondary equity stake in Vopak's project position at 14–16% IRR with floor protection, I'd look at a $50–100M ticket. But right now this is a commercial offtake conversation, not PE capital deployment. Route to the gas trading desk and Vopak coverage — does anyone have the relationship there?"
+  },
+  // ── NextDecade Rio Grande T1-5 (US LNG) ───────────────
+  19:{
+    commodity:"HH $3.80/mmBtu Q2 2026 (GS, vs consensus $3.65). 20-yr SPA: HH passthrough + $2.75/MMBtu toll. JKM $18.15/mmBtu Q2 (GS), mid-to-high teens through 2027. HH-JKM basis ~$14.35/MMBtu at current spot — significantly above $9 base case. Cheniere 1Q26 EBITDA $2,122M (+8% above consensus), FY26 ~$7.7B. CCL Stage 3 Train 5 completed Mar 27. Ras Laffan 12.8 MTPA loss directly strengthens T4-5 FID — KOGAS/JERA facing force majeure must replace supply. This is the offtake catalyst.",
+    economics:"T1-3 under construction (16.2 MTPA). T4-5 pending offtake. SPA revenue T1-3: est. $1.2–1.8B/yr toll at full ramp. Project debt: 65–70% non-recourse ($7–9B). Project equity: 30–35% ($3–4B) at ~15–18% IRR. NEXT stock: FVR base $8–12/share (stock trading at significant discount). T4-5 equity co-invest: $100–300M tranche if offtake secured. Blackstone owns ~14% of NEXT — may backstop T4-5 equity.",
+    field:"Shell, TotalEnergies, Galp have T1-3 SPAs in place. T4-5 offtake: major Asian utilities (KOGAS, JERA, CNOOC) are likely targets. Project equity market: infra funds, LNG producers, NOCs. Blackstone is the dominant shareholder and likely controls T4-5 co-invest process. Entry requires either Blackstone consent or direct NextDecade commercial relationship.",
+    chair:"Henry Hub passthrough plus $2.75/MMBtu toll is the right structure for us — we can hedge the HH exposure on our gas desk and capture the HH-JKM basis of ~$9/MMBtu. At that spread the equity IRR is compelling. My binary gate: has NextDecade had a signed term sheet conversation with KOGAS or JERA on T4-5 offtake in Q1 2026? If yes, I'd co-invest on T4-5 equity at the right price. If T4-5 offtake is still unsigned, I'd wait — don't deploy capital into a project waiting for its anchor contract. Find out the offtake status this week."
+  },
+  // ── NextDecade T6 (US LNG) ────────────────────────────
+  28:{
+    commodity:"Same HH base as T1-5 ($3.50/MMBtu). T6 tolling fee: est. $2.25–2.75/MMBtu (brownfield advantage — lower incremental capex). T6 FID: contingent on T4-5 success; timeline est. 2028–2030.",
+    economics:"T6: ~3.2 MTPA; est. incremental capex $2–2.5B. Equity at 30%: ~$700–900M; debt ~$1.3–1.6B. Brownfield IRR: typically 12–15% (lower than greenfield T1-3 but de-risked by existing infrastructure). Likely offered first to existing T1-5 investors.",
+    field:"Same sponsor universe as T1-5. Not yet in active market. Speculative horizon.",
+    chair:"T6 is a derivative of the T1-5 thesis. If we're co-investing in T1-5, the T6 conversation follows from that relationship — no separate tracking required. I'd fold this into the T1-5 pipeline entry and remove as a standalone IC item. The team should not be spending separate diligence time on this until T4-5 FID is confirmed."
+  },
+  // ── ComEd Zone Queue Positions (DC Queue) ─────────────
+  20:{
+    commodity:"MISO ComEd zone capacity deficient ~2–3 GW through 2028. MISO deposit hike $75K/MW (vs prior $10K/MW). PJM 10 GW Ohio DC (world's largest) with self-generation sets new template. PJM emergency auction targeting 15 GW new gen. AEP 56 GW large-load pipeline through 2030. ERCOT queue >200 GW. Queue comp: Blackstone/Rowan $10B platform = $2–5M/MW. Developer cost basis $200–500K/MW. NEW RISK: organized anti-DC community resistance (bans, moratoriums). Fiber now most overlooked constraint for AI-grade DCs (10x capacity needed).",
+    economics:"Buy queue + land at developer cost; sell to hyperscaler or develop to interconnection. Hold period: 18–36 months. Entry: $20–100M per portfolio depending on queue size. Exit: $800M–1.2B for 400 MW to hyperscaler (per Blackstone/Rowan comp). IRR: 20–50% depending on flip vs develop path. Risk: queue position cancellation if upgrade requirements prohibitive.",
+    field:"Motivated sellers: developers failing MISO deposit hike requirements. Buyers: Blackstone/Rowan ($10B DC platform), QTS, NiSource (post-Schahfer). No formal auction — proprietary bilateral sourcing required. Must identify specific developers failing deposit requirements; generic queue plays already getting competitive.",
+    chair:""
+  },
+  // ── Tier 2/3 EPC Roll-up ──────────────────────────────
+  8:{
+    commodity:"Services business — not directly commodity-exposed. AI/DC capex $640B (40–45% electrical/power). Primoris gas gen $580M FY26 → $800M/$1B FY27-28; $6B funnel. PayneCrest acq ($422M) adds DC turnkey. PJM backstop procurement (20 GW CCGT) = direct EPC demand catalyst. Legence DC&T 43% of revenue (up from 35%), backlog $3.7B (+49% YoY). Oncor $47.5B five-year capex (~70% T&D). Dodge Momentum +25.8% YoY, DC-driven. Dycom/Power Solutions $1.95B (~12x EBITDA) validates exit market.",
+    economics:"Target: $20–80M revenue per sub; est. 8–12% EBITDA margin. Platform entry at 6–8x; add-ons at 4–6x. Exit at 10–12x to Legence/Dycom/STRL/CBRE. 5-turn multiple expansion → 3.2–3.6x MOIC base case. Labor-intensive: 50–200 journeymen; OSHA/bonding liability is the key hidden risk.",
+    field:"CAI Capital Partners already executing this playbook in Indiana (3 add-ons since 2021). Sojitz building HB McClure + Freestate platform in PA/MD. Cascade Partners: activity re-accelerating 2026. Field is getting crowded — first-mover advantage window is closing.",
+    chair:""
+  },
+  // ── Entergy / Meta Richland Parish (Captive Power) ────
+  24:{
+    commodity:"Louisiana gas: HH + $0.30 = ~$3.80/MMBtu. Spark spread F-class CCGT: $31/MWh. Meta PPA est. $65–80/MWh. 45Y ITC/PTC on 5.2 GW: $1.5–2.5B NPV. All-in $18B / 5.2 GW = $3,462/kW (rate-based). Oracle 1.2 GW off-grid deal validates captive power model. Blackstone $2B DC REIT IPO institutionalizes asset class. SoftBank 10 GW Ohio (9.2 GW gas) faces turbine delivery doubt (sold out through 2028-2030). Meta $21B take-or-pay with CoreWeave confirms hyperscaler willingness for long-duration infra commitments. Tax equity ($1.5-2.5B credits) is the viable entry path.",
+    economics:"Rate-based construction: Entergy recovers $18B from Louisiana ratepayers. Meta guaranty de-risks cost overrun. Regulated ROE: ~10% allowed. Not merchant generation. Tax equity opportunity: $1.5–2.5B of 45Y credits on 5.2 GW of new Louisiana generation tradeable in the tax equity market at ~9–10% yield. External co-invest: possible on generation assets only if Entergy securitizes; $18B at 30% equity = $5.4B, but regulated utility construction is not typical PE mandate.",
+    field:"No competitive bid — rate-based utility construction. Co-invest requires Louisiana PSC approval. Brookfield, BlackRock are natural co-investors at scale. No co-invest process currently open per available intel. Tax equity market (JPMorgan, Bank of America, US Bancorp) is the most accessible entry point.",
+    chair:"$3,462/kW for rate-based regulated power is not how we invest at CCI — we don't buy 10% ROE utility assets. The interesting angle is the 45Y tax equity: $1.5–2.5B of federal credits on 5.2 GW of new Louisiana generation. If there's a tax equity co-investment opportunity at 9–10% yield on a Meta-guaranteed utility, that's within our mandate and I'd look at a $200–400M check. Call Entergy's treasury team and ask specifically about the tax equity structure. That's the only path worth pursuing here."
+  }
+};
+
+// ── Score helpers ──────────────────────────────────────────
+function scoreColor(s){ return s>=85?"#16a34a":s>=70?"#d97706":"#dc2626"; }
+function statusClass(st){
+  if(st==="Active Pursuit") return "sb-active";
+  if(st==="Reviewing") return "sb-reviewing";
+  if(st==="Watching") return "sb-watching";
+  if(st==="New") return "sb-new";
+  if(st==="Killed") return "sb-killed";
+  return "sb-passed";
+}
+function statusColor(st){
+  if(st==="Active Pursuit") return "#16a34a";
+  if(st==="Reviewing") return "#2563eb";
+  if(st==="Watching") return "#d97706";
+  if(st==="New") return "#7c3aed";
+  if(st==="Killed") return "#dc2626";
+  return "#64748b";
+}
+
+// ── ScoreBar ──────────────────────────────────────────────
+function ScoreBar(p){
+  var c=scoreColor(p.score);
+  return createElement("div",{className:"score-bar-wrap"},
+    createElement("div",{className:"score-bar-track"},
+      createElement("div",{className:"score-bar-fill",style:{width:p.score+"%",background:c}})),
+    createElement("span",{className:"score-bar-num",style:{color:c}},p.score));
+}
+
+// ── Sparkline ─────────────────────────────────────────────
+function Sparkline(p){
+  var hist=p.hist||[];
+  if(hist.length<2) return createElement("span",{style:{fontSize:9,color:"#94a3b8"}},
+    hist.length===0?"No history":("W"+hist[0].week+": "+hist[0].score));
+  var W=p.w||200,H=p.h||52,PX=12,PY=8;
+  var scores=hist.map(function(h){return h.score;});
+  var mn=Math.min.apply(null,scores)-4,mx=Math.max.apply(null,scores)+4;
+  var n=hist.length;
+  var xs=hist.map(function(_,i){return PX+i*(W-PX*2)/(n-1);});
+  var ys=hist.map(function(h){return (H-14)-(h.score-mn)/(mx-mn)*((H-14)-PY);});
+  var d=xs.map(function(x,i){return(i===0?"M":"L")+x.toFixed(1)+","+ys[i].toFixed(1);}).join(" ");
+  var trend=scores[scores.length-1]-scores[0];
+  var lc=trend>0?"#16a34a":trend<0?"#dc2626":"#2563eb";
+  return createElement("svg",{width:W,height:H,style:{overflow:"visible",display:"block"}},
+    createElement("path",{d:d,stroke:lc,strokeWidth:2,fill:"none",strokeLinejoin:"round",strokeLinecap:"round"}),
+    hist.map(function(h,i){return createElement("g",{key:i},
+      createElement("circle",{cx:xs[i].toFixed(1),cy:ys[i].toFixed(1),r:3,fill:lc}),
+      createElement("text",{x:xs[i].toFixed(1),y:(ys[i]-6).toFixed(1),textAnchor:"middle",fontSize:9,fill:"#64748b"},h.score),
+      createElement("text",{x:xs[i].toFixed(1),y:H-1,textAnchor:"middle",fontSize:7.5,fill:"#94a3b8"},"W"+h.week));}));
+}
+
+// ── App ───────────────────────────────────────────────────
+function App(){
+  var _tab=useState("themes"),tab=_tab[0],setTab=_tab[1];
+  var _sector=useState("All"),sector=_sector[0],setSector=_sector[1];
+  var _sub=useState("All"),subsector=_sub[0],setSubsector=_sub[1];
+  var _expDeals=useState({}),expDeals=_expDeals[0],setExpDeals=_expDeals[1];
+  var _expTheme=useState({}),expTheme=_expTheme[0],setExpTheme=_expTheme[1];
+  var _votes=useState({}),votes=_votes[0],setVotes=_votes[1];
+  var _nts=useState({}),nts=_nts[0],setNts=_nts[1];
+  var _sts=useState({}),sts=_sts[0],setSts=_sts[1];
+  var _ld=useState(false),ld=_ld[0],setLd=_ld[1];
+  var _pipe=useState([]),pipeline=_pipe[0],setPipeline=_pipe[1];
+  var _meta=useState(null),meta=_meta[0],setMeta=_meta[1];
+  var _refreshing=useState(false),refreshing=_refreshing[0],setRefreshing=_refreshing[1];
+  var _statFocus=useState(null),statFocus=_statFocus[0],setStatFocus=_statFocus[1];
+  var _cci=useState(false),cciLens=_cci[0],setCciLens=_cci[1];
+  var _inv=useState("All"),investor=_inv[0],setInvestor=_inv[1];
+  var _orig=useState([]),origination=_orig[0],setOrigination=_orig[1];
+  var _origF=useState("All"),origFilter=_origF[0],setOrigFilter=_origF[1];
+
+  useEffect(function(){
+    // Load persisted user state
+    var v=LS.get("tc6-v"); if(v) try{setVotes(JSON.parse(v));}catch(e){}
+    var n=LS.get("tc6-n"); if(n) try{setNts(JSON.parse(n));}catch(e){}
+    var s=LS.get("tc6-s"); if(s) try{setSts(JSON.parse(s));}catch(e){}
+    // Load data
+    var src = (typeof DATA !== "undefined") ? Promise.resolve(DATA) : fetch("./deal-pipeline-data.json?t="+Date.now()).then(function(r){if(!r.ok)throw new Error("HTTP "+r.status);return r.json();});
+    src.then(function(d){
+      var themes=Array.isArray(d)?d:(d.themes||[]);
+      setPipeline(themes);
+      setMeta({generated:Array.isArray(d)?"":d.generated||"",week_number:Array.isArray(d)?1:d.week_number||1});
+      setOrigination(Array.isArray(d)?[]:(d.originationInbox||[]));
+    }).catch(function(e){
+      document.getElementById("root").innerHTML="<div style='color:#dc2626;font-family:monospace;padding:40px'>ERROR: "+e.message+"</div>";
+    }).finally(function(){ setLd(true); });
+  },[]);
+
+  function vt(id,v){var n=Object.assign({},votes);n[id]=v;setVotes(n);LS.set("tc6-v",JSON.stringify(n));}
+  function sn(id,v){var n=Object.assign({},nts);n[id]=v;setNts(n);LS.set("tc6-n",JSON.stringify(n));}
+  function ss(id,v){var n=Object.assign({},sts);n[id]=v;setSts(n);LS.set("tc6-s",JSON.stringify(n));}
+
+  function isInactive(t){ var st=sts[t.id]||t.status; return st==="Passed"||st==="Killed"; }
+  function invKey(){ return INVESTOR_MAP[investor]||null; }
+  function getInvScore(t){ var k=invKey(); if(!k||!t.investorFit||!t.investorFit[k]) return t.score; return t.investorFit[k].score; }
+  function getInvAngle(t){ var k=invKey(); if(!k||!t.investorFit||!t.investorFit[k]) return null; return t.investorFit[k].angle; }
+
+  var allT=useMemo(function(){return pipeline.reduce(function(a,p){return a.concat(p.targets);},[]);}, [pipeline]);
+  var activeT=useMemo(function(){return allT.filter(function(t){return !isInactive(t);});},[allT,sts]);
+  var inactiveT=useMemo(function(){return allT.filter(function(t){return isInactive(t);});},[allT,sts]);
+  var changedT=useMemo(function(){return activeT.filter(function(t){return t.dir!=="unchanged"&&t.dir!=="new";}).length;},[activeT]);
+  var newT=useMemo(function(){return activeT.filter(function(t){return t.dir==="new";}).length;},[activeT]);
+  var avgS=useMemo(function(){return activeT.length>0?Math.round(activeT.reduce(function(s,t){return s+t.score;},0)/activeT.length):0;},[activeT]);
+
+  var weekLabel=meta?"WEEK "+meta.week_number+(meta.generated?" — "+meta.generated.toUpperCase():""):"LOADING...";
+  var subsectors=sector!=="All"?(SECTOR_SUBSECTORS[sector]||[]):[];
+
+  var filteredThemes=useMemo(function(){
+    var r=pipeline.slice();
+    if(sector!=="All"){
+      var ids=SECTOR_THEME_IDS[sector]||[];
+      r=r.filter(function(p){return ids.indexOf(p.id)>=0;});
+      if(subsector!=="All"){var tid=SUBSECTOR_ID[subsector];if(tid)r=r.filter(function(p){return p.id===tid;});}
+    }
+    if(statFocus==="changed") r=r.filter(function(th){return th.targets.some(function(t){return t.dir!=="unchanged"&&t.dir!=="new";});});
+    if(statFocus==="new") r=r.filter(function(th){return th.targets.some(function(t){return t.dir==="new";});});
+    if(statFocus==="targets") r=r.filter(function(th){return (th.targets||[]).some(function(t){var s=(t.stage||"").toLowerCase();return s!=="passed"&&s!=="killed"&&s!=="pass";});});
+    if(statFocus==="avg") r=r.filter(function(th){return (th.themeScore||0)>=85;});
+    if(cciLens) r=r.filter(function(p){return CCI_THEMES.indexOf(p.id)>=0;});
+    r.sort(function(a,b){return b.themeScore-a.themeScore;});
+    return r;
+  },[sector,subsector,pipeline,statFocus,cciLens]);
+
+  function handleRefresh(){
+    setRefreshing(true);
+    fetch("http://"+window.location.hostname+":7777/refresh-all",{method:"POST"})
+      .then(function(r){return r.json();})
+      .then(function(d){
+        if(d.ok) window.location.reload();
+        else alert("Refresh failed: "+d.error);
+      })
+      .catch(function(e){alert("Server not reachable: "+e.message);})
+      .finally(function(){setRefreshing(false);});
+  }
+
+  // ── DealRow ────────────────────────────────────────────
+  function DealRow(p){
+    var t=p.t, th=p.th;
+    var dispScore=getInvScore(t);
+    var v=votes[t.id]||0;
+    var st=sts[t.id]||t.status;
+    var tc=th?THEME_COLORS[th.id]||"#94a3b8":"#e2e8f2";
+    var isExp=expDeals[t.id];
+    var angle=getInvAngle(t);
+    var dc=t.dealContext||{};
+    var ds=dc.dealStatus||null;
+
+    var dirBadge=null;
+    if(t.dir==="new") dirBadge=createElement("span",{className:"dir-new"},"NEW");
+    else if(t.dir==="up"&&t.sPrev!=null) dirBadge=createElement("span",{className:"dir-up"},"▲ "+t.sPrev+"→"+t.score);
+    else if(t.dir==="down"&&t.sPrev!=null) dirBadge=createElement("span",{className:"dir-down"},"▼ "+t.sPrev+"→"+t.score);
+
+    var dsBadge=null;
+    if(ds){
+      var dsCls=ds==="Executable"?"ds-badge ds-executable":ds==="Potential"?"ds-badge ds-potential":"ds-badge ds-thematic";
+      dsBadge=createElement("span",{className:dsCls},ds.toUpperCase());
+    }
+
+    var updateBox=null;
+    if(t.changed&&t.changed!=="No material update."){
+      var updBg=t.dir==="up"?"rgba(22,163,74,0.06)":t.dir==="down"?"rgba(220,38,38,0.06)":t.dir==="new"?"rgba(37,99,235,0.06)":"#f8fafc";
+      var updBorder=t.dir==="up"?"#16a34a":t.dir==="down"?"#dc2626":t.dir==="new"?"#2563eb":"#e2e8f2";
+      updateBox=createElement("div",{className:"update-box",style:{background:updBg,borderLeft:"3px solid "+updBorder,color:"#475569"}},t.changed);
+    }
+
+    // Investor fit mini-matrix (shown in expanded view)
+    var invMatrix=null;
+    if(t.investorFit){
+      invMatrix=createElement("div",{style:{background:"#ffffff",borderRadius:8,padding:10,marginBottom:8}},
+        createElement("div",{style:{fontSize:10,fontWeight:700,color:"#2563eb",marginBottom:8,textTransform:"uppercase",letterSpacing:"0.9px"}},"Investor Fit"),
+        INVESTORS.filter(function(iv){return iv!=="All";}).map(function(iv){
+          var k=INVESTOR_MAP[iv];
+          var fit=t.investorFit[k]||{};
+          var fs=fit.score||0;
+          var fa=fit.angle||null;
+          var fc=INVESTOR_COLOR[iv]||"#94a3b8";
+          var isActiveInv=investor===iv;
+          return createElement("div",{key:iv,style:{marginBottom:7,padding:"6px 8px",borderRadius:5,
+            background:isActiveInv?"rgba(37,99,235,0.04)":"transparent",
+            border:isActiveInv?"1px solid rgba(37,99,235,0.12)":"1px solid transparent"}},
+            createElement("div",{style:{display:"flex",alignItems:"center",gap:6,marginBottom:fa?3:0}},
+              createElement("span",{style:{fontSize:10,fontWeight:700,color:fc,minWidth:80}},INVESTOR_LABEL[iv]||iv),
+              createElement("div",{style:{flex:1,height:5,background:"#f1f5f9",borderRadius:3,overflow:"hidden"}},
+                createElement("div",{style:{height:"100%",width:fs+"%",background:fc,borderRadius:3,opacity:0.8}})),
+              createElement("span",{style:{fontSize:10,fontWeight:700,color:fc,minWidth:22,textAlign:"right"}},fs)
+            ),
+            fa&&createElement("div",{className:"inv-angle",style:{color:"#64748b",paddingLeft:86}},fa)
+          );
+        })
+      );
+    }
+
+    // Deal context panel (shown in expanded view)
+    var ctxPanel=null;
+    if(dc.sellerMotivation||dc.capitalUse){
+      ctxPanel=createElement("div",{style:{background:"#ffffff",borderRadius:8,padding:10,marginBottom:8}},
+        createElement("div",{style:{fontSize:10,fontWeight:700,color:"#0f1e38",marginBottom:7,textTransform:"uppercase",letterSpacing:"0.9px"}},"Deal Context"),
+        dc.sellerMotivation&&createElement("div",{style:{marginBottom:6}},
+          createElement("span",{style:{fontSize:9,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.7px",marginRight:6}},"Why Selling:"),
+          createElement("span",{style:{fontSize:11,color:"#475569"}},dc.sellerMotivation)),
+        dc.capitalUse&&createElement("div",null,
+          createElement("span",{style:{fontSize:9,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.7px",marginRight:6}},"Use of Capital:"),
+          createElement("span",{style:{fontSize:11,color:"#475569"}},dc.capitalUse))
+      );
+    }
+
+    return createElement("div",{className:"deal-row",style:{borderLeft:"3px solid "+tc}},
+      createElement("div",{className:"deal-row-inner",style:{padding:"11px 14px"},
+        onClick:function(){var n=Object.assign({},expDeals);n[t.id]=!isExp;setExpDeals(n);}},
+        createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}},
+          createElement("div",{style:{flex:1,minWidth:0}},
+            createElement("div",{style:{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginBottom:2}},
+              createElement("span",{style:{fontFamily:"var(--font-display)",fontSize:14,fontWeight:700,color:"var(--ink)"}},t.name),
+              t.ticker&&createElement("span",{className:"tc-pill tc-mono",style:{fontSize:9}},t.ticker),
+              createElement("span",{className:"status-badge "+statusClass(st)},st),
+              dsBadge,
+              dirBadge,
+              (function(){
+                var lid=liveDealIdFor(t);
+                if(!lid) return null;
+                return createElement("a",{
+                  href:"/tomac-cove/?deal="+encodeURIComponent(lid),
+                  className:"live-deal-link",
+                  onClick:function(e){e.stopPropagation();},
+                  title:"Open live deal page"
+                },"\u2192 LIVE");
+              })()
+            ),
+            createElement("div",{style:{fontSize:10,color:"#94a3b8"}},t.loc+" · "+t.owner),
+            dc.processSignal&&createElement("div",{style:{fontSize:9,fontStyle:"italic",marginTop:2,lineHeight:1.4,
+              color:ds==="Executable"?"#16a34a":ds==="Potential"?"#2563eb":"#94a3b8"}},
+              "\u21B3 "+dc.processSignal),
+            angle&&createElement("div",{className:"inv-angle",style:{color:INVESTOR_COLOR[investor]||"#64748b",marginTop:3}},angle)
+          ),
+          createElement("div",{style:{display:"flex",alignItems:"center",gap:4,flexShrink:0}},
+            createElement("button",{className:"vote-btn"+(v===1?" up-active":""),
+              onClick:function(e){e.stopPropagation();vt(t.id,v===1?0:1);}},"▲"),
+            createElement("span",{style:{color:v>0?scoreColor(85):v<0?scoreColor(50):"#94a3b8",fontWeight:700,fontSize:11,fontFamily:"monospace",minWidth:14,textAlign:"center"}},v===0?"·":v>0?"+"+v:v),
+            createElement("button",{className:"vote-btn"+(v===-1?" down-active":""),
+              onClick:function(e){e.stopPropagation();vt(t.id,v===-1?0:-1);}},"▼"),
+            createElement("div",{style:{width:1,height:16,background:"#e2e8f2",margin:"0 3px"}}),
+            createElement(ScoreBar,{score:dispScore})
+          )
+        ),
+        updateBox
+      ),
+      isExp&&createElement("div",{className:"deal-row-expanded"},
+        ctxPanel,
+        invMatrix,
+        createElement("div",{style:{background:"#ffffff",borderRadius:8,padding:10,marginBottom:8}},
+          createElement("div",{style:{fontSize:10,fontWeight:700,color:"#d97706",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.9px"}},"REGULATORY STATUS"),
+          createElement("div",{style:{fontSize:11,color:"#475569",lineHeight:1.6}},t.reg||"—")),
+        createElement("div",{style:{background:"#ffffff",borderRadius:8,padding:"8px 10px",marginBottom:8,fontSize:11}},
+          createElement("span",{style:{color:"#d97706",fontWeight:600}},"Key Question: "),
+          createElement("span",{style:{color:"#475569",fontStyle:"italic"}},t.question||"—")),
+        createElement("div",{style:{display:"flex",gap:8,alignItems:"center",marginBottom:8}},
+          createElement("span",{style:{fontSize:10,color:"#94a3b8"}},"Status:"),
+          createElement("select",{className:"deal-select",value:st,
+            onClick:function(e){e.stopPropagation();},
+            onChange:function(e){e.stopPropagation();ss(t.id,e.target.value);}},
+            ["New","Reviewing","Active Pursuit","Watching","Passed","Killed"].map(function(sv){
+              return createElement("option",{key:sv,value:sv},sv);}))),
+        createElement("textarea",{className:"deal-notes",
+          value:nts[t.id]||"",
+          onClick:function(e){e.stopPropagation();},
+          onChange:function(e){e.stopPropagation();sn(t.id,e.target.value);},
+          placeholder:"Notes..."})
+      )
+    );
+  }
+
+  // ── ThemeCard ──────────────────────────────────────────
+  function ThemeCard(p){
+    var th=p.data;
+    var tc=THEME_COLORS[th.id]||"#94a3b8";
+    var sc=scoreColor(th.themeScore);
+    var hist=th.themeHistory||[];
+    var prevScore=hist.length>=2?hist[hist.length-2].score:null;
+    var delta=prevScore!=null?th.themeScore-prevScore:null;
+    var deltaStr=delta===null?"":delta>0?" ▲+"+delta:delta<0?" ▼"+delta:" →";
+    var deltaC=delta===null?"#94a3b8":delta>0?"#16a34a":delta<0?"#dc2626":"#94a3b8";
+    var movedT=th.targets.filter(function(t){return t.dir!=="unchanged";});
+    var isExpStruct=expTheme[th.id+"_s"];
+    var isExpInsights=expTheme[th.id+"_i"];
+    function togS(e){e.stopPropagation();var n=Object.assign({},expTheme);n[th.id+"_s"]=!isExpStruct;setExpTheme(n);}
+    function togI(e){e.stopPropagation();var n=Object.assign({},expTheme);n[th.id+"_i"]=!isExpInsights;setExpTheme(n);}
+
+    return createElement("div",{className:"theme-card",style:{borderLeft:"4px solid "+tc}},
+      // Header
+      createElement("div",{className:"theme-header"},
+        createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:14}},
+          createElement("div",{style:{flex:1}},
+            createElement("div",{style:{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap",marginBottom:8}},
+              createElement("span",{style:{fontSize:16,fontWeight:800,color:"#0f1e38"}},th.theme),
+              createElement("span",{className:th.conviction==="High"?"chip-high":"chip-low"},th.conviction),
+              createElement("span",{className:"chip-timing"},th.timing),
+              createElement("span",{className:"chip-subsector"},THEME_SUBSECTOR[th.id]||"")
+            ),
+            createElement("div",{style:{fontSize:12,color:"#64748b",lineHeight:1.65}},th.thesis)
+          ),
+          createElement("div",{style:{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:8,flexShrink:0,minWidth:185}},
+            createElement("div",{style:{textAlign:"right"}},
+              createElement("span",{className:"score-large",style:{color:sc}},th.themeScore),
+              createElement("span",{style:{fontSize:13,color:deltaC,fontWeight:700,marginLeft:4}},deltaStr),
+              createElement("div",{className:"score-small-label"},"conviction score")
+            ),
+            hist.length>=2
+              ? createElement(Sparkline,{hist:hist,w:185,h:52})
+              : createElement("div",{style:{fontSize:9,color:"#94a3b8",textAlign:"right"}},
+                  hist.length===1?"W"+hist[0].week+": "+hist[0].score+" — chart builds next run":"No history yet")
+          )
+        )
+      ),
+
+      // This week panel
+      createElement("div",{className:"theme-week-panel"},
+        createElement("div",{className:"tc-section-label",style:{margin:"0 0 8px"}},"This Week"),
+        th.weekNarrative
+          ? createElement("div",{style:{fontSize:12,color:"#475569",lineHeight:1.65,marginBottom:movedT.length>0?10:0}},th.weekNarrative)
+          : createElement("div",{style:{fontSize:11,color:"#94a3b8",fontStyle:"italic",marginBottom:movedT.length>0?10:0}},"No narrative yet."),
+        movedT.length>0&&createElement("div",null,
+          createElement("div",{className:"tc-section-label",style:{margin:"0 0 6px"}},"Score Movements"),
+          movedT.map(function(t){
+            var dc=t.dir==="up"?"#16a34a":t.dir==="down"?"#dc2626":"#2563eb";
+            var movBg=t.dir==="up"?"rgba(22,163,74,0.05)":t.dir==="down"?"rgba(220,38,38,0.05)":"rgba(37,99,235,0.05)";
+            return createElement("div",{key:t.id,style:{display:"flex",gap:10,marginBottom:7,alignItems:"flex-start",
+              background:movBg,borderRadius:6,padding:"7px 10px",border:"1px solid "+(t.dir==="up"?"rgba(22,163,74,0.15)":t.dir==="down"?"rgba(220,38,38,0.15)":"rgba(37,99,235,0.15)")}},
+              createElement("span",{style:{color:dc,fontWeight:700,fontSize:11,flexShrink:0,minWidth:136}},
+                (t.dir==="up"?"▲":t.dir==="down"?"▼":"★")+" "+t.name+(t.sPrev!=null?" ("+t.sPrev+"→"+t.score+")":"")),
+              createElement("span",{style:{fontSize:11,color:"#64748b",lineHeight:1.5}},t.changed||"")
+            );
+          })
+        ),
+        th.insights&&th.insights.length>0&&createElement("div",{style:{marginTop:movedT.length>0?10:0}},
+          createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",userSelect:"none"},onClick:togI},
+            createElement("div",{className:"tc-section-label",style:{margin:0,border:"none",paddingBottom:0}},"Intelligence Datapoints ("+th.insights.length+")"),
+            createElement("span",{style:{fontFamily:"var(--font-data)",fontSize:10,color:"var(--gold)",textTransform:"uppercase",letterSpacing:"0.12em"}},isExpInsights?"▴ hide":"▾ show")),
+          isExpInsights&&createElement("div",{style:{marginTop:8}},
+            th.insights.map(function(pt,i){
+              var sigCls=pt.signal==="strengthens"?"sig-strength":pt.signal==="weakens"?"sig-weakens":"sig-neutral";
+              var sigLabel=pt.signal==="strengthens"?"▲ STRENGTH":pt.signal==="weakens"?"▼ WEAKENS":"– NEUTRAL";
+              return createElement("div",{key:i,style:{display:"flex",gap:8,marginBottom:6,alignItems:"flex-start"}},
+                createElement("span",{className:sigCls},sigLabel),
+                createElement("div",null,
+                  createElement("div",{style:{fontSize:11,color:"#475569",lineHeight:1.5}},pt.point),
+                  pt.source&&createElement("div",{style:{fontSize:9,color:"#94a3b8",marginTop:1}},pt.source))
+              );
+            })
+          )
+        )
+      ),
+
+      // Structure toggle
+      createElement("div",{className:"theme-struct-toggle",onClick:togS},
+        createElement("span",{style:{fontSize:10,color:"#2563eb"}},"Investment thesis — structure, check size, returns"),
+        createElement("span",{className:"chevron "+(isExpStruct?"open":"closed")},isExpStruct?"▴":"▾")),
+      isExpStruct&&createElement("div",{className:"theme-struct-body"},
+        createElement("div",null,createElement("div",{className:"struct-label"},"Structure"),createElement("div",{className:"struct-val"},th.structure)),
+        createElement("div",null,createElement("div",{className:"struct-label"},"Check Size"),createElement("div",{className:"struct-val"},th.check)),
+        createElement("div",null,createElement("div",{className:"struct-label"},"Target Returns"),createElement("div",{className:"struct-val"},th.returns))
+      )
+    );
+  }
+
+  // ── DealsTab ───────────────────────────────────────────
+  function DealsTab(){
+    return createElement("div",null,
+      filteredThemes.length===0
+        ? createElement("div",{className:"empty-state"},"No themes match the current filter.")
+        : filteredThemes.map(function(th){
+            var tc=THEME_COLORS[th.id]||"#94a3b8";
+            var sc=scoreColor(th.themeScore);
+            var sorted=th.targets.slice().sort(function(a,b){return b.score-a.score;});
+            return createElement("div",{key:th.id,className:"card",style:{marginBottom:16,padding:0,overflow:"hidden",borderLeft:"4px solid "+tc}},
+              createElement("div",{style:{display:"flex",alignItems:"center",gap:8,padding:"10px 16px",background:"#f8fafc",borderBottom:"1px solid #e2e8f2"}},
+                createElement("span",{style:{fontSize:13,fontWeight:700,color:"#0f1e38",flex:1}},th.theme),
+                createElement("span",{className:th.conviction==="High"?"chip-high":"chip-low"},th.conviction),
+                createElement("span",{className:"chip-timing"},th.timing),
+                createElement("span",{style:{color:sc,fontWeight:800,fontSize:15,fontFamily:"monospace",marginLeft:6,fontVariantNumeric:"tabular-nums"}},th.themeScore)
+              ),
+              createElement("div",null, sorted.map(function(t){return createElement(DealRow,{key:t.id,t:t,th:th});}))
+            );
+          })
+    );
+  }
+
+  // ── OriginationTab (Theme Discovery) ──────────────────────
+  // Shows only unmatched origination items — signals that don’t fit any
+  // existing theme and may warrant a new investment thesis.
+  function OriginationTab(){
+    function isPeakLoad(item){
+      return (item.source||"").toLowerCase().indexOf("peakload")>=0||
+             (item.content||"").indexOf("PeakLoad")>=0;
+    }
+    function sortByDate(arr){
+      return arr.slice().sort(function(a,b){
+        var da=(a.source_ref&&a.source_ref.date)||"";
+        var db=(b.source_ref&&b.source_ref.date)||"";
+        if(da&&db) return db>da?1:db<da?-1:0;
+        if(da) return -1; if(db) return 1; return 0;
+      });
+    }
+    var unmatched=origination.filter(function(i){return !((i.theme_ids||[]).length>0);});
+    var plCount=unmatched.filter(isPeakLoad).length;
+    var filtered=origFilter==="PeakLoad"
+      ?sortByDate(unmatched.filter(isPeakLoad))
+      :sortByDate(unmatched.slice());
+
+    function renderCard(item){
+      var pl=isPeakLoad(item);
+      var sr=item.source_ref||{};
+      var hasLink=sr.doc_url&&sr.doc_url.length>0;
+      var dateStr=sr.date||"";
+      var title=sr.title||"";
+      var cp=item.counterparty||"";
+      return createElement("div",{key:item.id||item.content,
+        style:{background:"#ffffff",border:"1px solid #e2e8f2",borderRadius:8,
+          marginBottom:10,padding:"14px 16px",position:"relative",
+          borderLeft:pl?"3px solid #7c3aed":"3px solid #e2e8f2"}},
+        createElement("div",{style:{display:"flex",alignItems:"flex-start",gap:8,marginBottom:8}},
+          pl&&createElement("span",{style:{
+            display:"inline-block",fontSize:9,fontWeight:700,color:"#7c3aed",
+            letterSpacing:"0.5px",background:"rgba(124,58,237,0.08)",
+            border:"1px solid rgba(124,58,237,0.25)",borderRadius:4,
+            padding:"2px 7px",whiteSpace:"nowrap",flexShrink:0
+          }},"⚡ PeakLoad"),
+          cp&&createElement("span",{style:{fontSize:10,fontWeight:600,color:"#0f1e38",flex:1,lineHeight:1.4}},cp)
+        ),
+        item.context&&createElement("div",{style:{
+          fontSize:10,color:"#64748b",fontStyle:"italic",marginBottom:6,lineHeight:1.4
+        }},item.context),
+        createElement("div",{style:{fontSize:12,color:"#1e293b",lineHeight:1.6,marginBottom:8}},item.content),
+        createElement("div",{style:{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}},
+          (title||dateStr)&&createElement("span",{style:{fontSize:10,color:"#94a3b8"}},
+            hasLink
+              ?createElement("a",{href:sr.doc_url,target:"_blank",rel:"noopener",
+                  style:{color:"#2563eb",textDecoration:"none"}},
+                  "↗ "+(title||"Source")+(dateStr?" · "+dateStr:""))
+              :(title||"")+(dateStr?" · "+dateStr:"")),
+          item.dashboard_path&&createElement("span",{style:{
+            fontSize:9,color:"#94a3b8",background:"#f8fafc",
+            border:"1px solid #e2e8f2",borderRadius:4,padding:"2px 6px"
+          }},item.dashboard_path)
+        )
+      );
+    }
+
+    return createElement("div",{style:{paddingTop:16}},
+      createElement("div",{style:{display:"flex",alignItems:"center",gap:8,marginBottom:14,flexWrap:"wrap"}},
+        createElement("span",{className:"filter-label"},"Source"),
+        ["All","PeakLoad"].map(function(f){
+          var active=origFilter===f;
+          var label=f==="PeakLoad"?"⚡ PeakLoad ("+plCount+")":"All";
+          return createElement("button",{key:f,
+            className:"tc-pill tc-pill-link"+(active?" tc-pill--solid-navy":""),
+            style:{cursor:"pointer"},
+            onClick:function(){setOrigFilter(f);}},label);
+        }),
+        createElement("span",{style:{marginLeft:"auto",fontSize:11,color:"#94a3b8"}},filtered.length+" signals")
+      ),
+      filtered.length===0
+        ?createElement("div",{className:"empty-state"},
+            origFilter==="PeakLoad"?"No PeakLoad signals yet.":
+            "No unmatched signals — all origination items are tagged to existing themes.")
+        :createElement("div",null,filtered.map(renderCard))
+    );
+  }
+
+  // ── ICMemosTab ─────────────────────────────────────────
+  function ICMemosTab(){
+    var memoTargets=[];
+    pipeline.forEach(function(th){
+      th.targets.forEach(function(t){
+        if(t.icSummary&&t.icSummary.length>0) memoTargets.push({t:t,th:th});
+      });
+    });
+    memoTargets.sort(function(a,b){
+      var ord={"PURSUE":3,"PURSUE WITH CONDITIONS":2,"MONITOR":1,"PASS":0};
+      var ra=ord[a.t.icRecommendation]||0,rb=ord[b.t.icRecommendation]||0;
+      if(rb!==ra) return rb-ra;
+      return b.t.score-a.t.score;
+    });
+    if(memoTargets.length===0) return createElement("div",{className:"empty-state"},"No IC memos yet.");
+
+    var BULLET_LABELS=["THE ASSET","ENTRY CATALYST","PROPOSED STRUCTURE","RETURN PROFILE","FIRST CALL","IC FRAMEWORK"];
+    var BULLET_COLORS=["#0f1e38","#d97706","#2563eb","#16a34a","#f0883e","#7c3aed"];
+    var BULLET_ICONS=["■","⚡","➤","▶","☎","✓"];
+
+    function recStyle(rec){
+      if(rec==="PURSUE") return {bg:"rgba(22,163,74,0.08)",color:"#16a34a",border:"rgba(22,163,74,0.4)"};
+      if(rec==="PURSUE WITH CONDITIONS") return {bg:"rgba(217,119,6,0.08)",color:"#d97706",border:"rgba(217,119,6,0.4)"};
+      if(rec==="MONITOR") return {bg:"rgba(37,99,235,0.08)",color:"#2563eb",border:"rgba(37,99,235,0.3)"};
+      return {bg:"rgba(220,38,38,0.08)",color:"#dc2626",border:"rgba(220,38,38,0.3)"};
+    }
+
+    function scrollTo(id){
+      var el=document.getElementById("memo-anchor-"+id);
+      if(el) el.scrollIntoView({behavior:"smooth",block:"start"});
+    }
+
+    var toc=createElement("div",{className:"toc-card"},
+      createElement("div",{className:"toc-stripe"}),
+      createElement("div",{style:{paddingLeft:14}},
+        createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}},
+          createElement("div",null,
+            createElement("div",{style:{fontSize:9,fontWeight:700,color:"#94a3b8",letterSpacing:"2px",marginBottom:4,textTransform:"uppercase"}},((window.__FIRM_CONTEXT__ && window.__FIRM_CONTEXT__.firm && (window.__FIRM_CONTEXT__.firm.short_name || window.__FIRM_CONTEXT__.firm.name)) || "Pipeline") + " — Confidential"),
+            createElement("div",{style:{fontSize:18,fontWeight:800,color:"#0f1e38",letterSpacing:"-0.5px"}},"Investment Committee Memo Library"),
+            createElement("div",{style:{fontSize:11,color:"#64748b",marginTop:3}},"Week "+(meta?meta.week_number:"-")+" · "+memoTargets.length+" memos · April 2026")),
+          createElement("a",{
+            href:"https://docs.google.com/document/d/1EtVZLgj3rML8kc9jEtwwng6INB90H4L2KhTmVQnyLzw/edit",
+            target:"_blank",rel:"noopener",
+            style:{fontSize:10,color:"#2563eb",textDecoration:"none",padding:"5px 12px",
+              border:"1px solid #e2e8f2",borderRadius:6,whiteSpace:"nowrap",background:"#f8fafc",lineHeight:"20px"}
+          },"↗ Full Memo Library")
+        ),
+        createElement("div",{style:{borderTop:"1px solid #e2e8f2",paddingTop:14}}),
+        createElement("div",{style:{fontSize:9,fontWeight:700,color:"#94a3b8",letterSpacing:"2px",marginBottom:10,textTransform:"uppercase"}},"Table of Contents"),
+        memoTargets.map(function(item,idx){
+          var t=item.t, th=item.th;
+          var rec=t.icRecommendation||"MONITOR";
+          var rs=recStyle(rec);
+          var tc2=THEME_COLORS[th.id]||"#94a3b8";
+          return createElement("div",{key:t.id,className:"toc-row",onClick:function(){scrollTo(t.id);}},
+            createElement("span",{style:{fontSize:11,fontWeight:700,color:"#94a3b8",fontFamily:"monospace",minWidth:22}},(idx+1)+"."),
+            createElement("div",{style:{width:10,height:10,borderRadius:"50%",background:tc2,flexShrink:0}}),
+            createElement("span",{style:{fontSize:12,color:"#0f1e38",fontWeight:500,flex:1}},t.name),
+            createElement("span",{style:{fontSize:9,color:"#94a3b8",marginRight:6}},th.theme.split(" ").slice(0,2).join(" ")),
+            createElement("span",{style:{fontSize:8,fontWeight:700,padding:"2px 8px",borderRadius:4,
+              background:rs.bg,color:rs.color,border:"1px solid "+rs.border,whiteSpace:"nowrap",letterSpacing:"0.3px"}},rec)
+          );
+        })
+      )
+    );
+
+    var cards=memoTargets.map(function(item,idx){
+      var t=item.t, th=item.th;
+      var rec=t.icRecommendation||"MONITOR";
+      var rs=recStyle(rec);
+      var tc3=THEME_COLORS[th.id]||"#94a3b8";
+      var st=sts[t.id]||t.status;
+      var isExp=expDeals["memo-"+t.id];
+      var sc2=scoreColor(t.score);
+
+      return createElement("div",{key:t.id},
+        createElement("div",{id:"memo-anchor-"+t.id,style:{height:1}}),
+        createElement("div",{className:"memo-card",style:{border:"1px solid "+tc3+"44"}},
+          // Header
+          createElement("div",{className:"memo-header",style:{background:tc3+"0a",borderBottom:"2px solid "+tc3}},
+            createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}},
+              createElement("div",{style:{display:"flex",alignItems:"center",gap:8}},
+                createElement("div",{style:{width:3,height:16,background:tc3,borderRadius:2}}),
+                createElement("span",{style:{fontSize:9,fontWeight:700,color:tc3,letterSpacing:"2px",textTransform:"uppercase"}},"Investment Committee Memorandum — Confidential")
+              ),
+              createElement("span",{style:{fontSize:9,color:"#94a3b8",fontFamily:"monospace"}},"MEMO #"+(idx+1)+" · "+((meta&&meta.generated)||"2026"))
+            ),
+            createElement("div",{style:{marginBottom:12}},
+              createElement("h2",{style:{fontSize:22,fontWeight:900,color:"#0f1e38",margin:"0 0 4px",letterSpacing:"-0.5px"}},t.name),
+              createElement("div",{style:{fontSize:11,color:"#64748b"}},t.loc+" · "+t.owner)
+            ),
+            createElement("div",{style:{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:16}},
+              createElement("span",{style:{fontSize:10,fontWeight:800,padding:"4px 12px",borderRadius:5,letterSpacing:"0.5px",
+                background:rs.bg,color:rs.color,border:"1px solid "+rs.border}},"⬤ "+rec),
+              createElement("span",{style:{fontSize:9,fontWeight:600,padding:"3px 9px",borderRadius:5,
+                background:"rgba("+statusColor(st).replace(/^#/,"").match(/.{2}/g).map(function(x){return parseInt(x,16);}).join(",")+",.08)",
+                color:statusColor(st),border:"1px solid rgba("+statusColor(st).replace(/^#/,"").match(/.{2}/g).map(function(x){return parseInt(x,16);}).join(",")+",.25)"}},st),
+              createElement("span",{style:{fontSize:9,padding:"3px 9px",borderRadius:5,
+                background:tc3+"12",color:tc3,border:"1px solid "+tc3+"33"}},th.theme),
+              t.cap&&createElement("span",{style:{fontSize:9,padding:"3px 9px",borderRadius:5,background:"#f1f5f9",color:"#64748b"}},t.cap)
+            ),
+            createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center"}},
+              createElement("div",{style:{display:"flex",alignItems:"baseline",gap:6}},
+                createElement("span",{style:{fontSize:36,fontWeight:900,color:sc2,fontFamily:"monospace",lineHeight:1,fontVariantNumeric:"tabular-nums"}},t.score),
+                createElement("span",{style:{fontSize:11,color:"#94a3b8"}},"/ 100 pipeline score")
+              ),
+              createElement("button",{
+                onClick:function(){var n=Object.assign({},expDeals);n["memo-"+t.id]=!isExp;setExpDeals(n);},
+                style:{fontSize:11,fontWeight:600,padding:"6px 16px",borderRadius:6,cursor:"pointer",fontFamily:"inherit",
+                  border:"1px solid "+tc3+"55",background:isExp?tc3+"18":"transparent",color:isExp?tc3:"#64748b"}
+              },isExp?"▴ Collapse memo":"▾ Expand executive summary")
+            )
+          ),
+          // Expanded body
+          isExp&&createElement("div",{className:"memo-body",style:{borderTopColor:tc3}},
+            createElement("div",{style:{padding:"8px 26px",background:"#f1f5f9",borderBottom:"1px solid #e2e8f2",display:"flex",alignItems:"center",gap:10}},
+              createElement("div",{style:{width:3,height:3,borderRadius:"50%",background:tc3}}),
+              createElement("span",{style:{fontSize:9,fontWeight:700,color:"#94a3b8",letterSpacing:"2px",textTransform:"uppercase"}},"Executive Summary"),
+              createElement("div",{style:{flex:1,height:1,background:"#e2e8f2",marginLeft:4}})
+            ),
+            createElement("div",{className:"memo-body-inner"},
+              t.icSummary.map(function(bullet,i){
+                var isFramework=(i===t.icSummary.length-1)&&bullet.startsWith("IC Framework");
+                return createElement("div",{key:i,className:"memo-bullet-row",
+                  style:{border:"1px solid "+(BULLET_COLORS[i]||"#e2e8f2")+"33"}},
+                  createElement("div",{className:"memo-bullet-label",
+                    style:{background:(BULLET_COLORS[i]||"#e2e8f2")+"12",borderRight:"2px solid "+(BULLET_COLORS[i]||"#e2e8f2")}},
+                    createElement("span",{className:"memo-bullet-icon"},BULLET_ICONS[i]||"▶"),
+                    createElement("span",{className:"memo-bullet-lname",style:{color:BULLET_COLORS[i]||"#94a3b8"}},BULLET_LABELS[i]||"")
+                  ),
+                  createElement("div",{className:"memo-bullet-content",style:{background:isFramework?"#f8fafc":"transparent"}},bullet)
+                );
+              }),
+
+              // ── Merchant Analytics section ──────────────
+              (function(){
+                var mi=MERCHANT_INTEL[t.id];
+                if(!mi) return null;
+                var MA_LABELS=["COMMODITY ASSUMPTIONS","ASSET ECONOMICS","COMPETITIVE FIELD"];
+                var MA_KEYS=["commodity","economics","field"];
+                // Mapped to design tokens — was three saturated hex codes outside palette.
+                var MA_COLORS=["var(--navy)","var(--green)","var(--slate)"];
+                var MA_BORDERS=["var(--navy-border)","var(--green-bd)","var(--slate-bd)"];
+                var MA_BGS=["var(--navy-light)","var(--green-bg)","var(--slate-bg)"];
+                return createElement("div",{style:{marginTop:14}},
+                  // Section divider
+                  createElement("div",{style:{display:"flex",alignItems:"center",gap:10,marginBottom:10}},
+                    createElement("div",{style:{flex:1,height:1,background:"var(--rule)"}}),
+                    createElement("span",{style:{fontSize:8,fontWeight:700,color:"var(--slate)",letterSpacing:"2px",
+                      textTransform:"uppercase",padding:"2px 10px",border:"1px solid var(--slate-bd)",
+                      borderRadius:10,background:"var(--slate-bg)",whiteSpace:"nowrap"}},"Merchant Analytics"),
+                    createElement("div",{style:{flex:1,height:1,background:"var(--rule)"}})
+                  ),
+                  // Commodity / Economics / Field rows
+                  MA_KEYS.map(function(key,i){
+                    return createElement("div",{key:key,className:"memo-bullet-row",
+                      style:{border:"1px solid "+MA_BORDERS[i],marginBottom:8}},
+                      createElement("div",{className:"memo-bullet-label",
+                        style:{background:MA_BGS[i],borderRight:"2px solid "+MA_COLORS[i]}},
+                        createElement("span",{className:"memo-bullet-lname",style:{color:MA_COLORS[i]}},MA_LABELS[i])
+                      ),
+                      createElement("div",{className:"memo-bullet-content"},mi[key])
+                    );
+                  }),
+                  // IC Chair Verdict — full-width prominent block
+                  createElement("div",{style:{
+                    borderRadius:"var(--radius-md)",overflow:"hidden",border:"1px solid var(--slate-bd)",marginTop:4
+                  }},
+                    createElement("div",{style:{
+                      background:"var(--slate-bg)",borderBottom:"2px solid var(--slate)",
+                      padding:"8px 14px",display:"flex",alignItems:"center",gap:8
+                    }},
+                      createElement("span",{style:{fontSize:9,fontWeight:800,color:"var(--slate)",
+                        letterSpacing:"1.5px",textTransform:"uppercase"}},"IC Chair Verdict — Commodity Merchant")
+                    ),
+                    createElement("div",{style:{padding:"12px 16px",background:"var(--paper)"}},
+                      createElement("p",{style:{fontSize:12,color:"var(--ink-mid)",lineHeight:1.7,margin:0,
+                        fontStyle:"italic"}},"\u201C"+mi.chair+"\u201D")
+                    )
+                  )
+                );
+              })()
+            ),
+            createElement("div",{className:"memo-footer"},
+              createElement("span",{style:{fontSize:9,color:"#94a3b8",fontStyle:"italic"}},"Full 9-section IC memo available in the Memo Library"),
+              createElement("div",{style:{display:"flex",gap:8}},
+                createElement("a",{href:"https://docs.google.com/document/d/1EtVZLgj3rML8kc9jEtwwng6INB90H4L2KhTmVQnyLzw/edit",
+                  target:"_blank",rel:"noopener",
+                  style:{fontSize:10,color:"#2563eb",textDecoration:"none",padding:"4px 12px",border:"1px solid #e2e8f2",borderRadius:5,background:"#ffffff"}
+                },"↗ Open Full Memo"),
+                createElement("button",{
+                  onClick:function(){var n=Object.assign({},expDeals);n["memo-"+t.id]=false;setExpDeals(n);scrollTo(t.id);},
+                  style:{fontSize:10,color:"#64748b",padding:"4px 12px",border:"1px solid #e2e8f2",borderRadius:5,background:"transparent",cursor:"pointer",fontFamily:"inherit"}
+                },"▴ Collapse")
+              )
+            )
+          )
+        ),
+        idx<memoTargets.length-1&&createElement("div",{className:"memo-sep"},
+          createElement("div",{className:"memo-sep-line"}),
+          createElement("span",{style:{fontSize:8,color:"var(--ink-faint)",letterSpacing:"2px",whiteSpace:"nowrap"}},"— — —"),
+          createElement("div",{className:"memo-sep-line"})
+        )
+      );
+    });
+
+    return createElement("div",null,toc,createElement("div",null,cards));
+  }
+
+  // ── Stat click logic ───────────────────────────────────
+  function handleStatClick(key){
+    setStatFocus(statFocus===key?null:key);
+    if(key==="changed"||key==="new"){
+      setTab("themes");
+    }
+  }
+
+  var stats=[
+    {key:"themes",label:"Themes",val:pipeline.length,tint:"navy"},
+    {key:"targets",label:"Active",val:activeT.length,tint:""},
+    {key:"changed",label:"Changed",val:changedT,tint:"gold"},
+    {key:"new",label:"New",val:newT,tint:"navy"},
+    {key:"avg",label:"Avg Score",val:avgS,tint:avgS>=85?"green":avgS>=70?"amber":"red"}
+  ];
+
+  if(!ld) return createElement("div",{style:{minHeight:"60vh",display:"flex",alignItems:"center",justifyContent:"center",color:"var(--ink-faint)",fontFamily:"var(--font-body)"}},"Loading...");
+  var memoCount=allT.filter(function(t){return t.icSummary&&t.icSummary.length>0;}).length;
+  var unmatchedOrigCount=origination.filter(function(i){return !((i.theme_ids||[]).length>0);}).length;
+
+  return createElement("div",null,
+    createElement("div",{style:{position:"sticky",top:0,zIndex:50,background:"#f8fafc",boxShadow:"0 2px 6px rgba(15,30,56,0.06)"}},
+    // ── Header (full width) ──
+    createElement("div",{className:"header"},
+      createElement("div",{className:"header-left"},
+        createElement("div",{className:"tc-monogram"},"TC"),
+        createElement("div",{className:"header-title"},
+          createElement("h1",null,"Deal Ideas and Market Activity"),
+          createElement("div",{className:"sub"},
+            pipeline.length+" themes · "+activeT.length+" active · "+changedT+" changed · avg "+avgS+(inactiveT.length>0?" · "+inactiveT.length+" passed/killed":""))
+        )
+      ),
+      createElement("div",{className:"header-right"},
+        createElement("span",{className:"week-badge"},weekLabel),
+        createElement("button",{
+          className:"refresh-btn"+(refreshing?" spinning":""),
+          onClick:handleRefresh
+        },
+          createElement("svg",{width:12,height:12,viewBox:"0 0 12 12",fill:"none",stroke:"currentColor",strokeWidth:1.8},
+            createElement("path",{d:"M10.5 6A4.5 4.5 0 1 1 6 1.5",strokeLinecap:"round"}),
+            createElement("polyline",{points:"8.5,1 10.5,1 10.5,3"})),
+          "Refresh"
+        )
+      )
+    ),
+
+    // ── Stat tiles (mapped to .tc-stat-tile) ──
+    createElement("div",{className:"stats-bar"},
+      stats.map(function(s){
+        var isActive=statFocus===s.key;
+        var isDimmed=statFocus!==null&&statFocus!==s.key;
+        var cls="tc-stat-tile stat-card"+(s.tint?" tc-stat-tile--"+s.tint:"")
+                +(isActive?" is-active":"")+(isDimmed?" is-dimmed":"");
+        return createElement("div",{
+          key:s.key,
+          className:cls,
+          style:{cursor:"pointer"},
+          onClick:function(){handleStatClick(s.key);}},
+          createElement("div",{className:"tc-label"},s.label),
+          createElement("div",{className:"tc-value"},s.val)
+        );
+      })
+    ),
+
+    // ── Focus banner (full width) ──
+    statFocus&&createElement("div",{className:"focus-banner",style:{background:"rgba(37,99,235,0.05)",border:"1px solid rgba(37,99,235,0.15)"}},
+      createElement("span",{className:"dot-blue"}),
+      createElement("span",{style:{fontSize:12,color:"#2563eb",fontWeight:600}},
+        statFocus==="changed"?"Showing themes with score movements":
+        statFocus==="new"?"Showing themes with new targets":
+        statFocus==="targets"?"Showing themes with active targets":
+        statFocus==="avg"?"Showing themes scoring 85+ (top tier)":
+        statFocus==="themes"?"Showing all themes":
+        "Filtered view — click again to clear"),
+      createElement("button",{className:"focus-clear-btn",style:{color:"#2563eb",borderColor:"rgba(37,99,235,0.3)"},
+        onClick:function(){setStatFocus(null);}
+      },"Clear")
+    ),
+
+    // ── Tab bar ──
+    createElement("div",{className:"tab-bar",style:{marginBottom:0}},
+      createElement("button",{className:"tab-btn"+(tab==="themes"?" active":""),onClick:function(){setTab("themes");}},
+        "Themes"),
+      createElement("button",{
+        className:"tab-btn"+(tab==="theme-discovery"?" active":""),
+        onClick:function(){setTab("theme-discovery");}},
+        "Theme Discovery"+(unmatchedOrigCount>0?" ("+unmatchedOrigCount+")":"")),
+      memoCount>0&&createElement("button",{
+        className:"tab-btn tab-btn-memos"+(tab==="ic-memos"?" active":""),
+        onClick:function(){setTab("ic-memos");}},
+        "\u2318\u00A0IC Memo Library ("+memoCount+")")
+    ),
+
+    // ── Filter rows (sticky pane, themes tab only) ──
+    tab==="themes"&&createElement("div",{style:{background:"var(--paper)",border:"1px solid var(--rule)",borderRadius:"var(--radius-md)",padding:"10px 16px 12px",marginBottom:14}},
+      createElement("div",{className:"filter-row"},
+        createElement("span",{className:"filter-label"},"Sector"),
+        SECTORS.map(function(s){
+          return createElement("button",{key:s,
+            className:"tc-pill tc-pill-link"+(sector===s?" tc-pill--solid-navy":""),
+            style:{cursor:"pointer",border:"1px solid "+(sector===s?"var(--navy)":"var(--rule)")},
+            onClick:function(){setSector(s);setSubsector("All");}},s);
+        }),
+        createElement("div",{style:{marginLeft:"auto"}}),
+        // To restore Commodity Merchant Lens button: uncomment the createElement below
+        // createElement("button",{
+        //   className:"tc-btn tc-btn--gold"+(cciLens?" is-active":""),
+        //   onClick:function(){setCciLens(!cciLens);}
+        // },"\u26A1 Commodity Merchant Lens")
+        null
+      ),
+      subsectors.length>0&&createElement("div",{className:"filter-row"},
+        createElement("span",{className:"filter-label"},"Market"),
+        subsectors.map(function(s){
+          return createElement("button",{key:s,
+            className:"tc-pill tc-pill-link"+(subsector===s?" tc-pill--solid-navy":""),
+            style:{cursor:"pointer"},
+            onClick:function(){setSubsector(s);}},s);
+        })
+      ),
+      createElement("div",{className:"filter-row"},
+        createElement("span",{className:"filter-label"},"Investor Type"),
+        INVESTORS.map(function(iv){
+          var isActive=investor===iv;
+          return createElement("button",{key:iv,
+            className:"tc-pill tc-pill-link"+(isActive?" tc-pill--solid-navy":""),
+            style:{cursor:"pointer"},
+            onClick:function(){
+              setInvestor(iv);
+              // The Commodity Merchant filter activates the merchant lens —
+              // turning it on (or switching away) should track the lens state
+              // so the two controls don't contradict each other.
+              if(iv==="Commodity Merchant"){setCciLens(true);}
+              else if(iv==="All"||iv!==investor){setCciLens(false);}
+            }},INVESTOR_LABEL[iv]||iv);
+        })
+      ),
+      investor!=="All"&&createElement("div",{style:{
+        display:"flex",alignItems:"flex-start",gap:10,marginTop:6,padding:"8px 14px",
+        borderRadius:8,background:"rgba(37,99,235,0.03)",border:"1px solid rgba(37,99,235,0.12)"
+      }},
+        createElement("span",{style:{width:7,height:7,borderRadius:"50%",background:INVESTOR_COLOR[investor],
+          display:"inline-block",flexShrink:0,marginTop:4,boxShadow:"0 0 6px "+INVESTOR_COLOR[investor]+"88"}}),
+        createElement("span",{style:{fontSize:11,color:INVESTOR_COLOR[investor],fontWeight:600,lineHeight:1.5}},
+          (INVESTOR_LABEL[investor]||investor)+" view — scores re-ranked by "+(INVESTOR_LABEL[investor]||investor)+" fit. Angle text shown inline on each deal."),
+        createElement("button",{
+          onClick:function(){setInvestor("All");},
+          style:{marginLeft:"auto",fontSize:10,color:INVESTOR_COLOR[investor],background:"none",
+            border:"1px solid "+INVESTOR_COLOR[investor]+"55",borderRadius:4,padding:"2px 10px",cursor:"pointer",fontFamily:"inherit",flexShrink:0}
+        },"Clear")
+      ),
+      cciLens&&createElement("div",{style:{
+        display:"flex",alignItems:"flex-start",gap:10,marginTop:10,padding:"10px 14px",
+        borderRadius:8,background:"rgba(124,58,237,0.04)",border:"1px solid rgba(124,58,237,0.2)"
+      }},
+        createElement("span",{style:{width:7,height:7,borderRadius:"50%",background:"#7c3aed",
+          display:"inline-block",flexShrink:0,marginTop:4}}),
+        createElement("span",{style:{fontSize:11,color:"#7c3aed",fontWeight:600,lineHeight:1.5}},
+          "Commodity Merchant Lens \u2014 filtering to merchant power, LNG/regas, and commodity-exposed assets. "+
+          CCI_THEMES.length+" of "+pipeline.length+" themes shown. EPC roll-up, captive power, and DER/grid-edge excluded."),
+        createElement("button",{
+          onClick:function(){setCciLens(false);},
+          style:{marginLeft:"auto",fontSize:10,color:"#7c3aed",background:"none",
+            border:"1px solid rgba(124,58,237,0.3)",borderRadius:4,padding:"2px 10px",cursor:"pointer",fontFamily:"inherit",flexShrink:0}
+        },"Clear")
+      )
+
+    )  // closes filter rows pane
+  ), // ── END STICKY PANE ───────────────────────────────────────
+  // ── Scrollable tab content ──
+  tab==="theme-discovery"
+    ? createElement(OriginationTab,null)
+    : tab==="ic-memos"
+    ? createElement(ICMemosTab,null)
+    : createElement("div",{style:{paddingTop:16}},
+        filteredThemes.length===0
+            ? createElement("div",{className:"empty-state"},"No themes match the current filter.")
+            : filteredThemes.map(function(th){
+                var tc=THEME_COLORS[th.id]||"#94a3b8";
+                var sorted=th.targets.slice().sort(function(a,b){return getInvScore(b)-getInvScore(a);});
+                var activeSorted=sorted.filter(function(t){return !isInactive(t);});
+                var killedSorted=sorted.filter(function(t){return isInactive(t);});
+                var killedOpen=expTheme[th.id+"_k"];
+                var cciAngle=CCI_ANGLES[th.id];
+                // Priority → accent: High=red, Medium=amber, Low=navy
+                var convAccent=th.conviction==="High"?"tc-card-accent-red"
+                              :th.conviction==="Low"?"tc-card-accent-navy"
+                              :"tc-card-accent-amber";
+                return createElement("div",{key:th.id,className:"theme-row-wrapper "+convAccent},
+                  createElement(ThemeCard,{data:th}),
+                  createElement("div",{className:"theme-targets-panel"},
+                    createElement("div",{className:"theme-targets-hdr"},
+                      createElement("span",{style:{fontSize:9,fontWeight:700,color:"#94a3b8",letterSpacing:"1.5px",textTransform:"uppercase"}},"Pipeline Targets"),
+                      createElement("span",{style:{fontSize:9,color:"#94a3b8"}},activeSorted.length+" targets"+(killedSorted.length>0?" · "+killedSorted.length+" killed/passed":""))
+                    ),
+                    cciLens&&cciAngle&&createElement("div",{style:{
+                      padding:"9px 14px",borderBottom:"1px solid rgba(124,58,237,0.15)",
+                      background:"rgba(124,58,237,0.03)"
+                    }},
+                      createElement("div",{style:{fontSize:9,fontWeight:700,color:"#7c3aed",letterSpacing:"1px",
+                        textTransform:"uppercase",marginBottom:4}},"\u26A1 Commodity Merchant Angle"),
+                      createElement("div",{style:{fontSize:11,color:"#5b21b6",lineHeight:1.55}},cciAngle)
+                    ),
+                    cciLens&&(function(){
+                      // Surface IC chair verdict from highest-scored target with merchant intel
+                      var topTarget=activeSorted.find(function(t){return MERCHANT_INTEL[t.id]&&MERCHANT_INTEL[t.id].chair;});
+                      if(!topTarget) return null;
+                      var mi=MERCHANT_INTEL[topTarget.id];
+                      return createElement("div",{style:{
+                        padding:"9px 14px",borderBottom:"1px solid rgba(124,58,237,0.15)",
+                        background:"rgba(124,58,237,0.05)"
+                      }},
+                        createElement("div",{style:{display:"flex",alignItems:"center",gap:5,marginBottom:4}},
+                          createElement("span",{style:{fontSize:10}},"\uD83E\uDE91"),
+                          createElement("div",{style:{fontSize:9,fontWeight:700,color:"#7c3aed",letterSpacing:"1px",
+                            textTransform:"uppercase"}},"IC Chair Verdict"),
+                          createElement("span",{style:{fontSize:9,color:"#94a3b8",marginLeft:4}},
+                            "\u2014 "+topTarget.name)
+                        ),
+                        createElement("div",{style:{fontSize:11,color:"#3b0764",lineHeight:1.55,fontStyle:"italic"}},
+                          "\u201C"+(mi.chair.length>220?mi.chair.slice(0,220)+"\u2026":mi.chair)+"\u201D")
+                      );
+                    })(),
+                    activeSorted.map(function(t){return createElement(DealRow,{key:t.id,t:t,th:th});}),
+                    killedSorted.length>0&&createElement("div",{style:{borderTop:"1px solid #f1f5f9"}},
+                      createElement("div",{
+                        onClick:function(){var n=Object.assign({},expTheme);n[th.id+"_k"]=!killedOpen;setExpTheme(n);},
+                        style:{display:"flex",alignItems:"center",gap:7,padding:"5px 14px",cursor:"pointer",
+                          background:"#f8fafc",borderTop:"1px solid #f1f5f9"}},
+                        createElement("span",{style:{fontSize:9,color:"#94a3b8"}},killedOpen?"▾":"▸"),
+                        createElement("span",{style:{fontSize:10,color:"#94a3b8"}},
+                          killedSorted.length+" passed/killed")
+                      ),
+                      killedOpen&&createElement("div",{style:{opacity:0.55}},
+                        killedSorted.map(function(t){return createElement(DealRow,{key:t.id,t:t,th:th});}))
+                    )
+                    ,
+                    (function(){
+                      var msItems=origination.filter(function(item){
+                        return (item.theme_ids||[]).indexOf(th.id)>=0;
+                      });
+                      if(!msItems.length) return null;
+                      var msOpen=expTheme[th.id+"_ms"];
+                      var hasPL=msItems.some(function(i){
+                        return (i.source||"").toLowerCase().indexOf("peakload")>=0||(i.content||"").indexOf("PeakLoad")>=0;
+                      });
+                      return createElement("div",{style:{borderTop:"1px solid #e2e8f2"}},
+                        createElement("div",{
+                          onClick:function(){var n=Object.assign({},expTheme);n[th.id+"_ms"]=!msOpen;setExpTheme(n);},
+                          style:{display:"flex",alignItems:"center",gap:6,padding:"6px 14px",
+                            cursor:"pointer",background:"rgba(37,99,235,0.02)"}},
+                          createElement("span",{style:{fontSize:9,color:"#64748b"}},msOpen?"\u25BE":"\u25B8"),
+                          createElement("span",{style:{fontSize:10,color:"#64748b",fontWeight:600}},
+                            msItems.length+" market signal"+(msItems.length===1?"":"s")),
+                          hasPL&&createElement("span",{style:{fontSize:8,fontWeight:700,color:"#7c3aed",
+                            background:"rgba(124,58,237,0.08)",border:"1px solid rgba(124,58,237,0.2)",
+                            borderRadius:3,padding:"1px 5px",marginLeft:4}},"\u26A1 PeakLoad")
+                        ),
+                        msOpen&&createElement("div",{style:{padding:"4px 0 6px"}},
+                          msItems.map(function(item){
+                            var isPL=(item.source||"").toLowerCase().indexOf("peakload")>=0||(item.content||"").indexOf("PeakLoad")>=0;
+                            var sr=item.source_ref||{};
+                            var snippet=(item.content||"").slice(0,130)+((item.content||"").length>130?"\u2026":"");
+                            var cp=item.counterparty||"";
+                            return createElement("div",{key:item.id||item.content,
+                              style:{padding:"6px 14px",borderBottom:"1px solid rgba(226,232,240,0.5)",
+                                display:"flex",alignItems:"flex-start",gap:7}},
+                              isPL&&createElement("span",{style:{fontSize:8,fontWeight:700,color:"#7c3aed",
+                                background:"rgba(124,58,237,0.08)",border:"1px solid rgba(124,58,237,0.2)",
+                                borderRadius:3,padding:"1px 5px",flexShrink:0,marginTop:2}},"\u26A1"),
+                              !isPL&&sr.type&&createElement("span",{style:{fontSize:8,color:"#94a3b8",
+                                background:"#f8fafc",border:"1px solid #e2e8f2",borderRadius:3,
+                                padding:"1px 5px",flexShrink:0,marginTop:2}},sr.type),
+                              createElement("div",{style:{flex:1,minWidth:0}},
+                                cp&&createElement("span",{style:{fontSize:10,fontWeight:600,color:"#374151",marginRight:5}},cp),
+                                createElement("span",{style:{fontSize:11,color:"#64748b",lineHeight:1.45}},snippet)
+                              ),
+                              sr.date&&createElement("span",{style:{fontSize:9,color:"#94a3b8",flexShrink:0,marginTop:2}},sr.date)
+                            );
+                          })
+                        )
+                      );
+                    })()
+                  )
+                );
+              })
+        )
+  );
+}
+
+// ── Mount ─────────────────────────────────────────────────
+var root=ReactDOM.createRoot(document.getElementById("root"));
+root.render(createElement(App,null));
+})();
+</script>
+</body>
+</html>

@@ -482,10 +482,14 @@ def _load_deal_config() -> dict:
             'dealOrigination':        raw.get('dealOrigination', []),
             'capitalRaisingAdvisors': raw.get('capitalRaisingAdvisors', []),
             'prospectiveInvestors':   raw.get('prospectiveInvestors', []),
+            # investors[]: filter chips for the /deals/ dashboard. Each entry
+            # is { id, label, group, color }. See deal-config.yaml comments.
+            'investors':              raw.get('investors', []),
         }
     except Exception as e:
         print(f'[deal-config] load failed: {e}', flush=True)
-        return {'liveDeals': [], 'dealOrigination': [], 'capitalRaisingAdvisors': [], 'prospectiveInvestors': []}
+        return {'liveDeals': [], 'dealOrigination': [], 'capitalRaisingAdvisors': [],
+                'prospectiveInvestors': [], 'investors': []}
 
 # Back-compat alias — remove in next major release.
 _load_tomac_config = _load_deal_config
@@ -660,8 +664,8 @@ def _send_invite_email(name, email, username, password, tiles,
         if has_cos_setup:
             repo_lines_plain = '\n'.join(f'  • {r}' for r in github_repos)
             repo_lines_html  = ''.join(f'<li style="font-family:monospace;font-size:12px">{r}</li>' for r in github_repos)
-            ONBOARD_URL = 'https://ygontownik.github.io/Invite-Chief-of-Staff/onboard.html'
-            BOOTSTRAP_CMD = 'curl -fsSL https://ygontownik.github.io/Invite-Chief-of-Staff/bootstrap.sh | bash'
+            ONBOARD_URL = 'https://ygontownik.github.io/Dashboard/onboard.html'
+            BOOTSTRAP_CMD = 'curl -fsSL https://ygontownik.github.io/Dashboard/bootstrap.sh | bash'
             cos_plain = f"""
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 YOUR OWN DASHBOARD
@@ -831,6 +835,33 @@ try:
 except Exception as _e:
     _fc_srv = None
     _FC_CTX = {}
+
+
+def _firm_context_public(ctx: dict) -> dict:
+    """Return the safe-to-expose subset of firm_context for client-side
+    template reads (window.__FIRM_CONTEXT__). Excludes counterparty_aliases
+    (PII), draft_voice (private prompts), prompt_overrides, transcript
+    sources (folder IDs), and personal.delivery_email."""
+    if not isinstance(ctx, dict):
+        return {}
+    pr = ctx.get('principal') or {}
+    fc = ctx.get('firm') or {}
+    return {
+        'principal': {
+            'name':  pr.get('name', ''),
+            'role':  pr.get('role', ''),
+        },
+        'firm': {
+            'name':       fc.get('name', ''),
+            'short_name': fc.get('short_name', ''),
+        },
+        'team': [
+            {'name': (m or {}).get('name', ''), 'role': (m or {}).get('role', '')}
+            for m in (ctx.get('team') or [])
+        ],
+        'workstream_categories': ctx.get('workstream_categories') or {},
+        'tile_labels':           ctx.get('tile_labels') or {},
+    }
 REFRESH_SCRIPT      = str(_HERE / 'cos-dashboard-refresh.py')
 FETCH_SCRIPT        = str(_HERE / 'cos-dashboard-fetch.py')
 STATE_PATH          = _ROOT / 'data' / 'compiled' / 'dashboard-data.json'
@@ -1049,16 +1080,11 @@ def _apply_string_placeholders(html: str) -> str:
         return strings.get(key, m.group(0))
     return _STR_RE.sub(sub, html)
 
-# Short tab labels used in the topnav. Only listed here when the tile's
-# full title is too long for the nav bar. Everything else inherits the
-# tile title from dashboard-tiles.yaml so renaming a tile propagates to
-# the topnav without a code edit.
-_NAV_LABEL_OVERRIDES = {
-    # 'cos' removed 2026-05-04 — firm_context.yaml tile_labels overrides to 'HQ';
-    # keeping 'cos' here was silently overwriting that after the firm_context layer ran.
-    'tomac':    'Alt View',
-    'research': 'Research',
-}
+# _NAV_LABEL_OVERRIDES retired 2026-05-04. All tab labels now flow from
+# dashboard-tiles.yaml :: tiles[].title with optional per-tenant
+# firm_context.yaml :: tile_labels override. To shorten or relabel a tab
+# for your tenant, set tile_labels in firm_context.yaml — never touch code.
+_NAV_LABEL_OVERRIDES = {}
 
 def _topnav_html(user: str = 'owner') -> str:
     """Build topnav with tabs filtered to what the user can access."""
@@ -1073,17 +1099,27 @@ def _topnav_html(user: str = 'owner') -> str:
 
     tiles = _tiles_for(user)
     tabs = []
+    route_labels = {}
     for t in tiles:
         tid = t.get('id', '')
         url = t.get('url', '')
         if not url:
             continue
-        # Label source of truth: dashboard-tiles.yaml title. Only use the
-        # override table when a tile has no title or needs a shorter tab form.
+        # Label source of truth: dashboard-tiles.yaml title (already merged
+        # with firm_context.yaml :: tile_labels via _tiles_for). Falls back
+        # to the override table only if a tile has no resolved title.
         label = _NAV_LABEL_OVERRIDES.get(tid) or t.get('title') or tid
         tabs.append(f'<a class="tc-topnav-tab" data-path="{url}" href="{url}">{label}</a>')
+        # Build the route→label map the topnav JS uses for the breadcrumb-
+        # style "current view" badge. Uppercased to match the existing CSS.
+        route_labels[url] = (t.get('title') or tid).upper()
+    # /all is hardcoded in the topnav JS (it's the meta-route, not a tile).
+    route_labels.setdefault('/all',  'ALL VIEWS')
+    route_labels.setdefault('/all/', 'ALL VIEWS')
 
-    return template.replace('{{NAV_TABS}}', '\n    '.join(tabs))
+    out = template.replace('{{NAV_TABS}}', '\n    '.join(tabs))
+    out = out.replace('{{TOPNAV_ROUTE_LABELS_JSON}}', json.dumps(route_labels))
+    return out
 
 def _inject_shared_chrome(html: str, user: str = 'owner') -> str:
     """Ensure every served HTML page has:
@@ -1127,7 +1163,7 @@ def _inject_shared_chrome(html: str, user: str = 'owner') -> str:
     # User-state bridge: tombstones + item id helper. Loaded on every page so
     # delete-button handlers and render filters can reach it via window.*
     if 'window.__DELETIONS__' not in html:
-        script = _deletions_script()
+        script = _deletions_script(user)
         if '</head>' in html:
             html = html.replace('</head>', script + '\n</head>', 1)
         else:
@@ -1149,11 +1185,13 @@ def _page_fetched_at() -> str:
         return ''
 
 
-def _deletions_script() -> str:
+def _deletions_script(user: str = 'owner') -> str:
     """Inline <script> that exposes window.__DELETIONS__, window.__itemId,
-    window.__isDeleted, window.__deleteItem. Client-side computes stable IDs
-    as djb2(source + '|' + content[:60].trim()) so the same upstream item
-    resolves to the same ID across syncs."""
+    window.__isDeleted, window.__deleteItem, plus window.__FIRM_CONTEXT__
+    and window.__USER_ROLE__ for templates that need tenant identity.
+
+    Client-side computes stable IDs as djb2(source + '|' + content[:60].trim())
+    so the same upstream item resolves to the same ID across syncs."""
     try:
         ids = _deleted_ids()
     except Exception:
@@ -1186,6 +1224,7 @@ def _deletions_script() -> str:
         cp_aliases = _fc_srv.cp_aliases(_FC_CTX) if _fc_srv else []
     except Exception:
         cp_aliases = []
+    firm_ctx_public = _firm_context_public(_FC_CTX)
     return (
         '<script>'
         '(function(){'
@@ -1200,6 +1239,11 @@ def _deletions_script() -> str:
         # window.__TOMAC_CONFIG__. Leave for one release; remove after the
         # bundle in ~/dashboards/app/templates/* is rebuilt against __DEAL_CONFIG__.
         'window.__TOMAC_CONFIG__ = window.__DEAL_CONFIG__;'
+        # Firm identity (principal name, team, firm name) — single source for
+        # tenant-personalized strings in templates. See _firm_context_public()
+        # for the schema (counterparty_aliases / draft_voice are kept server-side).
+        'window.__FIRM_CONTEXT__ = ' + json.dumps(firm_ctx_public) + ';'
+        'window.__USER_ROLE__ = ' + json.dumps(user) + ';'
         'window.__CP_ALIASES__ = ' + json.dumps(cp_aliases) + ';'
         'window.__PAGE_FETCHED_AT__ = ' + json.dumps(_page_fetched_at()) + ';'
         'window.__DELETIONS__ = new Set(' + json.dumps(ids) + ');'
@@ -2223,6 +2267,16 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_response(404); self.end_headers()
         elif self.path.split('?')[0] in ('/tomac-cove', '/tomac-cove/'):
             self._serve_html_template(COS_DASHBOARD, user)
+        elif self.path.startswith('/api/auth-health'):
+            # Credential health — owner-only.
+            user = self._authenticate()
+            if user is None:
+                self._send_401()
+                return
+            if user != 'owner':
+                self._send_403()
+                return
+            self._serve_auth_health_json()
         elif self.path.startswith('/api/costs') or self.path.startswith('/api/health'):
             # Cost meter and health-check endpoints — owner-only.
             user = self._authenticate()
@@ -3073,6 +3127,24 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(500)
             self.end_headers()
             self.wfile.write(json.dumps({"error": str(e)}).encode())
+
+    def _serve_auth_health_json(self):
+        """GET /api/auth-health — reads ~/credentials/auth_health.json, returns JSON.
+
+        Written by _auth_watchdog.py.  Owner-only; called by the admin Auth Health tab.
+        """
+        health_path = Path.home() / 'credentials' / 'auth_health.json'
+        if not health_path.exists():
+            self.send_json(200, {
+                'error': 'auth_health.json not found — run _auth_watchdog.py to generate it',
+                'credentials': {},
+            })
+            return
+        try:
+            data = json.loads(health_path.read_text())
+            self.send_json(200, {'credentials': data})
+        except Exception as e:
+            self.send_json(500, {'error': str(e), 'credentials': {}})
 
     def _serve_health_json(self):
         """JSON: status of each LaunchAgent + last-run times. Read by Health tile."""

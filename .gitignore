@@ -29,6 +29,8 @@ YONI_CONTEXT.md
 # Ignore generated dashboard HTML but allow docs/ reference HTML
 *.html
 !docs/*.html
+# Public templates folder — committed (source HTML for all subscribers).
+!templates/*.html
 # Render artifacts (data-injected) — explicitly never committed.
 *.rendered.html
 # Clean templates (no DATA block) — these ARE committed for public repo.

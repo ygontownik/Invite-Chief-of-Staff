@@ -1,0 +1,236 @@
+<!-- Shared top navigation.
+     Included verbatim by every dashboard template.
+     Active tab is set client-side from location.pathname.
+     Brand string comes from strings.yaml :: topnav.brand (substituted at serve time).
+     Tab labels come from dashboard-tiles.yaml :: tiles[].title with optional
+     per-tenant firm_context.yaml :: tile_labels overrides.
+     Placeholders (optional, safe if left unfilled):
+       {{TOPNAV_ROUTE_LABEL}} — short courier-uppercase label for the current view
+       {{TOPNAV_TIMESTAMP}}   — e.g. "Apr 17 07:51 ET"
+       {{TOPNAV_DEAL_COUNT}}  — integer
+-->
+<nav class="tc-topnav" role="navigation" aria-label="Primary">
+  <a class="tc-topnav-brand" href="/all">
+    <span class="tc-dot"></span>
+    {{STR:topnav.brand}}
+    <span class="tc-topnav-route" data-topnav-route>{{TOPNAV_ROUTE_LABEL}}</span>
+  </a>
+  <button id="tc-mobile-sync-btn" onclick="tcSyncAll()" title="Pull fresh data"
+          aria-label="Sync"
+          style="display:none;background:#0f1e38;border:1px solid rgba(255,255,255,0.25);color:#fff;padding:6px 9px;border-radius:4px;cursor:pointer;align-items:center;justify-content:center;margin-left:auto;margin-right:10px;flex-shrink:0">
+    <svg id="tc-mobile-sync-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+  </button>
+  <div class="tc-topnav-tabs" role="tablist">
+    {{NAV_TABS}}
+  </div>
+  <div class="tc-topnav-right">
+    <span class="tc-topnav-compiled" data-topnav-compiled>
+      Compiled&nbsp;<span data-topnav-timestamp>{{TOPNAV_TIMESTAMP}}</span>
+    </span>
+    <span id="tc-fresh-badge" class="tc-topnav-chip" title="Data freshness — auto-refreshed every 2 min" style="background:rgba(34,197,94,0.18);color:#15803d;border:1px solid rgba(34,197,94,0.45);display:none;font-weight:600">
+      <span id="tc-fresh-dot" style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#15803d;margin-right:5px;vertical-align:middle"></span><span id="tc-fresh-text">Fresh</span>
+    </span>
+    <a id="tc-routines-badge" href="/admin/" class="tc-topnav-chip" title="Routines health — click to open Admin → Routines"
+       style="background:rgba(34,197,94,0.18);color:#15803d;border:1px solid rgba(34,197,94,0.45);display:none;font-weight:600;text-decoration:none">
+      <span id="tc-routines-dot" style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#15803d;margin-right:5px;vertical-align:middle"></span><span id="tc-routines-text">Routines</span>
+    </a>
+    <span><span class="tc-live-dot"></span>Live</span>
+    <span class="tc-topnav-chip" data-topnav-deals>{{TOPNAV_DEAL_COUNT}} deals</span>
+    <button id="tc-sync-btn" onclick="tcSyncAll()"
+            title="{{STR:buttons.sync_all.tooltip}}"
+            aria-label="{{STR:buttons.sync_all.aria}}"
+            style="background:#0f1e38;border:1px solid #0f1e38;color:#ffffff;font-size:10px;font-family:inherit;font-weight:600;padding:4px 11px;border-radius:4px;cursor:pointer;display:inline-flex;align-items:center;gap:5px;transition:all 0.15s;letter-spacing:0.04em">
+      <svg id="tc-sync-icon" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+      {{STR:buttons.sync_all.label}}
+      <span aria-hidden="true" style="display:inline-flex;align-items:center;justify-content:center;width:12px;height:12px;border:1px solid rgba(255,255,255,0.5);border-radius:50%;font-size:8px;color:rgba(255,255,255,0.85);font-weight:700">i</span>
+    </button>
+  </div>
+</nav>
+<style>
+  #tc-sync-btn:hover { background: #1e3a5f !important; border-color: #1e3a5f !important; }
+  #tc-sync-btn:disabled { opacity: 0.5; cursor: default; }
+  #tc-mobile-sync-btn:hover { background: #1e3a5f !important; }
+  #tc-mobile-sync-btn:disabled { opacity: 0.5; cursor: default; }
+  @keyframes tc-spin { to { transform: rotate(360deg); } }
+  #tc-sync-btn.syncing #tc-sync-icon { animation: tc-spin 0.6s linear infinite; }
+  #tc-mobile-sync-btn.syncing #tc-mobile-sync-icon { animation: tc-spin 0.6s linear infinite; }
+</style>
+<script>
+function tcSyncAll() {
+  var btn = document.getElementById('tc-sync-btn');
+  var mBtn = document.getElementById('tc-mobile-sync-btn');
+  if (btn) { btn.classList.add('syncing'); btn.disabled = true; }
+  if (mBtn) { mBtn.classList.add('syncing'); mBtn.disabled = true; }
+  fetch(''+window.location.origin+'/refresh-all', {method: 'POST'})
+    .then(function(r) { return r.json(); })
+    .then(function() { setTimeout(function() { window.location.reload(); }, 150); })
+    .catch(function() { setTimeout(function() { window.location.reload(); }, 300); });
+}
+</script>
+<script>
+(function () {
+  var path = window.location.pathname;
+  var tabs = document.querySelectorAll('.tc-topnav-tab');
+  var best = null, bestLen = -1;
+  tabs.forEach(function (t) {
+    var p = t.getAttribute('data-path');
+    if (path === p || (p !== '/' && path.indexOf(p) === 0)) {
+      if (p.length > bestLen) { best = t; bestLen = p.length; }
+    } else if (p === '/' && path === '/') {
+      if (bestLen < 1) { best = t; bestLen = 1; }
+    }
+  });
+  if (best) best.classList.add('is-active');
+
+  // Fallback route label derived from pathname if placeholder wasn't filled.
+  // The labels map is server-injected from dashboard-tiles.yaml :: tiles[]
+  // (merged with the per-tenant firm_context.yaml :: tile_labels override),
+  // so adding/renaming a tile flows here without a code edit.
+  var routeEl = document.querySelector('[data-topnav-route]');
+  if (routeEl && (!routeEl.textContent.trim() || routeEl.textContent.indexOf('{{') === 0)) {
+    var labels = {{TOPNAV_ROUTE_LABELS_JSON}};
+    routeEl.textContent = labels[path] || path.toUpperCase();
+  }
+
+  // Clean up unfilled placeholders gracefully
+  document.querySelectorAll('[data-topnav-timestamp], [data-topnav-deals]').forEach(function (el) {
+    if (el.textContent.indexOf('{{') !== -1) el.textContent = '';
+  });
+  var chip = document.querySelector('[data-topnav-deals]');
+  if (chip && !chip.textContent.trim()) chip.style.display = 'none';
+  var compiled = document.querySelector('[data-topnav-compiled]');
+  if (compiled) {
+    var ts = compiled.querySelector('[data-topnav-timestamp]');
+    if (!ts || !ts.textContent.trim()) compiled.style.display = 'none';
+  }
+
+  // Freshness heartbeat: polls /cache-status every 2 min.
+  // Shows "Fresh HH:MM" badge. If cache > 10 min old, triggers a silent warmup.
+  var FRESH_POLL_MS    = 120000;   // 2 min
+  var STALE_THRESHOLD  = 10;        // min — beyond this, auto-warmup
+  var VERY_STALE       = 30;        // min — visual stale state
+
+  function formatHM(iso) {
+    try {
+      var d = new Date(iso);
+      return d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    } catch (e) { return ''; }
+  }
+
+  function paintFreshness(ageMin, fetchedAt) {
+    var badge = document.getElementById('tc-fresh-badge');
+    var dot   = document.getElementById('tc-fresh-dot');
+    var text  = document.getElementById('tc-fresh-text');
+    if (!badge || !dot || !text) return;
+    badge.style.display = 'inline-flex';
+    var label = fetchedAt ? formatHM(fetchedAt) : '';
+    badge.style.fontWeight = '600';
+    if (ageMin == null) {
+      text.textContent = 'Refreshing…';
+      dot.style.background = '#b45309';
+      badge.style.background = 'rgba(251,191,36,0.22)';
+      badge.style.color = '#92400e';
+      badge.style.borderColor = 'rgba(180,83,9,0.5)';
+    } else if (ageMin < STALE_THRESHOLD) {
+      text.textContent = 'Fresh ' + label;
+      dot.style.background = '#15803d';
+      badge.style.background = 'rgba(34,197,94,0.18)';
+      badge.style.color = '#15803d';
+      badge.style.borderColor = 'rgba(34,197,94,0.45)';
+    } else if (ageMin < VERY_STALE) {
+      text.textContent = 'Syncing ' + label;
+      dot.style.background = '#b45309';
+      badge.style.background = 'rgba(251,191,36,0.22)';
+      badge.style.color = '#92400e';
+      badge.style.borderColor = 'rgba(180,83,9,0.5)';
+    } else {
+      text.textContent = 'Stale ' + label;
+      dot.style.background = '#b91c1c';
+      badge.style.background = 'rgba(239,68,68,0.18)';
+      badge.style.color = '#991b1b';
+      badge.style.borderColor = 'rgba(185,28,28,0.5)';
+    }
+  }
+
+  function checkFreshness() {
+    fetch(window.location.origin + '/cache-status', {cache:'no-store'})
+      .then(function(r){ return r.json(); })
+      .then(function(s){
+        // If server has newer data than what this page loaded, show a reload prompt.
+        var pageFetchedAt = (typeof window.__PAGE_FETCHED_AT__ !== 'undefined') ? window.__PAGE_FETCHED_AT__ : '';
+        if (pageFetchedAt && s.fetchedAt && s.fetchedAt !== pageFetchedAt) {
+          var badge = document.getElementById('tc-fresh-badge');
+          var dot   = document.getElementById('tc-fresh-dot');
+          var text  = document.getElementById('tc-fresh-text');
+          if (badge && dot && text) {
+            badge.style.display = 'inline-flex';
+            badge.style.cursor = 'pointer';
+            badge.title = 'New data available — click to reload';
+            badge.onclick = function() { window.location.reload(); };
+            text.textContent = '↻ Reload';
+            dot.style.background = '#1d4ed8';
+            badge.style.background = 'rgba(59,130,246,0.18)';
+            badge.style.color = '#1e40af';
+            badge.style.borderColor = 'rgba(59,130,246,0.45)';
+          }
+          return; // don't overwrite the reload prompt with a stale/fresh state
+        }
+        paintFreshness(s.ageMin, s.fetchedAt);
+        if (s.ageMin != null && s.ageMin >= STALE_THRESHOLD) {
+          // Silent warmup — doesn't block UI, results flow via SSE reload broadcast
+          fetch(window.location.origin + '/warmup', {method:'POST'}).catch(function(){});
+        }
+      })
+      .catch(function(){ /* fail quiet; try again next tick */ });
+  }
+
+  // First check immediately, then every 2 min
+  checkFreshness();
+  setInterval(checkFreshness, FRESH_POLL_MS);
+})();
+
+(function () {
+  // Routines health badge — polls /routines/health every 5 min.
+  // Badge is owner-only data (route 403s for partner). On 403 we simply
+  // hide the chip — no UI for non-owners.
+  var ROUTINES_POLL_MS = 5 * 60 * 1000;
+  function paintRoutines(h) {
+    var badge = document.getElementById('tc-routines-badge');
+    var dot   = document.getElementById('tc-routines-dot');
+    var text  = document.getElementById('tc-routines-text');
+    if (!badge || !dot || !text) return;
+    if (!h) { badge.style.display = 'none'; return; }
+    badge.style.display = 'inline-flex';
+    if ((h.failing || 0) > 0) {
+      text.textContent      = 'Routines ' + h.failing + ' failing';
+      dot.style.background  = '#b91c1c';
+      badge.style.background = 'rgba(239,68,68,0.18)';
+      badge.style.color      = '#991b1b';
+      badge.style.borderColor = 'rgba(185,28,28,0.5)';
+    } else if ((h.expected_fail || 0) > 0) {
+      text.textContent      = 'Routines ok · ' + h.expected_fail + ' tier-2';
+      dot.style.background  = '#b45309';
+      badge.style.background = 'rgba(251,191,36,0.22)';
+      badge.style.color      = '#92400e';
+      badge.style.borderColor = 'rgba(180,83,9,0.5)';
+    } else {
+      text.textContent      = 'Routines ' + (h.ok || 0) + '/' + (h.total || 0) + ' ok';
+      dot.style.background  = '#15803d';
+      badge.style.background = 'rgba(34,197,94,0.18)';
+      badge.style.color      = '#15803d';
+      badge.style.borderColor = 'rgba(34,197,94,0.45)';
+    }
+  }
+  function checkRoutines() {
+    fetch(window.location.origin + '/routines/health', {cache:'no-store'})
+      .then(function(r){
+        if (r.status === 403 || r.status === 401) { paintRoutines(null); return null; }
+        return r.ok ? r.json() : null;
+      })
+      .then(function(h){ if (h) paintRoutines(h); })
+      .catch(function(){ /* silent — try again next tick */ });
+  }
+  checkRoutines();
+  setInterval(checkRoutines, ROUTINES_POLL_MS);
+})();
+</script>
