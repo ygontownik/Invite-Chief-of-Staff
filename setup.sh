@@ -612,12 +612,14 @@ EOF
   ok "Domain bundle '$DOMAIN' copied to $CONFIG_DIR; firm_context.yaml :: domain stamped"
 fi
 
-# ── Step 3c: Market Intelligence — sectors + sources ─────────────────────────
+# ── Step 3c: Market Intelligence — sectors, email senders, websites ───────────
 echo ""
 echo "  ── Market Intelligence personalisation ──────────────────────────────"
 echo ""
+
+# 1. Sectors
 echo "  What sectors or topics does this user focus on?"
-echo "  (These drive briefing themes, source suggestions, and synthesis style.)"
+echo "  (Drives briefing themes, source suggestions, and synthesis style.)"
 echo ""
 echo "    1) Power & Utilities        — generation, transmission, grid"
 echo "    2) Digital Infrastructure   — data centers, fiber, towers"
@@ -630,7 +632,6 @@ echo ""
 echo "  Enter numbers separated by spaces (e.g. 1 2 3) or press Enter to skip:"
 read -r _SECTOR_PICKS
 
-# Map picks → sector names
 _SECTOR_LIST=""
 for _sp in $_SECTOR_PICKS; do
   case "$_sp" in
@@ -643,28 +644,15 @@ for _sp in $_SECTOR_PICKS; do
     7) _SECTOR_LIST+="Healthcare Infrastructure|" ;;
   esac
 done
-_SECTOR_LIST="${_SECTOR_LIST%|}"   # strip trailing pipe
+_SECTOR_LIST="${_SECTOR_LIST%|}"
 
 if [ -n "$_SECTOR_LIST" ]; then
-  python3 - "$_SECTOR_LIST" <<'PYEOF'
-import sys, yaml
-sectors = sys.argv[1].split("|")
-p = "YAML_PLACEHOLDER"
-y = yaml.safe_load(open(p)) or {}
-personal = y.setdefault("personal", {})
-intel = personal.setdefault("intelligence", {})
-intel["sectors"] = sectors
-yaml.safe_dump(y, open(p, "w"), sort_keys=False, default_flow_style=False, allow_unicode=True, width=100)
-PYEOF
-  # re-run inline so $YAML expands correctly
   python3 - <<PYEOF
-import sys, yaml
+import yaml
 sectors = "$_SECTOR_LIST".split("|")
 p = "$YAML"
 y = yaml.safe_load(open(p)) or {}
-personal = y.setdefault("personal", {})
-intel = personal.setdefault("intelligence", {})
-intel["sectors"] = sectors
+y.setdefault("personal", {}).setdefault("intelligence", {})["sectors"] = sectors
 yaml.safe_dump(y, open(p, "w"), sort_keys=False, default_flow_style=False, allow_unicode=True, width=100)
 PYEOF
   ok "Sectors written: $_SECTOR_LIST"
@@ -672,111 +660,54 @@ else
   info "No sectors selected — edit personal.intelligence.sectors in firm_context.yaml later."
 fi
 
-# Gmail label for forwarded newsletters / articles
+# 2. Email senders
 echo ""
-echo "  Gmail label for market intel emails (newsletters you forward or label)."
-echo "  Apply this label in Gmail to any email you want included in your morning brief."
-printf "  Label name [Market Intel]: "
-read -r _GMAIL_LABEL
-_GMAIL_LABEL="${_GMAIL_LABEL:-Market Intel}"
-python3 - <<PYEOF
-import yaml
+echo "  What email addresses send you research or newsletters?"
+echo "  Works with Gmail and Outlook — no labeling or folders required."
+echo "  Example: newsletter@rbnenergy.com, digest@bloomberg.com"
+echo ""
+printf "  Sender addresses (comma-separated, or Enter to skip): "
+read -r _SENDERS_RAW
+
+if [ -n "$_SENDERS_RAW" ]; then
+  python3 - <<PYEOF
+import yaml, re
+raw = "$_SENDERS_RAW"
+senders = [s.strip() for s in re.split(r"[,\s]+", raw) if s.strip() and "@" in s]
 p = "$YAML"
 y = yaml.safe_load(open(p)) or {}
-personal = y.setdefault("personal", {})
-intel = personal.setdefault("intelligence", {})
-intel["gmail_label"] = "$_GMAIL_LABEL"
+y.setdefault("personal", {}).setdefault("intelligence", {})["research_senders"] = senders
 yaml.safe_dump(y, open(p, "w"), sort_keys=False, default_flow_style=False, allow_unicode=True, width=100)
+print(f"  Saved {len(senders)} sender(s).")
 PYEOF
-ok "Gmail label set: '$_GMAIL_LABEL'"
-
-# Sector-filtered RSS source suggestions
-echo ""
-echo "  Suggested RSS sources based on your sectors:"
-echo "  (These are fetched automatically each morning by cos_market_fetch.py)"
-echo ""
-
-# Build source menu filtered to selected sectors
-_SOURCE_MENU=()
-_SOURCE_DATA=()
-
-_has_energy=false; _has_digital=false; _has_macro=false; _has_re=false
-for _sp in $_SECTOR_PICKS; do
-  case "$_sp" in
-    1|3) _has_energy=true ;;
-    2)   _has_digital=true ;;
-    4)   _has_re=true ;;
-    5|6) _has_macro=true ;;
-  esac
-done
-
-_IDX=1
-if $_has_energy; then
-  echo "    $_IDX) RBN Energy Daily        — natural gas / LNG market commentary"
-  _SOURCE_MENU+=("$_IDX"); _SOURCE_DATA["$_IDX"]="RBN Energy Daily|https://rbnenergy.com/feed"
-  _IDX=$((_IDX+1))
-  echo "    $_IDX) Distributed Grid        — power & grid policy (Michael Lee)"
-  _SOURCE_MENU+=("$_IDX"); _SOURCE_DATA["$_IDX"]="Distributed Grid|https://distributedgrid.substack.com/feed"
-  _IDX=$((_IDX+1))
-  echo "    $_IDX) Columbia CGEP           — energy policy research"
-  _SOURCE_MENU+=("$_IDX"); _SOURCE_DATA["$_IDX"]="Columbia CGEP|https://energypolicy.columbia.edu/feed/"
-  _IDX=$((_IDX+1))
-fi
-if $_has_digital || $_has_energy || $_has_macro; then
-  echo "    $_IDX) Doomberg                — energy finance and macro"
-  _SOURCE_MENU+=("$_IDX"); _SOURCE_DATA["$_IDX"]="Doomberg|https://doomberg.substack.com/feed"
-  _IDX=$((_IDX+1))
-fi
-if $_has_macro; then
-  echo "    $_IDX) Axios Pro: Energy       — deal and policy news"
-  _SOURCE_MENU+=("$_IDX"); _SOURCE_DATA["$_IDX"]="Axios Pro Energy|https://www.axios.com/feeds/feed.rss"
-  _IDX=$((_IDX+1))
-fi
-if $_has_re; then
-  echo "    $_IDX) The Real Deal           — CRE market news"
-  _SOURCE_MENU+=("$_IDX"); _SOURCE_DATA["$_IDX"]="The Real Deal|https://therealdeal.com/feed/"
-  _IDX=$((_IDX+1))
-fi
-echo "    $_IDX) None / skip"
-echo ""
-echo "  Enter numbers (e.g. 1 3) or press Enter to skip:"
-read -r _SOURCE_PICKS
-
-# Write selected sources to firm_context.yaml
-if [ -n "$_SOURCE_PICKS" ]; then
-  _SELECTED_SOURCES="[]"
-  for _pick in $_SOURCE_PICKS; do
-    _entry="${_SOURCE_DATA[$_pick]:-}"
-    [ -z "$_entry" ] && continue
-    _sname="${_entry%%|*}"
-    _surl="${_entry##*|}"
-    _SELECTED_SOURCES=$(python3 -c "
-import json, sys
-lst = json.loads('$_SELECTED_SOURCES')
-lst.append({'name': '$_sname', 'url': '$_surl', 'type': 'rss'})
-print(json.dumps(lst))
-")
-  done
-  if [ "$_SELECTED_SOURCES" != "[]" ]; then
-    python3 - <<PYEOF
-import json, yaml
-p = "$YAML"
-y = yaml.safe_load(open(p)) or {}
-personal = y.setdefault("personal", {})
-feeds = personal.setdefault("content_feeds", {})
-new_sources = json.loads('$_SELECTED_SOURCES')
-existing = feeds.get("blogs") or []
-names = {e["name"] for e in existing}
-for s in new_sources:
-    if s["name"] not in names:
-        existing.append(s)
-feeds["blogs"] = existing
-yaml.safe_dump(y, open(p, "w"), sort_keys=False, default_flow_style=False, allow_unicode=True, width=100)
-PYEOF
-    ok "RSS sources written to firm_context.yaml"
-  fi
+  ok "Research senders saved."
 else
-  info "No RSS sources selected — edit personal.content_feeds.blogs in firm_context.yaml to add later."
+  info "No email senders — edit personal.intelligence.research_senders in firm_context.yaml later."
+fi
+
+# 3. Websites
+echo ""
+echo "  What websites do you read for market intelligence?"
+echo "  Auto-detects RSS if available; otherwise scrapes the homepage daily."
+echo "  Example: https://rbnenergy.com, https://www.spglobal.com/commodityinsights/en"
+echo ""
+printf "  Website URLs (comma-separated, or Enter to skip): "
+read -r _WEBSITES_RAW
+
+if [ -n "$_WEBSITES_RAW" ]; then
+  python3 - <<PYEOF
+import yaml, re
+raw = "$_WEBSITES_RAW"
+sites = [s.strip() for s in re.split(r"[,\s]+", raw) if s.strip().startswith("http")]
+p = "$YAML"
+y = yaml.safe_load(open(p)) or {}
+y.setdefault("personal", {}).setdefault("intelligence", {})["websites"] = sites
+yaml.safe_dump(y, open(p, "w"), sort_keys=False, default_flow_style=False, allow_unicode=True, width=100)
+print(f"  Saved {len(sites)} website(s).")
+PYEOF
+  ok "Websites saved — will be checked daily at 6:45am."
+else
+  info "No websites — edit personal.intelligence.websites in firm_context.yaml later."
 fi
 
 # ── Step 4: Transcripts source picker (D8) ──────────────────────────────────

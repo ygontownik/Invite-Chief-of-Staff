@@ -277,10 +277,16 @@ personal:
     # "Midstream & LNG", "Real Estate", "Private Credit",
     # "Macro / Capital Markets", "Healthcare Infrastructure"
 
-    # Gmail label to watch for forwarded newsletters and articles.
-    # Apply this label in Gmail to any email you want included in your
-    # morning market brief. Leave blank to disable Gmail ingestion.
-    gmail_label: "Market Intel"
+    # Email addresses that send you research newsletters or digests.
+    # The pipeline searches your inbox (Gmail or Outlook) for emails
+    # FROM these addresses each morning — no labeling or folders required.
+    # Example: ["newsletter@rbnenergy.com", "digest@axios.com"]
+    research_senders: []
+
+    # Websites to scrape daily for market intelligence.
+    # Auto-detects RSS if available; falls back to homepage scrape.
+    # Example: ["https://rbnenergy.com", "https://www.spglobal.com/commodityinsights/en"]
+    websites: []
 
   content_feeds:
     podcasts:
