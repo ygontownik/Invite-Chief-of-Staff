@@ -1726,9 +1726,19 @@ def _routines_next_run(intervals, now=None):
 
 
 def _routines_parse_plist(name):
-    """Read a single task's plist; return schedule info."""
+    """Read a single task's plist; return schedule info + log-stem.
+
+    `log_stem`: basename of `StandardOutPath` minus the `.stdout.log` /
+    `.stderr.log` suffix, when present. Many plists historically routed
+    stdout/stderr to filenames that don't match the plist label
+    (e.g. label `morning-briefing` → `cos-personal-briefing.stdout.log`),
+    so the routines registry has to consult the plist to find the logs
+    that were actually written. Falls back to `name` when no usable
+    StandardOutPath is set.
+    """
     p = ROUTINES_LAUNCHAGENTS / f'{ROUTINES_LABEL_PREFIX}{name}.plist'
-    out = {'schedule_human': '(unknown)', 'next_run': None, 'intervals': []}
+    out = {'schedule_human': '(unknown)', 'next_run': None, 'intervals': [],
+           'log_stem': name}
     if not p.exists():
         return out
     try:
@@ -1742,6 +1752,15 @@ def _routines_parse_plist(name):
     out['intervals']      = intervals
     out['schedule_human'] = _routines_human_schedule(intervals)
     out['next_run']       = _routines_next_run(intervals)
+    stdout_path = d.get('StandardOutPath') or ''
+    if stdout_path:
+        bn = Path(stdout_path).name
+        for suffix in ('.stdout.log', '.run.log', '.stderr.log', '.log'):
+            if bn.endswith(suffix):
+                bn = bn[:-len(suffix)]
+                break
+        if bn:
+            out['log_stem'] = bn
     return out
 
 
@@ -1814,8 +1833,12 @@ def _routines_data():
     out = []
     for name in tasks:
         meta = _routines_parse_plist(name)
-        run_log = ROUTINES_LOG_DIR / f'{name}.run.log'
-        std_log = ROUTINES_LOG_DIR / f'{name}.stdout.log'
+        # Use the log-stem from the plist's StandardOutPath, NOT the task name —
+        # historical plists wrote logs under different filenames than the task
+        # label (see _routines_parse_plist docstring).
+        stem = meta.get('log_stem') or name
+        run_log = ROUTINES_LOG_DIR / f'{stem}.run.log'
+        std_log = ROUTINES_LOG_DIR / f'{stem}.stdout.log'
         text = _routines_tail_log(run_log) or _routines_tail_log(std_log)
         runs = _routines_parse_runs(text)
         last = runs[-1] if runs else None
@@ -1837,9 +1860,9 @@ def _routines_data():
             'status':            _routines_status_for(name, last),
             'skill_path':        str(ROUTINES_SKILL_DIR / name / 'SKILL.md'),
             'log_paths': {
-                'stdout': str(ROUTINES_LOG_DIR / f'{name}.stdout.log'),
-                'stderr': str(ROUTINES_LOG_DIR / f'{name}.stderr.log'),
-                'run':    str(ROUTINES_LOG_DIR / f'{name}.run.log'),
+                'stdout': str(ROUTINES_LOG_DIR / f'{stem}.stdout.log'),
+                'stderr': str(ROUTINES_LOG_DIR / f'{stem}.stderr.log'),
+                'run':    str(ROUTINES_LOG_DIR / f'{stem}.run.log'),
             },
         }
         out.append(item)
@@ -1859,8 +1882,11 @@ def _routines_health():
     runs_24h = ok_24h = failed_t1_24h = failed_t2_24h = 0
     failures = []
     for d in data:
-        run_log = ROUTINES_LOG_DIR / f"{d['task']}.run.log"
-        std_log = ROUTINES_LOG_DIR / f"{d['task']}.stdout.log"
+        # _routines_data populates log_paths from the plist's actual stem;
+        # reuse those rather than rebuilding from the task name (which would
+        # miss the renamed-plist case).
+        run_log = Path(d['log_paths']['run'])
+        std_log = Path(d['log_paths']['stdout'])
         text = _routines_tail_log(run_log) or _routines_tail_log(std_log)
         for r in _routines_parse_runs(text, max_runs=50):
             try:
@@ -3469,7 +3495,11 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, TypeError):
             lines = 200
         lines = max(1, min(lines, 2000))
-        log_path = ROUTINES_LOG_DIR / f'{task}.{log_type}.log'
+        # Resolve to the plist's actual log stem, since historical plists wrote
+        # to filenames different from their task labels.
+        meta = _routines_parse_plist(task)
+        stem = meta.get('log_stem') or task
+        log_path = ROUTINES_LOG_DIR / f'{stem}.{log_type}.log'
         text = _routines_tail_log(log_path, max_bytes=512 * 1024)
         tail = '\n'.join(text.splitlines()[-lines:])
         payload = tail.encode('utf-8')

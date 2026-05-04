@@ -741,7 +741,25 @@ Previously `_is_localhost()` returned True only for `127.0.0.1`/`::1`/`localhost
 
 ## TOPIC — ROUTINES OBSERVABILITY
 
-### 2026-05-04 — Routines page reports `never_run` for everything; observability gap to investigate
+### 2026-05-04 — `/routines` log-stem must come from the plist's `StandardOutPath`, not the task name [SUPERSEDES the same-date "investigate" entry below]
+
+**Resolved this session.** The previous "Routines page reports never_run for everything" investigation produced a fix: `_routines_data` and `_routines_health` now read log files at the path the plist actually writes to, rather than assuming `<task>.run.log` matches the task name.
+
+**Bug pattern**: 14 of 15 plists historically routed `StandardOutPath` to a filename different from their plist label — e.g. label `morning-briefing` writes to `cos-personal-briefing.stdout.log`; label `weekly-summary-email` writes to `sunday-weekly-email.stdout.log`. Renaming the registry without renaming the plist log paths left the dashboard's routines surface blind to every successful run, reporting uniform `never_run`.
+
+**Fix shipped**:
+- `_routines_parse_plist` now extracts `StandardOutPath`, derives `log_stem` (basename minus `.stdout.log` / `.run.log` / `.stderr.log` / `.log` suffix), and returns it in the meta dict.
+- `_routines_data` reads logs at `<log_stem>.{run,stdout,stderr}.log` and exposes those exact paths in `log_paths`.
+- `_routines_health` reuses `log_paths` from `_routines_data` instead of rebuilding from task names.
+- `_handle_routines_log` (the per-task log tail endpoint) also resolves through the stem.
+
+**Rule**: any new plist that lands in `~/Library/LaunchAgents/com.yoni.claude-task.<task>.plist` SHOULD use `StandardOutPath = ~/dashboards/logs/claude-tasks/<task>.stdout.log` — the task-name-matched canonical path. Existing plists with mismatched stems are tolerated via the stem lookup. If you create a new plist, follow the canonical convention so the stem table can eventually be retired.
+
+**Sub-finding (unfixed)**: only 12 of 15 plists were loaded in launchctl at session start — `inbox-capture`, `morning-briefing`, `podcast-processing` were missing. Loaded all three via `launchctl bootstrap gui/$UID <plist>`. Going forward, a routines health-check should fail loudly when a plist exists on disk but is not loaded — silent missing = silent broken pipeline.
+
+**Sub-finding (unfixed, separate)**: most last-runs were May 1; today is May 4. Weekday-scheduled tasks did not catch up after Mac wake. macOS launchd doesn't run missed `StartCalendarInterval` events on wake. If routines must catch up after sleep, switch to `StartInterval` or add a wake-time `RunAtLoad` reconciliation script. Captured here for the next session.
+
+### 2026-05-04 [SUPERSEDED] — Routines page reports `never_run` for everything; observability gap to investigate
 
 `GET /routines` returned 15 routines all with `status: "never_run"`, `last_run: None`. `launchctl list | grep com.yoni.claude-task` shows 12 agents loaded (never executed); 3 are missing from launchd entirely (`inbox-capture`, `morning-briefing`, `podcast-processing`). Inconsistent with observed reality (`dashboard-data.json` IS regenerating; daily briefing has fresh content).
 
