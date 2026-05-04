@@ -231,6 +231,14 @@ RULES:
 
 # ── Claude call via cached_client ─────────────────────────────────────────────
 
+def _load_system_prompt() -> str:
+    """Load the static system prompt from system_prompt_v1.md."""
+    p = _HERE / "_subscription" / "system_prompt_v1.md"
+    if p.exists():
+        return p.read_text(encoding="utf-8")
+    return "You are a chief of staff for a senior infrastructure private equity professional."
+
+
 def call_claude(format_prompt: str, source_content: str,
                 auth_mode: str = None, tenant: str = "tomac") -> str:
     if auth_mode == "subscription":
@@ -238,7 +246,7 @@ def call_claude(format_prompt: str, source_content: str,
         user_message = f"{format_prompt}\n\n{source_content}" if source_content else format_prompt
         result = mr.call_claude(
             task_type="cos-personal-briefing",
-            system=_SYSTEM,
+            system=_load_system_prompt(),
             messages=[{"role": "user", "content": user_message}],
             mode="subscription",
             tenant=tenant,
