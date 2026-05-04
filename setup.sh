@@ -869,6 +869,65 @@ else
   fi
 fi
 
+# ── Step 6d: Synthetic ~/dashboards/ tree (subscriber path-bridge) ──────────
+# The dashboard server hardcodes the legacy `~/dashboards/` layout for
+# `_HERE.parent.parent / 'data'`, `... / 'config'`, and a few
+# `Path.home() / 'dashboards' / ...` literals. To avoid a refactor across
+# ~24 server callsites, we create a synthetic ~/dashboards/ tree of
+# symlinks pointing at the tenant's actual dirs. The server reads through
+# the symlinks; it never knows it's a synthetic tree.
+#
+# Idempotent: if a target path already exists as a real dir/file (Yoni's
+# legacy install), skip. If it exists as the correct symlink, skip. If it
+# points elsewhere, warn and leave alone — never clobber.
+step "[6d/8] Synthetic ~/dashboards/ tree (subscriber path-bridge)"
+
+DASH_TREE="$HOME/dashboards"
+
+ensure_link() {
+  # ensure_link <link-path> <symlink-target>
+  # Compares canonical (resolved) paths so a relative-form and absolute-form
+  # symlink to the same file are treated as equivalent.
+  local link="$1"
+  local target="$2"
+  if [ -L "$link" ]; then
+    local existing target_canon
+    existing="$(python3 -c "import os,sys;print(os.path.realpath(sys.argv[1]))" "$link" 2>/dev/null)"
+    target_canon="$(python3 -c "import os,sys;print(os.path.realpath(sys.argv[1]))" "$target" 2>/dev/null)"
+    if [ "$existing" = "$target_canon" ]; then
+      ok "symlink ok: ${link/#$HOME/~}"
+    else
+      warn "symlink ${link/#$HOME/~} resolves to $existing (expected $target_canon) — leaving as-is"
+    fi
+  elif [ -e "$link" ]; then
+    info "skip ${link/#$HOME/~} — real path exists (likely owner of legacy ~/dashboards/ tree)"
+  else
+    mkdir -p "$(dirname "$link")"
+    ln -s "$target" "$link" && ok "linked ${link/#$HOME/~} -> ${target/#$HOME/~}"
+  fi
+}
+
+mkdir -p "$DASH_TREE/app"
+
+# Server invocation path — what the LaunchAgent fires.
+ensure_link "$DASH_TREE/app/cos-dashboard-server.py"  "$REPO/cos-dashboard-server.py"
+ensure_link "$DASH_TREE/app/cos-dashboard-refresh.py" "$REPO/cos-dashboard-refresh.py"
+ensure_link "$DASH_TREE/app/cos-dashboard-fetch.py"   "$REPO/cos-dashboard-fetch.py"
+ensure_link "$DASH_TREE/app/deal-dashboard-refresh.py" "$REPO/deal-dashboard-refresh.py"
+
+# UI assets (live in the public repo).
+ensure_link "$DASH_TREE/app/templates" "$REPO/templates"
+ensure_link "$DASH_TREE/app/static"    "$REPO/static"
+
+# Tenant data + logs (created by setup.sh in this run).
+ensure_link "$DASH_TREE/data" "$DATA_DIR"
+ensure_link "$DASH_TREE/logs" "$LOG_DIR"
+
+# Tenant config (separate private git repo, populated above in Step 3).
+ensure_link "$DASH_TREE/config" "$CONFIG_DIR/config"
+
+ok "Synthetic ~/dashboards/ tree ready — server can resolve all legacy paths."
+
 # ── Step 7: SKILL copy (D9) + LaunchAgents ──────────────────────────────────
 step "[7/8] Claude Code SKILLs + LaunchAgents"
 
