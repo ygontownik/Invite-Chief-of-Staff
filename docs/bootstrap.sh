@@ -1,10 +1,10 @@
 #!/bin/bash
 # bootstrap.sh — One-command TCIP installer for new teams.
 #
-# Served from: https://ygontownik.github.io/Dashboard/bootstrap.sh
+# Served from: https://ygontownik.github.io/Invite-Chief-of-Staff/bootstrap.sh
 #
 # Usage (copy this one line into Terminal):
-#   curl -fsSL https://ygontownik.github.io/Dashboard/bootstrap.sh | bash
+#   curl -fsSL https://ygontownik.github.io/Invite-Chief-of-Staff/bootstrap.sh | bash
 #
 # What this does:
 #   1. Checks dependencies (git, python3 ≥3.10, node optional)
@@ -26,7 +26,7 @@ warn() { echo -e "${Y}  !${RESET} $1"; }
 info() { echo -e "${B}  →${RESET} $1"; }
 die()  { echo -e "${R}ABORT:${RESET} $1" >&2; exit 1; }
 
-REPO_URL="https://github.com/ygontownik/Dashboard.git"
+REPO_URL="https://github.com/ygontownik/Invite-Chief-of-Staff.git"
 DEST="$HOME/cos-pipeline"
 SHARED_KEYS_URL=""   # set via --shared-keys=<url> for admin-managed key distribution
 GH_TOKEN=""
@@ -98,7 +98,7 @@ else
   echo ""
 
   GH_TOKEN="$GH_TOKEN"
-  CLONE_URL="https://${GH_USER}:${GH_TOKEN}@github.com/ygontownik/Dashboard.git"
+  CLONE_URL="https://${GH_USER}:${GH_TOKEN}@github.com/ygontownik/Invite-Chief-of-Staff.git"
   info "Cloning pipeline repo → ~/cos-pipeline ..."
   if git clone "$CLONE_URL" "$DEST" 2>&1 | grep -v "Cloning\|remote:\|Receiving\|Resolving\|Unpacking" || true; then
     [ -d "$DEST/.git" ] && ok "Cloned → $DEST" || die "git clone failed — check your token and try again"

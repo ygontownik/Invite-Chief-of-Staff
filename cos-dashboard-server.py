@@ -597,7 +597,41 @@ def _gen_password(length=16):
 
 # ── Gmail invite ───────────────────────────────────────────────────────────────
 
-def _send_invite_email(name, email, username, password, tiles):
+def _grant_github_access(github_handle: str, role: str) -> tuple[bool, list]:
+    """Run gh repo add-collaborator for the repos appropriate to this role.
+    Returns (all_succeeded, list_of_repos_granted)."""
+    REPO_MAP = {
+        'tc_team':    [
+            ('ygontownik/Read-Tomac-Deal-Pipeline', 'read'),
+            ('ygontownik/Invite-Chief-of-Staff',    'read'),
+        ],
+        'subscriber': [
+            ('ygontownik/Invite-Chief-of-Staff',    'read'),
+        ],
+        'viewer': [],
+    }
+    to_grant = REPO_MAP.get(role, [])
+    if not to_grant or not github_handle.strip():
+        return True, []
+    granted, failed = [], []
+    for repo, permission in to_grant:
+        r = subprocess.run(
+            ['gh', 'repo', 'add-collaborator', repo, github_handle.strip(),
+             '--permission', permission],
+            capture_output=True, text=True
+        )
+        if r.returncode == 0:
+            granted.append(repo)
+            print(f'[admin] GitHub: added {github_handle} → {repo} ({permission})', flush=True)
+        else:
+            failed.append(repo)
+            print(f'[admin] GitHub: FAILED {github_handle} → {repo}: {r.stderr.strip()}', flush=True)
+    return len(failed) == 0, granted
+
+
+def _send_invite_email(name, email, username, password, tiles,
+                       role: str = 'viewer', github_handle: str = '',
+                       github_repos: list | None = None):
     try:
         from google.auth.transport.requests import Request
         from google.oauth2.credentials import Credentials
@@ -612,11 +646,65 @@ def _send_invite_email(name, email, username, password, tiles):
             creds.refresh(Request())
             GMAIL_TOKEN.write_text(creds.to_json())
 
+        github_repos = github_repos or []
         tile_list_plain = '\n'.join(f'  • {t.get("title", t.get("id",""))}' for t in tiles)
         tile_list_html  = ''.join(f'<li>{t.get("title", t.get("id",""))}</li>' for t in tiles)
         url = f'http://{DASHBOARD_HOST}:7777/all'
+        first = name.split()[0]
 
-        plain = f"""Hi {name.split()[0]},
+        # COS setup section — only for roles that get the framework
+        has_cos_setup = role in ('tc_team', 'subscriber') and github_repos
+        instance_slug = first.lower()
+        cos_plain = ''
+        cos_html  = ''
+        if has_cos_setup:
+            repo_lines_plain = '\n'.join(f'  • {r}' for r in github_repos)
+            repo_lines_html  = ''.join(f'<li style="font-family:monospace;font-size:12px">{r}</li>' for r in github_repos)
+            ONBOARD_URL = 'https://ygontownik.github.io/Invite-Chief-of-Staff/onboard.html'
+            BOOTSTRAP_CMD = 'curl -fsSL https://ygontownik.github.io/Invite-Chief-of-Staff/bootstrap.sh | bash'
+            cos_plain = f"""
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+YOUR OWN DASHBOARD (COS SETUP)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Full setup guide: {ONBOARD_URL}
+
+You've been added to these GitHub repos:
+{repo_lines_plain}
+
+Setup takes ~10 minutes — one command does everything:
+
+  1. Accept the GitHub invite (check your email from GitHub)
+  2. Open Terminal and run:
+       {BOOTSTRAP_CMD}
+     The installer will:
+       • Ask for your GitHub token → clones the repo automatically
+       • Open Anthropic console → paste your API key
+       • Set your dashboard username + password (save these)
+       • Wait for gdrive_credentials.json (Yoni will send separately)
+       • Open Google sign-in → click Allow
+       • Launch your dashboard at http://localhost:7777
+
+Note: macOS will ask "allow access to keychain?" during setup — click Always Allow each time.
+"""
+            cos_html = f"""
+<div style="border-top:1px solid #ddd8cf;padding-top:18px;margin-top:4px">
+  <div style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#8c8378;margin-bottom:10px">Your own dashboard (COS setup)</div>
+  <p style="font-size:13px;margin:0 0 12px">Full step-by-step guide: <a href="{ONBOARD_URL}" style="color:#1b2d45;font-weight:600">{ONBOARD_URL}</a></p>
+  <p style="font-size:13px;margin:0 0 10px">You've been added to these GitHub repos:</p>
+  <ul style="margin:0 0 14px;padding-left:18px">{repo_lines_html}</ul>
+  <p style="font-size:13px;margin:0 0 8px">Setup takes ~10 minutes — one command does everything:</p>
+  <ol style="margin:0 0 12px;padding-left:18px;font-size:13px;color:#333">
+    <li>Accept the GitHub invite (check email from GitHub)</li>
+    <li>Open Terminal and run:<br>
+        <code style="background:#f0ece4;padding:3px 6px;border-radius:3px;font-size:12px;display:inline-block;margin-top:4px">{BOOTSTRAP_CMD}</code></li>
+    <li>The installer will open Anthropic console, ask for your API key, set your dashboard login, wait for <code style="background:#f0ece4;padding:1px 4px;border-radius:3px">gdrive_credentials.json</code> from Yoni, and launch your dashboard.</li>
+  </ol>
+  <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:10px 14px;font-size:12px;color:#92400e">
+    <strong>macOS keychain:</strong> If macOS asks "allow access to keychain?" during setup — click <strong>Always Allow</strong> each time. This lets background tasks read your API keys without prompting.
+  </div>
+</div>"""
+
+        plain = f"""Hi {first},
 
 You've been given access to the Tomac Cove dashboard.
 
@@ -631,31 +719,20 @@ You have access to:
 {tile_list_plain}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-SETUP — ONE-TIME STEP REQUIRED
+DASHBOARD ACCESS — ONE-TIME STEP
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-The dashboard runs on a private server. To access it from anywhere
-(laptop or iPhone), you need to install Tailscale first.
+The dashboard runs on a private server. To reach it from anywhere,
+install Tailscale first, then let Yoni know your Tailscale email.
 
-  Laptop (Mac or Windows):
-    1. Go to https://tailscale.com/download
-    2. Install and sign in with your email
-    3. Let Yoni know your Tailscale email so he can add you to the network
-    4. Once added, open {url} in your browser and log in
-
-  iPhone:
-    1. Install Tailscale from the App Store (free)
-    2. Sign in with the same email
-    3. Make sure VPN is connected (toggle in the app)
-    4. Open {url} in Safari and log in
-
-  On the same WiFi as Yoni's Mac Mini:
-    No Tailscale needed — the URL above works directly.
-
+  Laptop: https://tailscale.com/download — install, sign in, tell Yoni
+  iPhone: Tailscale from the App Store — sign in with the same email
+  Same WiFi: No Tailscale needed — the URL above works directly.
+{cos_plain}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-If you have any trouble, reply to this email.
+Questions? Reply to this email.
 """
         html = f"""<div style="font-family:-apple-system,sans-serif;max-width:560px;color:#1a1a1a;line-height:1.5">
-<p>Hi {name.split()[0]},</p>
+<p>Hi {first},</p>
 <p>You've been given access to the Tomac Cove dashboard.</p>
 
 <div style="background:#f5f1eb;border-radius:8px;padding:18px 20px;margin:18px 0">
@@ -698,14 +775,15 @@ If you have any trouble, reply to this email.
 
   <p style="font-size:13px;color:#666;margin:0"><em>On the same WiFi as Yoni's Mac Mini? No Tailscale needed — the URL works directly.</em></p>
 </div>
-
+{cos_html}
 <p style="font-size:13px;color:#666;margin-top:20px">Questions? Reply to this email.</p>
 </div>"""
 
+        subject = 'Dashboard access + setup instructions' if has_cos_setup else 'Dashboard access'
         msg = MIMEMultipart('alternative')
         msg['To']      = email
         msg['From']    = NOTIFY_EMAIL
-        msg['Subject'] = 'Dashboard access'
+        msg['Subject'] = subject
         msg.attach(MIMEText(plain, 'plain', 'utf-8'))
         msg.attach(MIMEText(html,  'html',  'utf-8'))
         raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
@@ -967,7 +1045,8 @@ def _apply_string_placeholders(html: str) -> str:
 # tile title from dashboard-tiles.yaml so renaming a tile propagates to
 # the topnav without a code edit.
 _NAV_LABEL_OVERRIDES = {
-    'cos':      'Status',
+    # 'cos' removed 2026-05-04 — firm_context.yaml tile_labels overrides to 'HQ';
+    # keeping 'cos' here was silently overwriting that after the firm_context layer ran.
     'tomac':    'Alt View',
     'research': 'Research',
 }
@@ -2514,11 +2593,27 @@ class Handler(BaseHTTPRequestHandler):
                 current_tiles_json   = json.dumps(utiles)
                 current_tabaccess_json = json.dumps(utab_access)
                 access_cell = tile_tags + subtab_tags or '<span style="color:var(--ink-ghost)">none</span>'
+                # Role badge
+                role_val = u.get('role', 'viewer')
+                role_colors = {
+                    'tc_team':    ('background:#e8eef8;color:#1a3d7c', 'TC Team'),
+                    'subscriber': ('background:#e8f4e8;color:#2a6b2a', 'Subscriber'),
+                    'viewer':     ('background:#f0f0f0;color:#555',    'Viewer'),
+                }
+                role_style, role_label = role_colors.get(role_val, role_colors['viewer'])
+                role_badge = f'<span style="{role_style};padding:2px 7px;border-radius:3px;font-size:.72rem;font-weight:700">{role_label}</span>'
+                # GitHub cell
+                gh = u.get('github_handle', '')
+                gh_cell = (f'<a href="https://github.com/{gh}" target="_blank" '
+                           f'style="font-family:var(--font-data);font-size:.8rem;color:var(--navy)">@{gh}</a>'
+                           if gh else '<span style="color:var(--ink-ghost);font-size:.8rem">—</span>')
                 rows += (
                     f'<tr>'
                     f'<td><div class="adm-user-name">{u.get("name","")}</div>'
                     f'    <div class="adm-user-email">{u.get("email","")}</div></td>'
                     f'<td><span class="adm-user-un">{uname}</span></td>'
+                    f'<td>{role_badge}</td>'
+                    f'<td>{gh_cell}</td>'
                     f'<td><div class="adm-tags">{access_cell}</div></td>'
                     f'<td><div class="adm-actions">'
                     f'  <button class="btn-edit" data-edit-username="{uname}" '
@@ -2533,12 +2628,12 @@ class Handler(BaseHTTPRequestHandler):
                     f'</div></td>'
                     f'</tr>'
                     f'<tr class="adm-edit-row" id="edit-{uname}">'
-                    f'  <td colspan="4"><div class="adm-edit-cell"></div></td>'
+                    f'  <td colspan="6"><div class="adm-edit-cell"></div></td>'
                     f'</tr>'
                 )
             table = rows
         else:
-            table = f'<tr><td colspan="4"><div class="adm-empty">No users yet. Invite someone above.</div></td></tr>'
+            table = f'<tr><td colspan="6"><div class="adm-empty">No users yet. Invite someone above.</div></td></tr>'
 
         flash_html = ''
         if flash:
@@ -3415,11 +3510,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def _handle_admin_invite(self):
         form = self._parse_form()
-        name  = (form.get('name')  or '').strip()
-        email = (form.get('email') or '').strip()
+        name          = (form.get('name')          or '').strip()
+        email         = (form.get('email')         or '').strip()
+        github_handle = (form.get('github_handle') or '').strip().lstrip('@')
+        role          = (form.get('role')          or 'viewer').strip()
         tiles = form.get('tile') or []
         if isinstance(tiles, str): tiles = [tiles]
-        # tab_access: values like "briefing:deal" → {briefing: [deal, ...]}
         raw_tab_access = form.get('tab_access') or []
         if isinstance(raw_tab_access, str): raw_tab_access = [raw_tab_access]
         tab_access = {}
@@ -3435,26 +3531,43 @@ class Handler(BaseHTTPRequestHandler):
         username = _gen_username(name)
         password = _gen_password()
         user_record = {
-            'username':   username,
-            'password':   password,
-            'name':       name,
-            'email':      email,
-            'tiles':      tiles,
-            'tab_access': tab_access,
-            'created_at': datetime.utcnow().isoformat() + 'Z',
+            'username':      username,
+            'password':      password,
+            'name':          name,
+            'email':         email,
+            'tiles':         tiles,
+            'tab_access':    tab_access,
+            'role':          role,
+            'github_handle': github_handle,
+            'created_at':    datetime.utcnow().isoformat() + 'Z',
         }
         users = _load_users()
         users.append(user_record)
         _save_users(users)
 
+        # Grant GitHub access
+        github_ok, github_repos = True, []
+        if github_handle and role != 'viewer':
+            github_ok, github_repos = _grant_github_access(github_handle, role)
+
         # Resolve tile objects for email
         all_tiles = _load_tiles()
         granted_tiles = [t for t in all_tiles if (t.get('url') or '') in tiles]
-        sent = _send_invite_email(name, email, username, password, granted_tiles)
-        msg = (f'{name} invited. Credentials emailed to {email}.'
-               if sent else
-               f'{name} added (username: {username} / password: {password}). Email failed — share manually.')
-        self._redirect_admin(('ok', msg))
+        sent = _send_invite_email(name, email, username, password, granted_tiles,
+                                  role=role, github_handle=github_handle,
+                                  github_repos=github_repos)
+
+        status_parts = [f'{name} invited.']
+        if sent:
+            status_parts.append(f'Email sent to {email}.')
+        else:
+            status_parts.append(f'Email failed — share manually: {username} / {password}.')
+        if github_handle and role != 'viewer':
+            if github_ok:
+                status_parts.append(f'GitHub: added @{github_handle} to {len(github_repos)} repo(s).')
+            else:
+                status_parts.append(f'GitHub: some repo grants failed — check server log.')
+        self._redirect_admin(('ok', ' '.join(status_parts)))
 
     def _handle_admin_update(self):
         form = self._parse_form()

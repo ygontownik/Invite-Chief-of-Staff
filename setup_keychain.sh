@@ -87,11 +87,19 @@ prompt_and_store() {
     return
   fi
 
+  # -T flags pre-authorise these binaries to read the item without a macOS
+  # "allow access?" dialog — critical for LaunchAgent daemons that have no UI.
   security add-generic-password \
     -s "$SERVICE_PREFIX/$key" \
     -a "$USER_ACCOUNT" \
     -w "$value" \
-    -U  # update if exists
+    -U \
+    -T /usr/bin/security \
+    -T /bin/bash \
+    -T /bin/zsh \
+    -T /usr/bin/python3 \
+    -T /opt/homebrew/bin/python3 \
+    -T /usr/local/bin/python3
 
   echo "    ✓ Stored"
   echo ""
