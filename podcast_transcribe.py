@@ -376,10 +376,25 @@ def generate_memo(show: str, title: str,
     """
     Returns (full_memo, one_sentence_summary).
     Parses the ONE-SENTENCE SUMMARY section out of the memo.
+
+    MIGRATED: now routes through `_subscription.cached_client.complete`,
+    which sends the static-core system prompt (sections 1-5 + Tomac bundle)
+    as cached `system=` blocks. MEMO_PREAMBLE moves into `user_query`
+    because its plain-text formatting + section-heading rules are
+    podcast-specific and not part of the universal core. The transcript
+    becomes `source_content`.
     """
     if not ANTHROPIC_API_KEY:
         fallback = "(memo skipped — ANTHROPIC_API_KEY not set)"
         return fallback, "No summary available."
+
+    # Import cached_client lazily so callers without the sandbox installed
+    # still load this module (matches lazy-import pattern used elsewhere).
+    sys.path.insert(0, str(Path(__file__).resolve().parent / "_subscription"))
+    try:
+        from cached_client import complete
+    finally:
+        pass  # leave path mod in place for module lifetime
 
     date_str = pub_date.strftime("%Y-%m-%d") if pub_date else "unknown"
     dynamic  = MEMO_DYNAMIC_TEMPLATE.format(
@@ -387,34 +402,25 @@ def generate_memo(show: str, title: str,
         transcript=transcript_text[:40000],
     )
 
-    headers = {
-        "x-api-key":           ANTHROPIC_API_KEY,
-        "anthropic-version":   "2023-06-01",
-        "anthropic-beta":      "prompt-caching-2024-07-31",
-        "content-type":        "application/json",
-    }
-    body = {
-        "model":      "claude-sonnet-4-6",
-        "max_tokens": 2048,
-        "messages":   [{
-            "role": "user",
-            "content": [
-                {"type": "text", "text": MEMO_PREAMBLE,
-                 "cache_control": {"type": "ephemeral"}},
-                {"type": "text", "text": dynamic},
-            ],
-        }],
-    }
-
     try:
-        r = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers=headers, json=body, timeout=90,
+        result = complete(
+            user_query=MEMO_PREAMBLE,
+            source_content=dynamic,
+            tenant_bundle="",  # bundle is baked into system_prompt_v1.md; arg ignored
+            model="claude-sonnet-4-6",
+            max_tokens=2048,
         )
-        r.raise_for_status()
-        resp_json = r.json()
-        log_usage("podcast_transcribe", body["model"], resp_json)
-        full_memo = clean_memo(resp_json["content"][0]["text"].strip())
+        # Adapt cached_client's return to the shape log_usage expects.
+        usage = result["usage"]
+        log_usage("podcast_transcribe", "claude-sonnet-4-6", {
+            "usage": {
+                "input_tokens":                getattr(usage, "input_tokens", 0),
+                "output_tokens":               getattr(usage, "output_tokens", 0),
+                "cache_read_input_tokens":     getattr(usage, "cache_read_input_tokens", 0),
+                "cache_creation_input_tokens": getattr(usage, "cache_creation_input_tokens", 0),
+            }
+        })
+        full_memo = clean_memo(result["text"].strip())
     except Exception as e:
         fallback = f"(memo generation failed: {e})"
         return fallback, "Summary unavailable."
