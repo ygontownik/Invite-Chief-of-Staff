@@ -458,7 +458,7 @@
     <div class="cell">
       <div class="card c-drive">
         <strong>Action items → Follow-ups Doc</strong>
-        <span>Tagged with your name as owner. Mark and Nik's emails go to the same doc tagged with their names.</span>
+        <span>Tagged with your name as owner. Other team members' emails go to the same doc tagged with their names.</span>
       </div>
       <div class="card c-drive">
         <strong>Deal threads → Pipeline Doc</strong>
@@ -969,17 +969,17 @@
     </div>
 
     <div style="display:grid;grid-template-columns:180px 120px 1fr 1fr;padding:12px 16px;gap:16px;border-top:1px solid #f0ede8;font-size:12px;align-items:start;">
-      <div><strong>Otter AI</strong><div style="font-size:11px;color:#888;">via Drive sync + Zapier</div></div>
-      <div><span style="background:#fce4ec;color:#c62828;padding:2px 8px;border-radius:4px;font-weight:600;font-size:11px;">Up to ~18 hrs ✗</span></div>
-      <div>Three delays stack: (1) Otter transcribes your audio — 10–30 min. (2) Zapier detects the new file and uploads to Drive — near-instant. (3) The daily backfill fires at 7:22am — so a 3pm call waits until the next morning.</div>
-      <div>Use the desktop recorder for calls where you need action items same-day. Or manually trigger: <code>python3 cos_otter_backfill.py</code> after Otter finishes.</div>
+      <div><strong>Otter AI</strong><div style="font-size:11px;color:#888;">Apps Script watcher + Drive sync</div></div>
+      <div><span style="background:#e8f5e9;color:#2e7d32;padding:2px 8px;border-radius:4px;font-weight:600;font-size:11px;">~15 min ✓</span></div>
+      <div>A Google Apps Script polls the Otter Drive folders every 1 minute and fires a webhook the moment a new transcript appears, which runs <code>cos_otter_backfill.py</code> immediately. Typical end-to-end: 10–30 min after the call ends, dominated by Otter's own transcription time (not the pipeline). A daily 7:22am backfill catches anything the webhook missed.</div>
+      <div>Use the desktop recorder if you need action items <em>during</em> the call. Otherwise no action — the watcher handles it.</div>
     </div>
 
     <div style="display:grid;grid-template-columns:180px 120px 1fr 1fr;padding:12px 16px;gap:16px;border-top:1px solid #f0ede8;font-size:12px;align-items:start;">
-      <div><strong>Beside AI / Fireflies / other</strong><div style="font-size:11px;color:#888;">via Drive sync</div></div>
-      <div><span style="background:#fce4ec;color:#c62828;padding:2px 8px;border-radius:4px;font-weight:600;font-size:11px;">Up to ~18 hrs ✗</span></div>
-      <div>Same as Otter — service transcribes, syncs to Drive, daily backfill picks it up next morning.</div>
-      <div>Same options: desktop recorder for speed, or manually run the backfill script after the sync completes.</div>
+      <div><strong>Beside AI / Fireflies / other</strong><div style="font-size:11px;color:#888;">Apps Script router</div></div>
+      <div><span style="background:#e8f5e9;color:#2e7d32;padding:2px 8px;border-radius:4px;font-weight:600;font-size:11px;">~15 min ✓</span></div>
+      <div>A second Google Apps Script (<code>beside-action-router</code>) checks the shared Beside Notes Doc every 15 minutes and routes new action items to your Follow-ups and Pipeline Docs. Daily backfill is the safety net.</div>
+      <div>Same as Otter: desktop recorder for in-call speed; otherwise no action.</div>
     </div>
 
     <div style="display:grid;grid-template-columns:180px 120px 1fr 1fr;padding:12px 16px;gap:16px;border-top:1px solid #f0ede8;font-size:12px;align-items:start;">
@@ -1135,7 +1135,7 @@
 
     <div style="display:grid;grid-template-columns:160px 100px 100px 1fr 1fr;padding:12px 16px;gap:16px;border-top:1px solid #f0ede8;font-size:12px;align-items:start;">
       <div><strong>Tailscale</strong><div style="font-size:11px;color:#888;">tailscale.com</div></div>
-      <div>Remote dashboard access — lets Mark and Nik reach the dashboard from outside your office</div>
+      <div>Remote dashboard access — lets team members reach the dashboard from outside your office</div>
       <div>Free up to 3 users. $6/user/mo after that.</div>
       <div>Team members can only access dashboard on local network. You're unaffected.</div>
       <div>Yes — if everyone is always on the same network. Or use any VPN.</div>
@@ -1170,7 +1170,7 @@
     </div>
     <div style="background:#fff3e0;border:1px solid #ffcc80;border-radius:8px;padding:10px 16px;font-size:12px;flex:1;min-width:180px;">
       <div style="font-weight:700;color:#e65100;margin-bottom:4px;">🔒 Private team repo</div>
-      <div style="color:#ef6c00;">Firm identity — your YAML configs. Shared only with Mark and Nik. Firm 2 has its own separate private repo.</div>
+      <div style="color:#ef6c00;">Firm identity — your YAML configs. Shared only with your team. Firm 2 has its own separate private repo.</div>
       <div style="font-size:11px;color:#888;margin-top:4px;">e.g. github.com/yourfirm/tcip-config (private)</div>
     </div>
     <div style="background:#f3f0eb;border:1px solid #d5cfc6;border-radius:8px;padding:10px 16px;font-size:12px;flex:1;min-width:180px;">
@@ -1184,14 +1184,14 @@
     <div style="display:grid;grid-template-columns:190px 90px 1fr 1fr;background:#2c2c2c;color:white;font-size:11px;font-weight:600;padding:10px 16px;gap:16px;">
       <div>File / Data</div>
       <div>Lives where?</div>
-      <div>What it means for your team (Mark, Nik)</div>
+      <div>What it means for your team</div>
       <div>What it means for Firm 2</div>
     </div>
 
     <div style="display:grid;grid-template-columns:190px 90px 1fr 1fr;padding:12px 16px;gap:16px;border-top:1px solid #f0ede8;font-size:12px;align-items:start;">
       <div><strong>firm_context.yaml</strong><div style="font-size:11px;color:#888;">Identity, team, investment focus</div></div>
       <div><span style="background:#fff3e0;color:#e65100;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600;">🔒 Team repo</span></div>
-      <div>Push here so Mark and Nik always have your latest team config — new hire, new peer firm, updated draft voice — on their next <code>git pull</code>. No Slack message needed.</div>
+      <div>Push here so your team always has your latest team config — new hire, new peer firm, updated draft voice — on their next <code>git pull</code>. No Slack message needed.</div>
       <div>They have their own private team repo with their own YAML. Your config gives them zero information about your firm, deals, or people.</div>
     </div>
 
@@ -1226,7 +1226,7 @@
     <div style="display:grid;grid-template-columns:190px 90px 1fr 1fr;padding:12px 16px;gap:16px;border-top:1px solid #f0ede8;font-size:12px;align-items:start;">
       <div><strong>Personal block of firm_context.yaml</strong><div style="font-size:11px;color:#888;">Your podcasts, briefing preferences</div></div>
       <div><span style="background:#f3f0eb;color:#555;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600;">💻 Machine</span></div>
-      <div>Your podcast feeds and briefing time stay on your machine. Don't push the personal block to the team repo — it would overwrite Mark's feeds with yours.</div>
+      <div>Your podcast feeds and briefing time stay on your machine. Don't push the personal block to the team repo — it would overwrite your teammates' feeds with yours.</div>
       <div>Each person at Firm 2 sets their own feeds. No shared briefing content between firms.</div>
     </div>
 
@@ -1246,7 +1246,7 @@
   </div>
 
   <div class="note" style="border-left-color:#2e7d32;background:#f1f8f1;">
-    <strong>✅ Email duplicate gap — fixed.</strong> The pipeline now caches each shared doc's content at run start and checks whether an email's subject is already present before writing. If Yoni and Mark are both CC'd on a deal thread and both pipelines run, only the first write lands — the second pipeline finds the subject in the doc and skips. Transcripts were already protected by the <code>PROCESSED:</code> header written server-side in each Drive doc.
+    <strong>✅ Email duplicate gap — fixed.</strong> The pipeline now caches each shared doc's content at run start and checks whether an email's subject is already present before writing. If two team members are both CC'd on a deal thread and both pipelines run, only the first write lands — the second pipeline finds the subject in the doc and skips. Transcripts were already protected by the <code>PROCESSED:</code> header written server-side in each Drive doc.
   </div>
 </div>
 
