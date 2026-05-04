@@ -15,8 +15,8 @@
 #                   gmail.readonly + gmail.labels
 #                   (cos_email_backfill.py)
 #   gmail-compose → ~/credentials/gmail_mini_token.pickle
-#                   gmail.readonly + gmail.compose
-#                   (capture pipeline draft creation)
+#                   gmail.readonly + gmail.compose + documents + drive.file
+#                   (capture pipeline draft creation + gmail-mini doc writeback)
 #   all           → run full, drive, gmail-read, gmail-compose in sequence
 #
 # Idempotency: if the target token file exists and is non-empty, the scope is
@@ -188,7 +188,9 @@ case "$SCOPE" in
   gmail-compose)
     run_one "gmail-compose" "$CREDS_DIR/gmail_mini_token.pickle" pickle \
       "https://www.googleapis.com/auth/gmail.readonly" \
-      "https://www.googleapis.com/auth/gmail.compose"
+      "https://www.googleapis.com/auth/gmail.compose" \
+      "https://www.googleapis.com/auth/documents" \
+      "https://www.googleapis.com/auth/drive.file"
     ;;
   all)
     run_one "full"          "$CREDS_DIR/token.json" json \
@@ -204,7 +206,9 @@ case "$SCOPE" in
       "https://www.googleapis.com/auth/gmail.labels"
     run_one "gmail-compose" "$CREDS_DIR/gmail_mini_token.pickle" pickle \
       "https://www.googleapis.com/auth/gmail.readonly" \
-      "https://www.googleapis.com/auth/gmail.compose"
+      "https://www.googleapis.com/auth/gmail.compose" \
+      "https://www.googleapis.com/auth/documents" \
+      "https://www.googleapis.com/auth/drive.file"
     ;;
   *)
     echo "ERROR: unknown scope '$SCOPE'." >&2

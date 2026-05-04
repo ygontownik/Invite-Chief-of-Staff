@@ -739,20 +739,22 @@ def sonnet_enrich(email: dict, category: str) -> dict:
 # ────────────────────────────────────────────────────────────────────
 
 def get_docs_service():
-    """Return authenticated Google Docs API service."""
+    """Return authenticated Google Docs API service.
+
+    Uses token.json (the full COS OAuth token) rather than gmail_mini_token.pickle
+    because the full token carries the 'documents' scope that doc writeback requires.
+    gmail_mini_token.pickle only carries gmail.readonly + gmail.compose.
+    """
     from google.oauth2.credentials import Credentials
     from googleapiclient.discovery import build
+    from google.auth.transport.requests import Request
 
-    # Use gmail_mini_token.pickle — it carries gmail.readonly + documents + drive.file
-    token_path = GMAIL_TOKEN_PATH
-    with open(token_path, "rb") as f:
-        creds = pickle.load(f)
+    token_path = CREDS_DIR / "token.json"
+    creds = Credentials.from_authorized_user_file(str(token_path))
 
     if creds.expired and creds.refresh_token:
-        from google.auth.transport.requests import Request
         creds.refresh(Request())
-        with open(token_path, "wb") as f:
-            pickle.dump(creds, f)
+        token_path.write_text(creds.to_json())
 
     return build("docs", "v1", credentials=creds)
 
