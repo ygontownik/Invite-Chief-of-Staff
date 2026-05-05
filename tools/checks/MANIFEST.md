@@ -40,6 +40,7 @@ deserves immediate attention.
 | `check_past_due_actions.py`     | past-due actions sweep | Any deal action with status open/in-progress has `due` < today. Missing `due` triggers warn. |
 | `check_tenant_leak.py` (Agent A)| tenant-leak  | Any tenant-identifying token from the verbatim denylist appears in public `cos-pipeline/config/*.md` or `cos-pipeline/docs/*.md` outside the allow-listed shapes. |
 | `check_alias_precision.py` (Agent A) | G5      | Owned by Agent A; see that module for failure conditions. |
+| `check_smoke_tenant_leaks.py`   | smoke regression | Wraps `tools/smoke_test_tenant.py`. Spins up a synthetic tenant fixture, exercises code surfaces, and statically scans `*.py` for hardcoded tenant strings. >50 hits → fail; 1-50 → warn. Catches the class of bug where a fresh subscriber install would render Yoni/Tomac/etc. in their dashboard. |
 
 ## Adding a new check
 
