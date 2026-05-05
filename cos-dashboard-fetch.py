@@ -535,6 +535,105 @@ _STALE_EVENT_PATTERNS = _re_src.compile(
     _re_src.IGNORECASE,
 )
 
+def _redupe_after_canonicalization(items):
+    """Second-pass dedup AFTER _rederive_counterparty has canonicalized
+    counterparties. The initial _merge_awaiting dedup uses (cp_raw,
+    content[:60]) as key, so items that re-derive to the same canonical
+    don't collapse there.
+
+    This pass dedupes on (canonical_cp, content_stem) where content_stem
+    is the lowered content with stop-words and verb-tense variants
+    collapsed — e.g. "Send draft Uber lease" / "Share Uber lease draft"
+    / "Deliver Uber lease draft" all stem to the same key.
+    Keeps the FIRST occurrence (which is the doc-authored row when
+    present, since _merge_awaiting puts those first).
+    """
+    import re as _re
+    _STOP = set('a an the to for of and or with on in at by from is be was'.split())
+    _VERB_NORM = {
+        'send': 'send', 'sent': 'send', 'sending': 'send',
+        'share': 'send', 'shared': 'send', 'sharing': 'send',
+        'deliver': 'send', 'delivered': 'send', 'delivering': 'send',
+        'circulate': 'send', 'circulated': 'send', 'circulating': 'send',
+        'forward': 'send', 'forwarded': 'send', 'forwarding': 'send',
+        'pass': 'send',
+        'follow': 'follow', 'followed': 'follow', 'following': 'follow',
+        'confirm': 'confirm', 'confirmed': 'confirm', 'confirming': 'confirm',
+    }
+    def _stem(text: str) -> str:
+        text = (text or '').lower()
+        text = _re.sub(r'[^\w\s]', ' ', text)
+        toks = []
+        for t in text.split():
+            if t in _STOP: continue
+            if len(t) < 3: continue
+            toks.append(_VERB_NORM.get(t, t))
+        # First 6 stable tokens make a strong key
+        return ' '.join(toks[:6])
+    seen = set()
+    out = []
+    for item in items:
+        cp = (item.get('counterparty') or '').strip().lower()
+        stem = _stem(item.get('content') or '')
+        key = (cp, stem)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(item)
+    return out
+
+
+def _rederive_counterparty(items):
+    """Re-derive `counterparty` from content+context aliases.
+
+    The extractor often sets counterparty to the email sender ("Lee /
+    Piper Sandler Syndication" when Lee forwards a thread about PFS),
+    even when the substantive subject of the action is a DIFFERENT
+    counterparty. This pass scans the content + context fields for
+    counterparty_alias needles and, when one matches, overrides
+    `counterparty` with the canonical. Original raw value preserved
+    in `counterparty_raw` for diagnostics.
+
+    Lookup order per item:
+      1. content + context tokens → first matching alias canonical wins
+      2. fallback: existing counterparty (run through _normalize_cp,
+         which strips trailing person names and applies aliases on
+         the original counterparty string)
+
+    Codified 2026-05-05 — the dashboard was rendering ~25 PFS-subject
+    items as "Lee / Piper Sandler Syndication" because the extractor
+    used the inbound sender's firm as counterparty.
+    """
+    for item in items:
+        raw = (item.get('counterparty') or '').strip()
+        if not raw:
+            continue
+        item.setdefault('counterparty_raw', raw)
+        # Build search haystack from substantive fields. context is
+        # usually the cleanest single signal.
+        haystack = ' '.join([
+            str(item.get('context')   or ''),
+            str(item.get('content')   or ''),
+            str(item.get('what')      or ''),
+        ]).lower()
+        # Walk aliases in registration order; first hit wins. _CP_ALIASES
+        # is [(needle_lc, canonical), ...] from firm_context.
+        chosen = None
+        for needle, canon in _CP_ALIASES:
+            if needle and needle in haystack:
+                chosen = canon
+                break
+        if chosen and chosen.lower() != raw.lower():
+            item['counterparty'] = chosen
+            continue
+        # Fallback: normalize the existing counterparty (strip person,
+        # apply aliases on the cp string itself).
+        norm = _normalize_cp(raw)
+        if norm and norm != raw:
+            item['counterparty'] = norm
+    return items
+
+
 def _auto_expire_stale_events(items):
     """Drop stale/resolved awaitingExternal items.
 
@@ -542,6 +641,10 @@ def _auto_expire_stale_events(items):
     1. [RESOLVED] items — action was completed; should not appear in awaiting list.
     2. One-time-event items (conference, RSVP, scheduling, site/ranch visit, etc.)
        whose due/addedDate is more than 7 days in the past. Items with no date are kept.
+    3. Any item whose due date is more than 14 days in the past, regardless of
+       content shape — "if it was due two weeks ago and is still showing,
+       the human dropped it." Catches stale non-event commitments that
+       slip past the event-pattern filter (codified 2026-05-05).
     """
     from datetime import date as _date
     today = _date.today()
@@ -557,6 +660,26 @@ def _auto_expire_stale_events(items):
                 file=sys.stderr,
             )
             continue
+
+        # Class 3 (codified 2026-05-05): hard 14-day past-due cutoff.
+        # If due is >14 days in the past, drop regardless of content
+        # shape. Catches non-event commitments that the event-pattern
+        # filter missed (e.g., "Send draft Uber lease" 20 days past).
+        # Items with no due date fall through to the event filter.
+        due_raw_global = item.get('due') or ''
+        if due_raw_global and len(due_raw_global) >= 10:
+            try:
+                d_global = _date.fromisoformat(due_raw_global[:10])
+                if (today - d_global).days > 14:
+                    print(
+                        f'cos-dashboard-fetch: hard-expire 14d+ past-due item '
+                        f'({due_raw_global[:10]}, {(today - d_global).days}d ago): '
+                        f'{content[:80].strip()!r}',
+                        file=sys.stderr,
+                    )
+                    continue
+            except ValueError:
+                pass
 
         # Class 2: one-time-event patterns with a past date
         if not _STALE_EVENT_PATTERNS.search(content):
@@ -2312,9 +2435,11 @@ def main(dry_run: bool = False):
         # referencing the same commitment collapse.
         'awaitingExternal':  _auto_expire_stale_events(
                                  _supersede_workflow_stages(
+                                 _redupe_after_canonicalization(
                                  _materialize_next_week(
+                                 _rederive_counterparty(
                                  _promote_source_ref(_merge_awaiting(
-                                 state.get('awaitingExternal', []), awaiting_from_doc))))),
+                                 state.get('awaitingExternal', []), awaiting_from_doc))))))),
         'dealIntel':         state.get('dealIntel',         []),
         'originationInbox':  state.get('originationInbox',  []),
         'themes':            state.get('themes',            []),

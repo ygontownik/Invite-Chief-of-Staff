@@ -1474,13 +1474,27 @@ function doRefresh() {
   const btn = document.getElementById('refreshBtn');
   btn.classList.add('spinning');
   btn.disabled = true;
+  // Preserve the user's exact URL — including pathname (deep-linked
+  // tile views) and hash (in-page section anchors). window.location.
+  // reload() *should* preserve both, but on iOS Safari + bfcache the
+  // history entry can be replaced with the canonical "/" landing.
+  // Capture the full href and assign explicitly so the user lands
+  // back on the same view they synced from. Cache-buster query param
+  // forces a fresh fetch even when bfcache would otherwise serve a
+  // stale snapshot. (Codified 2026-05-05 — the prior reload() form
+  // dropped users out of the awaiting-external section view.)
+  const _backHref = (function(){
+    const u = new URL(window.location.href);
+    u.searchParams.set('_t', Date.now().toString());
+    return u.toString();
+  })();
   fetch(''+window.location.origin+'/refresh-all', {method: 'POST'})
     .then(r => r.json())
     .then(d => {
-      if (d.ok) { setTimeout(() => window.location.reload(), 150); }
+      if (d.ok) { setTimeout(() => { window.location.replace(_backHref); }, 150); }
       else { btn.classList.remove('spinning'); btn.disabled = false; alert('Sync failed: ' + (d.error || 'unknown')); }
     })
-    .catch(() => setTimeout(() => window.location.reload(), 150));
+    .catch(() => setTimeout(() => { window.location.replace(_backHref); }, 150));
 }
 
 const _REFRESH_SVG = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>`;
