@@ -1061,6 +1061,12 @@ EXTRACTION TASKS:
 
    TIME-REFERENCE NORMALIZATION — never emit floating phrases like "next week", "early next week", "later this week", "end of the week", "end of next week" in `content` / `what` / `context`. These go silently stale once the date passes. Always materialize to "week of YYYY-MM-DD" using the call_date as the anchor (snap forward to the Monday on/after the implied target). Same rule for "tomorrow" → explicit YYYY-MM-DD, and "later today" → explicit ISO datetime. The compile layer also normalizes after the fact; doing it here prevents the stale phrasing from ever entering the pipeline. Codified in dash_corrections.md (2026-05-04).
 
+   ACTION-DIRECTION INVERSION CHECK (rule Y2) — when the action verb is a transmission verb (`send`, `share`, `deliver`, `forward`, `provide`, `transmit`, `circulate`, `pass along`), explicitly identify which side is the sender by inspecting role context BEFORE emitting the item:
+   • Investment banks / placement agents / advisors pitching deal flow to the principal → THEY send teasers/CIMs/data rooms TO the principal. Counterparty owns the action; emit `state: waiting`, `owner: external`, `counterparty: "Firm — Person"`. The principal RECEIVES; do NOT emit a my_action telling the principal to "send" what is being pitched IN.
+   • Principal sponsoring a deal to LPs / co-investors / lenders → PRINCIPAL sends materials. Emit `owner: <Yoni|Mark|Nick>`, `state: active`.
+   • Mutual exchanges (NDAs, term sheets, mark-ups, redlines passed back and forth) → emit two items, one per direction, each with the correct owner.
+   • Default if unclear: emit as `state: waiting` with the counterparty as owner — better to under-attribute to the principal than fabricate a send-verb on the wrong side. The "Astris-flip" failure (codified 2026-05-04) was a fundraising advisor pitching IN; it was wrongly written as the principal owing the send.
+
    COUNTERPARTY PLACEHOLDERS — when the firm cannot be identified from the transcript, emit `counterparty: ""` and tag the intel as `intel_type: "unattributed"`. NEVER emit a generic placeholder like "assistant", "attorneys", "Unknown", "team", a bare email address, or a person's name with no firm context. Unattributed items are routed to a review queue at compile time; placeholder firms pollute the by-firm awaiting list and make the dashboard noisier.
 
    STRICT RULES (enforced at write time — items failing these are rejected and counted in routingExceptions[], so missing them costs you data):
@@ -1069,8 +1075,16 @@ EXTRACTION TASKS:
    • owner field accepts ONLY: {", ".join(f'"{o}"' for o in _CTX.get("owner_whitelist", []))}, or "external". Common variant spellings (full name, nickname, alternate spelling) are normalized to the whitelist automatically — but anything outside the whitelist (e.g. a third-party firm name as owner) is rejected. When the action belongs to a counterparty, owner="external" and counterparty="Firm — Person".
    • content_type="awaiting_external" with owner="external" REQUIRES counterparty in "Firm — Person" format.
 
+10. deal_log_entries: Array. For each ACTIVE DEAL listed in the DEAL PIPELINE TARGETS block above that this transcript SUBSTANTIVELY touches (not a passing mention), emit ONE entry per deal:
+   {{
+     "deal_id": "<ticker-or-slug exactly as given in the DEAL PIPELINE TARGETS block>",
+     "summary": "<≤25 words: what happened on this deal — who said what, what moved, what stalled>",
+     "evidence": "<≤100 chars verbatim quote from the transcript anchoring this entry>"
+   }}
+   Skip the deal entirely if it was only mentioned in passing (no decision, no data point, no action, no commitment). High-precision tagging — better to omit than to over-attribute. Codified 2026-05-04 (rule V1+).
+
 RESPOND WITH THIS JSON ONLY (no markdown, no explanation):
-{{"category":"...","one_line_summary":"...","call_date":"...","action_items":[{{"who":"...","what":"...","due":"...","owner":"...","workstream":"...","action_type":"new_action|status_update","state":"active|waiting|watching|blocked|dormant|closed","resolution_source":"","context":"...","dashboard_path":"..."}}],"new_contacts":[{{"name":"...","firm":"...","title":"...","context":"...","confidence":"high|medium|low"}}],"recruiting_intel":{{}},"tomac_intel":[{{"investor_or_firm":"...","status":"...","key_feedback":"...","next_action":"...","intel_type":"...","dashboard_path":"..."}}],"mentioned_firms":[{{"name":"...","context":"..."}}],"envelope_items":[{{"content_type":"...","owner":"...","counterparty":"","parent_id":"","due":"","context":"...","dashboard_path":"...","content":"..."}}]}}
+{{"category":"...","one_line_summary":"...","call_date":"...","action_items":[{{"who":"...","what":"...","due":"...","owner":"...","workstream":"...","action_type":"new_action|status_update","state":"active|waiting|watching|blocked|dormant|closed","resolution_source":"","context":"...","dashboard_path":"..."}}],"new_contacts":[{{"name":"...","firm":"...","title":"...","context":"...","confidence":"high|medium|low"}}],"recruiting_intel":{{}},"tomac_intel":[{{"investor_or_firm":"...","status":"...","key_feedback":"...","next_action":"...","intel_type":"...","dashboard_path":"..."}}],"mentioned_firms":[{{"name":"...","context":"..."}}],"envelope_items":[{{"content_type":"...","owner":"...","counterparty":"","parent_id":"","due":"","context":"...","dashboard_path":"...","content":"..."}}],"deal_log_entries":[{{"deal_id":"","summary":"","evidence":""}}]}}
 """
 
 BACKFILL_PREAMBLE = _fc.build_backfill_header(_CTX) + _BACKFILL_BODY
