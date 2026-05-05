@@ -657,25 +657,16 @@ def call_claude(thread_view: dict, parent_hint: dict,
         })
     content.append({"type": "text", "text": dynamic})
 
-    payload = {
-        "model":      CLAUDE_MODEL,
-        "max_tokens": 4096,
-        "messages":   [{"role": "user", "content": content}],
-    }
-    req = urllib.request.Request(
-        "https://api.anthropic.com/v1/messages",
-        data=json.dumps(payload).encode(),
-        headers={
-            "x-api-key":         ANTHROPIC_KEY,
-            "anthropic-version": "2023-06-01",
-            "content-type":      "application/json",
-        },
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=90) as r:
-        resp = json.loads(r.read())
-    log_usage("cos_email_backfill", CLAUDE_MODEL, resp)
-    raw = resp["content"][0]["text"].strip()
+    # Auth-mode aware dispatch (codified 2026-05-05). subscription path
+    # bills against Pro/Max OAuth; api path is the legacy urllib POST.
+    import _claude_dispatch  # noqa: PLC0415
+    raw = _claude_dispatch.call(
+        task_type="cos_email_backfill",
+        model=CLAUDE_MODEL,
+        max_tokens=4096,
+        messages=[{"role": "user", "content": content}],
+        api_timeout=90,
+    ).strip()
     raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.MULTILINE).strip()
     return json.loads(raw)
 

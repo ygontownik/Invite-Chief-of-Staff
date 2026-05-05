@@ -942,29 +942,21 @@ def extract_memo(transcript_text, title, category="auto"):
     model = CLAUDE_MODEL  # Sonnet: memo writing is format-constrained, not multi-hop inference
     today = datetime.now().strftime("%Y-%m-%d")
     dynamic = f"CALL TITLE: {title}\nDATE: {today}\n\nTRANSCRIPT:\n{transcript_text[:40000]}"
-    payload = {
-        "model": model,
-        "max_tokens": 4096,
-        "messages": [{"role": "user", "content": [
-            {"type": "text", "text": MEMO_PREAMBLE, "cache_control": {"type": "ephemeral"}},
+    # Auth-mode aware dispatch (codified 2026-05-05). subscription path
+    # bills against Pro/Max OAuth window; api path is the legacy
+    # urllib POST behavior. Cache-control blocks are honored on api,
+    # ignored (silently merged) on subscription.
+    import _claude_dispatch  # noqa: PLC0415
+    return _claude_dispatch.call(
+        task_type="cos_otter_backfill_memo",
+        model=model,
+        max_tokens=4096,
+        messages=[{"role": "user", "content": [
+            {"type": "text", "text": MEMO_PREAMBLE,
+             "cache_control": {"type": "ephemeral"}},
             {"type": "text", "text": dynamic},
         ]}],
-    }
-    req = urllib.request.Request(
-        "https://api.anthropic.com/v1/messages",
-        data=json.dumps(payload).encode(),
-        headers={
-            "x-api-key":          ANTHROPIC_KEY,
-            "anthropic-version":  "2023-06-01",
-            "anthropic-beta":     "prompt-caching-2024-07-31",
-            "content-type":       "application/json",
-        },
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=120) as r:
-        resp = json.loads(r.read())
-    log_usage("cos_otter_backfill_memo", model, resp)
-    return resp["content"][0]["text"].strip()
+    ).strip()
 
 
 # ── Pass 2: JSON extraction — stable preamble cached across all items ─────────
@@ -1230,25 +1222,15 @@ def extract_all(transcript_text, title, hint_category="auto", pipeline_context="
     # angle — multi-hop inference connecting call content → ownership structures → entry paths).
     # Sonnet for Recruiting/Other (structured extraction, no deal inference needed).
     p2_model = MEMO_MODEL if hint_category not in ("Recruiting", "Other") else CLAUDE_MODEL
-    payload = {
-        "model": p2_model,
-        "max_tokens": 8192,
-        "messages": [{"role": "user", "content": content}],
-    }
-    req = urllib.request.Request(
-        "https://api.anthropic.com/v1/messages",
-        data=json.dumps(payload).encode(),
-        headers={
-            "x-api-key":         ANTHROPIC_KEY,
-            "anthropic-version": "2023-06-01",
-            "content-type":      "application/json",
-        },
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=90) as r:
-        resp = json.loads(r.read())
-    log_usage("cos_otter_backfill", p2_model, resp)
-    raw = resp["content"][0]["text"].strip()
+    # Auth-mode aware dispatch (codified 2026-05-05).
+    import _claude_dispatch  # noqa: PLC0415
+    raw = _claude_dispatch.call(
+        task_type="cos_otter_backfill",
+        model=p2_model,
+        max_tokens=8192,
+        messages=[{"role": "user", "content": content}],
+        api_timeout=90,
+    ).strip()
     raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.MULTILINE).strip()
     return json.loads(raw)
 

@@ -322,22 +322,33 @@ personal:
 # ── AUTH MODE ─────────────────────────────────────────────────────────────────
 # Picks the dispatch path the pipeline uses to call Claude.
 #
+#   "subscription" — (default for new installs) claude_agent_sdk.query()
+#                    against your Claude Pro/Max OAuth via the bundled
+#                    `claude` CLI. Zero per-token cost; charges against
+#                    your 5-hour subscription window. Requires Python
+#                    ≥ 3.10 and a logged-in `claude` CLI (see
+#                    SUBSCRIPTION_INSTALL.md). Pre-provisioned
+#                    Claude.ai Projects in firm_config.json ::
+#                    claude_projects are recommended but not required.
 #   "api"          — anthropic SDK with a per-tenant ANTHROPIC_API_KEY
-#                    in the keychain. Pay-per-token. The default and only
-#                    path for tenants who haven't picked subscription mode.
-#   "subscription" — claude_agent_sdk.query() against your existing Claude
-#                    Pro/Max OAuth (via the `claude` CLI). Zero per-token
-#                    cost; charges against your 5-hour subscription window.
-#                    Requires Python ≥ 3.10 in the launchd runner and four
-#                    pre-provisioned Claude.ai Projects (see
-#                    SUBSCRIPTION_INSTALL.md and firm_config.json ::
-#                    claude_projects). Picked at install time via
-#                    `./setup.sh --instance=<slug> --auth-mode=subscription`.
+#                    in the keychain. Pay-per-token. Use only when
+#                    you've explicitly opted out (no Pro/Max
+#                    subscription, hard-coded API budget, dev work).
 #
-# Omitting the field is equivalent to `auth_mode: api`. Existing tenants
-# who don't update their config see no behavior change.
+# Default for new tenants from a fresh install of this template: the
+# subscription path below is uncommented. Existing tenants who upgrade
+# their template without changing this field stay on whatever they had
+# (api mode is preserved if their pre-existing config has no auth_mode
+# field — set it explicitly here when you're ready to migrate).
 #
-# auth_mode: api
+# Same field is read by:
+#   • Python: _firm_context.load_auth_mode() → _model_router routing
+#   • Shell:  load-secrets.sh — gates whether ANTHROPIC_API_KEY is
+#             exported into interactive shells (subscription mode
+#             skips the export so OAuth wins at the precedence ladder)
+#
+# Flip to "api" only if you have not set up a Claude Pro/Max subscription.
+auth_mode: subscription
 #
 # Optional: opt-in fallback to the API path when subscription is rate-
 # limited (only honored when --add-fallback-api-key was passed at install).

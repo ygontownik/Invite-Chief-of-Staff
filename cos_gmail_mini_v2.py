@@ -591,12 +591,11 @@ def haiku_triage(email: dict) -> dict:
     (~$1.60/mo → ~$4.80/mo) because the 4,234-token cached prefix dwarfs
     Haiku's natively-tiny per-call footprint. Triage doesn't need investor
     doctrine to decide DEAL vs RECRUIT vs IGNORE; original path preserved.
+
+    Routes via _claude_dispatch (codified 2026-05-05) so subscription-mode
+    tenants bill against Pro/Max OAuth instead of the API budget. api-mode
+    falls back to the same anthropic SDK call as before.
     """
-    import anthropic
-
-    import _secrets
-    client = anthropic.Anthropic(api_key=_secrets.load_secret("ANTHROPIC_API_KEY"))
-
     prompt = (
         f"From: {email['from']}\n"
         f"Subject: {email['subject']}\n"
@@ -605,21 +604,21 @@ def haiku_triage(email: dict) -> dict:
     )
 
     try:
-        response = client.messages.create(
+        # Add cos-pipeline to path for the dispatch + secrets imports.
+        import sys as _sys, pathlib as _pl
+        _cd = str(_pl.Path.home() / "cos-pipeline")
+        if _cd not in _sys.path:
+            _sys.path.insert(0, _cd)
+        import _claude_dispatch  # noqa: PLC0415
+        text = _claude_dispatch.call(
+            task_type="cos_gmail_mini_haiku",
             model="claude-haiku-4-5-20251001",
             max_tokens=256,
             system=TRIAGE_SYSTEM,
             messages=[{"role": "user", "content": prompt}],
+            api_timeout=60,
         )
-        log_usage("cos_gmail_mini_haiku", "claude-haiku-4-5-20251001", {
-            "usage": {
-                "input_tokens":                getattr(response.usage, "input_tokens", 0),
-                "output_tokens":               getattr(response.usage, "output_tokens", 0),
-                "cache_read_input_tokens":     getattr(response.usage, "cache_read_input_tokens", 0),
-                "cache_creation_input_tokens": getattr(response.usage, "cache_creation_input_tokens", 0),
-            }
-        })
-        result = _parse_json_response(response.content[0].text)
+        result = _parse_json_response(text)
         result["category"] = result.get("category", "IGNORE").upper()
         result["confidence"] = float(result.get("confidence", 0.5))
         return result
@@ -813,6 +812,41 @@ def write_deal_update(email: dict, triage: dict, enriched: dict, config: dict, d
     summary = enriched.get("summary", triage.get("one_liner", ""))
     action_summary = enriched.get("action_summary", "")
     priority = enriched.get("priority", "Medium")
+
+    # ── Misclassification guard ─────────────────────────────────────────
+    # Haiku occasionally misclassifies personal / community / vendor
+    # emails as DEAL with high confidence. Sonnet enrichment then returns
+    # all-Unknown structure (no deal_name, no stage, generic sector) and
+    # often even flags the misclassification in its own summary text.
+    # Skip the write rather than polluting the deal pipeline doc with
+    # bereavement notices, synagogue announcements, etc.
+    blank_deal = (
+        (deal_name or "").strip().lower() in ("", "unknown", "n/a")
+        and (stage or "").strip().lower() in ("", "unknown", "n/a")
+        and (sector or "").strip().lower() in ("", "unknown", "other", "n/a")
+    )
+    misclass_signals = (
+        "misclassif", "no deal-related", "no deal related",
+        "not deal-related", "not deal related",
+        "personal/community", "personal / community", "community notification",
+        "bereavement", "shiva", "synagogue",
+        "personal philanthropic", "charitable grant", "grant confirmation",
+        "not an investment", "not a deal", "no deal pipeline relevance",
+        "no action required and no deal",
+    )
+    summary_flags_misclass = any(s in (summary or "").lower() for s in misclass_signals)
+    # Two ways to skip:
+    #   (a) all-Unknown structure + Sonnet itself flagged misclassification, OR
+    #   (b) all-Unknown structure + no action required (nothing to chase, no
+    #       deal identified — pollution risk vastly exceeds capture value).
+    no_action = enriched.get("action_required") is False
+    if blank_deal and (summary_flags_misclass or no_action):
+        reason = "summary flag" if summary_flags_misclass else "no action required"
+        log.info(
+            f"DEAL skipped (likely misclassification — all-Unknown enrichment + "
+            f"{reason}): {(email.get('subject') or '')[:80]}"
+        )
+        return
 
     text = (
         f"DEAL STATUS UPDATE — {date_str}\n"
