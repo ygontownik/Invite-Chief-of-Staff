@@ -129,6 +129,7 @@ P_ONBOARDING_BRIEFING.md
 # ── STAGING/DRAFT FILES (work-in-progress, not deployed) ──────────────────────
 *.next
 *.pre-migration-bak
+*.pre-*-bak
 
 # ── SESSION BACKUP DIRECTORIES ────────────────────────────────────────────────
 .run6-cutover-bak-*/
