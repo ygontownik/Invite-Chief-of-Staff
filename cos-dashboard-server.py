@@ -1255,7 +1255,15 @@ def _inject_shared_chrome(html: str, user: str = 'owner') -> str:
 
     # User-state bridge: tombstones + item id helper. Loaded on every page so
     # delete-button handlers and render filters can reach it via window.*
-    if 'window.__DELETIONS__' not in html:
+    # 2026-05-05: bugfix — the prior guard `'window.__DELETIONS__' not in html`
+    # always tripped because the template's JS body REFERENCES window.__DELETIONS__
+    # as a consumer ("if (typeof window.__DELETIONS__ !== 'undefined')"), even
+    # though no setter exists. As a result, the injection script — which sets
+    # __DEAL_CONFIG__ / __TOMAC_CONFIG__ / __TOPICS_INITIAL__ / __FIRM_CONTEXT__
+    # / __DELETIONS__ / etc. — was being skipped on every render, leaving
+    # fundraising panel + team actions empty and tombstones inactive. Switch
+    # to the unique setter-form fingerprint so consumer refs no longer match.
+    if 'window.__DELETIONS__ = new Set' not in html:
         script = _deletions_script(user)
         if '</head>' in html:
             html = html.replace('</head>', script + '\n</head>', 1)
