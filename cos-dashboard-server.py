@@ -1709,6 +1709,30 @@ def _routines_list_tasks():
     return out
 
 
+def _launchctl_loaded_labels():
+    """Return set of LaunchAgent labels currently loaded into launchctl.
+    Used to detect plists that exist on disk but were never bootstrapped
+    (rule 5a — missing-plist alarm). The catch-up agent loads these on
+    first run, so a missing label here is mostly defensive — but flagging
+    it surfaces install-time and reboot-time gaps that would otherwise
+    silently drop a routine until the next catch-up cycle."""
+    try:
+        r = subprocess.run(
+            ['launchctl', 'list'],
+            capture_output=True, text=True, timeout=4,
+        )
+        if r.returncode != 0:
+            return None  # signal "unknown" rather than "empty"
+        labels = set()
+        for ln in (r.stdout or '').splitlines()[1:]:  # skip header row
+            parts = ln.split('\t')
+            if len(parts) >= 3:
+                labels.add(parts[2].strip())
+        return labels
+    except Exception:
+        return None
+
+
 def _routines_human_schedule(intervals):
     """Convert plist StartCalendarInterval payload to a short label."""
     if isinstance(intervals, dict):
@@ -1879,6 +1903,7 @@ def _routines_data():
     """Build the GET /routines payload. List of per-task dicts, sorted by
     severity (failing tier-1 first)."""
     tasks = _routines_list_tasks()
+    loaded_labels = _launchctl_loaded_labels()  # set | None (None = unknown)
     out = []
     for name in tasks:
         meta = _routines_parse_plist(name)
@@ -1916,6 +1941,15 @@ def _routines_data():
         history = [{'start': r.get('start'),
                     'exit_code': r.get('exit_code'),
                     'runtime_s': r.get('runtime_s')} for r in runs[-7:]]
+        # Rule 5a (codified 2026-05-04): plist exists on disk but isn't in
+        # `launchctl list` → surface as not_loaded. The catch-up agent
+        # bootstraps these on first run, so this is mostly defensive
+        # (catches install gaps + post-reboot drift before the next cycle).
+        full_label = ROUTINES_LABEL_PREFIX + name
+        if loaded_labels is None:
+            loaded = None  # unknown — launchctl unavailable
+        else:
+            loaded = full_label in loaded_labels
         item = {
             'task':              name,
             'label':             ROUTINE_LABELS.get(name, name),
@@ -1929,6 +1963,7 @@ def _routines_data():
             'last_output_lines': last.get('output_lines') if last else [],
             'history':           history,
             'status':            _routines_status_for(name, last),
+            'launchctl_loaded':  loaded,
             'skill_path':        str(ROUTINES_SKILL_DIR / name / 'SKILL.md'),
             'log_paths': {
                 'stdout': str(ROUTINES_LOG_DIR / f'{stem}.stdout.log'),
@@ -1936,6 +1971,13 @@ def _routines_data():
                 'run':    str(ROUTINES_LOG_DIR / f'{stem}.run.log'),
             },
         }
+        if loaded is False:
+            item['warning'] = (
+                f'Plist on disk but not in launchctl list — run '
+                f'`launchctl bootstrap gui/$(id -u) '
+                f'~/Library/LaunchAgents/{full_label}.plist` or wait '
+                f'for the catch-up agent to bootstrap it.'
+            )
         out.append(item)
     rank = {'fail': 0, 'running': 1, 'never_run': 2, 'ok': 3, 'expected_fail': 4}
     out.sort(key=lambda x: (rank.get(x['status'], 5), x['task']))
@@ -3182,11 +3224,44 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as _e:
                 print(f'[briefing_intel] log/readthrough merge skipped: {_e}', flush=True)
 
+            # captureSummary.date freshness assertion (rule I4, codified
+            # 2026-05-04). Surface a staleness signal so the /briefing/ tab
+            # can render a chip when the synopsis is out of date.
+            capture_staleness = None
+            try:
+                cs_date = ((synopsis.get('captureSummary') or {}).get('date') or '')[:10]
+                if re.match(r'^\d{4}-\d{2}-\d{2}$', cs_date):
+                    today_d = datetime.now().date()
+                    cs_d = datetime.strptime(cs_date, '%Y-%m-%d').date()
+                    days_stale = (today_d - cs_d).days
+                    if days_stale > 1:
+                        severity = 'stale' if days_stale > 3 else 'warn'
+                        capture_staleness = {
+                            'date': cs_date,
+                            'daysStale': days_stale,
+                            'severity': severity,
+                            'message': (
+                                f'Capture summary is {days_stale} day'
+                                f'{"s" if days_stale != 1 else ""} old '
+                                f'({cs_date}). Run cos-capture-pipeline to refresh.'
+                            ),
+                        }
+                else:
+                    capture_staleness = {
+                        'date': '',
+                        'daysStale': None,
+                        'severity': 'unknown',
+                        'message': 'Capture summary has no date — pipeline may not have run.',
+                    }
+            except Exception as _e:
+                pass
+
             payload = {
                 'synopsis': synopsis,
                 'marketCommentary': latest_market,
                 'date': data.get('today', ''),
                 'fullText': full_text,
+                'captureStaleness': capture_staleness,
                 'fetchedAt': datetime.now().isoformat(timespec='seconds'),
             }
             _briefing_cache['briefing_intel'] = (time.time(), payload)
