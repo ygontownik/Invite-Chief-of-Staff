@@ -3107,6 +3107,43 @@ class Handler(BaseHTTPRequestHandler):
                         break
                 if full_text:
                     break
+            # 2026-05-04: append a "Deal Readthrough" section to fullText
+            # listing intel items that match active deals (computed by
+            # _compute_deal_readthroughs in deal-system-compile.py). U2 rule.
+            try:
+                ds_path = Path(__file__).parent.parent / 'data' / 'compiled' / 'deal-system-data.json'
+                if ds_path.exists():
+                    ds = json.loads(ds_path.read_text())
+                    rt_lines = []
+                    for d in (ds.get('deals') or []):
+                        rts = d.get('recent_readthroughs') or []
+                        if not rts:
+                            continue
+                        rt_lines.append(f"\n**{d.get('name','')}** · {d.get('stage','')}")
+                        for r in rts[:3]:
+                            conf_marker = '🟢' if r.get('confidence') == 'high' else '🟡'
+                            rt_lines.append(
+                                f"  {conf_marker} _{r.get('section','')}_ — "
+                                f"{(r.get('text') or '')[:200]}"
+                            )
+                    if rt_lines:
+                        rt_section = (
+                            "\n\n---\n\n### Deal Readthrough\n"
+                            "_Market intel matched to active deals (auto, last refresh)._\n"
+                            + "\n".join(rt_lines) + "\n"
+                        )
+                        # Insert before "### Intelligence" if present, else append
+                        if '### Intelligence' in full_text:
+                            full_text = full_text.replace(
+                                '### Intelligence',
+                                rt_section + '\n### Intelligence',
+                                1,
+                            )
+                        else:
+                            full_text = full_text + rt_section
+            except Exception as _e:
+                print(f'[briefing_intel] readthrough merge skipped: {_e}', flush=True)
+
             payload = {
                 'synopsis': synopsis,
                 'marketCommentary': latest_market,

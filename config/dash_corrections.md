@@ -946,6 +946,62 @@ Log each supersession to stderr so prompt drift can be audited.
 
 ---
 
+## TOPIC — UNIFIED EXTRACTION + READTHROUGH STANDARD
+
+Codified 2026-05-04. Extension to the lifecycle standard below — addresses the question "is the same overlay applied across all transcript sources, and how do we tie market intel back to active deals?"
+
+### U1 — Extraction-pipeline parity *(silent + extraction-prompt enrichment)*
+
+Every extraction prompt that produces narrative content (call transcripts via Otter, conference-call transcripts via the same pipeline, email threads, podcast memos, market-fetch summaries) MUST emit a `mentioned_firms[]` array containing every firm/organization name surfaced — actionable AND passing references. Powers the G5 inverse-audit sweep. Without this, we get the "X was in the briefing for weeks but had zero dashboard presence" failure mode.
+
+**Status of each pipeline (2026-05-04)**:
+- `cos_otter_backfill.py` (calls + conference calls): ✅ updated — emits `mentioned_firms[]`, `state`, `confidence`, `resolution_source`.
+- `cos_email_backfill.py` (Gmail threads): ✅ updated — same fields.
+- `podcast_transcribe.py` (industry podcasts): ❌ deferred — outputs prose memos to Google Docs, not JSON. Needs a structured machine-readable tail OR a separate JSON extraction record. Captured as deferred TODO.
+- `cos_market_fetch.py` (RBN/Jefferies/etc. market briefs): ❌ deferred — same shape issue.
+- Other pipelines (`cos_personal_briefing.py`, `cos_gmail_mini_v2.py`): not extractors; aggregators or pollers — no enrichment needed.
+
+When a new extraction pipeline is added, U1 compliance is part of the acceptance criteria.
+
+### U2 — Market intel ↔ deal readthrough *(silent auto-correct, partial)*
+
+Market briefings, podcast intel, and research feeds frequently surface signal relevant to specific active deals (e.g., a Jefferies note on ERCOT pricing matters for a Texas land deal; a podcast on hyperscaler power matters for a BTM gas play). The dashboard MUST connect intel to deals — silently — so deal cards and the daily briefing can call out readthroughs.
+
+**Implementation (2026-05-04)**:
+- `deal-system-compile.py > _compute_deal_readthroughs()` joins `dashboard-data.json > marketCommentary[].sections[].items[]` against per-deal tokens (canonical name, alias needles, sector words, geography words, tagline keywords). Filters generic words via deny list. Two confidence tiers: high (firm/alias hit) and medium (sector/geo/tagline hit ≥6 chars OR ≥2 hits).
+- Output: `recent_readthroughs[]` array on each deal in `deal-system-data.json`. Capped at 5 per deal.
+- The server's `/briefing/intel.json` handler appends a "Deal Readthrough" section to the briefing fullText, listing matched intel per deal.
+
+**Future enhancement** (deferred TODO):
+- Extraction-time hints: when the LLM extracts a market brief or podcast memo, emit `deal_readthrough[]: [{deal_id, relevance, evidence_quote}, ...]` based on its understanding. Compile takes the LLM's hints (high precision) and combines with keyword-join (high recall).
+- Until then: keyword-join alone catches the obvious cases (a sector keyword matches a deal whose tagline carries the same word) but misses conceptually-relevant but vocabularly-distant cases (a counterparty-related news piece may not name the deal directly).
+
+### U3 — Generic extraction prompts live in cos-pipeline (public repo)
+
+Extraction prompts that operate on tenant-agnostic logic MUST live in the public `cos-pipeline/` repository, parameterized by `firm_context.yaml`. Tenant-specific data (deals, configs, transcripts) lives in the tenant repo (`dashboards/`).
+
+**Status (2026-05-04)**:
+- `cos_otter_backfill.py` ✅ public, parameterized via `_fc.load_firm_context()` and tokens like `_PRINCIPAL_FIRST`, `_DEAL_WS`, `_OWNERS`, `_PEER_FIRMS`.
+- `cos_email_backfill.py` ❌ in tenant repo. EMAIL_PREAMBLE has hardcoded principal name, firm name, deal names. Needs `firm_context` parameterization before move. **Deferred — see U4.**
+
+### U4 — Architectural debt: parameterize before moving *(documentation)*
+
+When a tenant-specific extraction prompt is identified that should be in the public repo, the move requires a parameterization pass:
+
+1. Audit hardcoded references (principal name, firm name, deal names, contact names, email addresses).
+2. Replace with placeholders sourced from `firm_context.yaml` via `_firm_context.py` helpers (mirror `cos_otter_backfill.py`).
+3. Add tenant-data context to the dynamic-block portion of the prompt (per-call data already does this).
+4. Test with the live tenant context AND a synthetic empty-tenant fixture.
+5. Move file to public repo + create symlink in tenant repo.
+
+**Outstanding items**:
+- `cos_email_backfill.py` — needs steps 1–5. Estimated 2-3 hours of careful refactor.
+- `dash_corrections_proposer.py` — same parameterization need; lower priority since it's mostly tenant-coupled by design.
+
+Don't block other work on this. Adopt as a milestone target (within 2 weeks of identification) but not a sprint blocker.
+
+---
+
 ## TOPIC — ITEM LIFECYCLE STANDARD (Genesis / Maturation / Resolution)
 
 Codified 2026-05-04 after a holistic pass on what makes items appear on/off the dashboard correctly. The 22 rules below extend the earlier topic-specific rules with a unified lifecycle model.

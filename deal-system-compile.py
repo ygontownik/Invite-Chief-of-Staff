@@ -509,6 +509,167 @@ def _emit_g5_candidates_sidecar() -> None:
         print(f'  G5 candidates: {len(candidates)} firm(s) need triage → {out_path.name}', file=sys.stderr)
 
 
+def _compute_deal_readthroughs() -> int:
+    """U2 silent join (codified 2026-05-04): for each deal in
+    deal-system-data.json, scan dashboard-data.json > marketCommentary
+    for items that mention the deal — by canonical name, alias needle,
+    sector keyword, geography keyword. Attach matches as
+    `recent_readthroughs[]` on each deal so deal cards (and the daily
+    briefing) can call out market intel relevant to that deal.
+
+    Today only reads from marketCommentary. Future: extend to read
+    from podcast memos and Jefferies/GS research summaries once those
+    pipelines emit structured intel records (see U2 deferred TODO in
+    dash_corrections.md). Returns count of (deal, readthrough) pairs
+    written. Silent — no user-visible warnings."""
+    import re as _re
+    dash_path = COMPILED_DIR / 'dashboard-data.json'
+    deal_path = DATA_DST
+    if not dash_path.exists() or not deal_path.exists():
+        return 0
+    try:
+        dash = json.loads(dash_path.read_text())
+        deal_doc = json.loads(deal_path.read_text())
+    except Exception:
+        return 0
+
+    mc = dash.get('marketCommentary')
+    if isinstance(mc, list):
+        mc = mc[0] if mc else None
+    if not isinstance(mc, dict):
+        return 0
+    mc_date = mc.get('date') or ''
+
+    # Build alias map: canonical → list of needle substrings (lowercased).
+    fc_path = Path.home() / 'cos-pipeline-config' / 'firm_context.yaml'
+    canonical_to_needles: dict = {}
+    try:
+        import yaml as _yaml
+        if fc_path.exists():
+            fc = _yaml.safe_load(fc_path.read_text()) or {}
+            for entry in (fc.get('counterparty_aliases') or []):
+                canon = (entry.get('canonical') or '').strip()
+                if not canon: continue
+                canonical_to_needles[canon.lower()] = [
+                    (n or '').lower() for n in (entry.get('needles') or [])
+                ] + [canon.lower()]
+    except Exception:
+        pass
+
+    def _tokens_for_deal(d: dict) -> dict:
+        """Return matching tokens for a deal: name/ticker/id substrings,
+        sector keywords, geography keywords, alias needles, and tagline
+        keywords. Tagline often carries deal-distinctive terms (e.g.
+        'hyperscale', 'salt-cavern') absent from the structured fields."""
+        name = (d.get('name') or '').lower()
+        ticker = (d.get('ticker') or '').lower()
+        did = (d.get('id') or '').lower()
+        sector = (d.get('sector') or '').lower()
+        geo = (d.get('geography') or '').lower()
+        tagline = (d.get('tagline') or '').lower()
+        # Try to match this deal to a canonical via its name/id
+        alias_needles = []
+        for canon_low, needles in canonical_to_needles.items():
+            if canon_low in name or any(n in name for n in needles if n):
+                alias_needles = needles
+                break
+            if did and (canon_low == did or did in canon_low):
+                alias_needles = needles
+                break
+        sector_tokens = [t for t in _re.split(r'[\s/,&\-]+', sector) if len(t) > 3]
+        geo_tokens = [t for t in _re.split(r'[\s/,&\-(\)]+', geo) if len(t) > 2]
+        # Tagline tokens — strip stopwords and short words
+        tagline_tokens = [t for t in _re.split(r'[\s/,&\-—.;:]+', tagline) if len(t) >= 5]
+        return {
+            'name_tokens':  [t for t in (name, ticker, did) if t],
+            'alias_needles': [n for n in alias_needles if n and len(n) >= 3],
+            'sector_tokens': sector_tokens,
+            'geo_tokens': geo_tokens,
+            'tagline_tokens': tagline_tokens,
+        }
+
+    # Build a denylist of generic tokens that match too broadly. Anything
+    # that fires on >=20% of a typical market brief is too generic.
+    DENY_TOKENS = {'energy', 'power', 'gas', 'storage', 'data', 'infra', 'infrastructure',
+                   'capital', 'partners', 'national', 'national)', 'multi-site',
+                   'commercial', 'fund', 'corp', 'inc', 'llc', 'global', 'group',
+                   'phone', 'phoenix', 'angeles', 'vegas', 'cities', 'usa', 'us',
+                   'land', 'site', 'sites', 'project', 'platform', 'portfolio',
+                   'phase', 'phase1', 'phase2', 'btm', 'utility', 'tier',
+                   'operating', 'origin', 'originated', 'multi', 'natural',
+                   'center', 'centers', 'pipeline', 'pipelines', 'demand',
+                   'asset', 'assets', 'market', 'markets', 'company', 'firm',
+                   'deal', 'deals', 'private', 'public', 'state', 'federal',
+                   # Generic business / financial words that surface in
+                   # taglines and pollute readthrough matches.
+                   'product', 'products', 'committed', 'commit', 'commits',
+                   'equity', 'debt', 'investment', 'investor', 'investors',
+                   'strategy', 'strategic', 'operator', 'operators', 'agreed',
+                   'agreement', 'bridge', 'leverage', 'returns', 'thesis',
+                   'sourcing', 'diligence', 'advisory', 'memo', 'closing',
+                   'pre-fid', 'post-fid', 'capex', 'opex', 'ebitda', 'revenue',
+                   'income', 'value', 'valuation', 'pricing', 'priced',
+                   'building', 'building-up', 'build-up', 'rolling', 'rolling-up'}
+
+    def _filter_tokens(tokens):
+        return [t for t in tokens if t and t not in DENY_TOKENS and len(t) >= 4]
+
+    pairs = 0
+    for d in (deal_doc.get('deals') or []):
+        if not isinstance(d, dict):
+            continue
+        toks = _tokens_for_deal(d)
+        # Prioritize alias needles (firm-name precision) over sector/geo tokens
+        # (broader, prone to false positives).
+        primary = set(_filter_tokens(toks['name_tokens'] + toks['alias_needles']))
+        secondary = set(_filter_tokens(toks['sector_tokens'] + toks['geo_tokens'] + toks['tagline_tokens']))
+
+        readthroughs = []
+        seen_items = set()
+        for sec in (mc.get('sections') or []):
+            sec_title = sec.get('title') or ''
+            for item in (sec.get('items') or []):
+                if not isinstance(item, str): continue
+                item_low = item.lower()
+                # Match logic:
+                #   primary hit (firm name / alias)        → high confidence
+                #   single secondary hit ≥6 chars          → medium confidence
+                #   ≥2 secondary hits                      → medium confidence
+                # Single short secondary hit alone = too noisy; require ≥6 chars
+                # for solo matches.
+                primary_hits = [t for t in primary if t in item_low]
+                secondary_hits = [t for t in secondary if t in item_low]
+                solo_strong = any(len(t) >= 6 for t in secondary_hits)
+                if not primary_hits and len(secondary_hits) < 2 and not solo_strong:
+                    continue
+                # Dedup the same item appearing under multiple sections (rare)
+                key = item[:100]
+                if key in seen_items: continue
+                seen_items.add(key)
+                match_reason = (
+                    'firm/alias match: ' + ', '.join(sorted(primary_hits)[:3])
+                    if primary_hits
+                    else 'sector/geo match: ' + ', '.join(sorted(secondary_hits)[:3])
+                )
+                readthroughs.append({
+                    'source': 'marketCommentary',
+                    'date': mc_date,
+                    'section': sec_title,
+                    'text': item if len(item) <= 280 else item[:277] + '...',
+                    'match_reason': match_reason,
+                    'confidence': 'high' if primary_hits else 'medium',
+                })
+        # Cap per deal to keep dashboard surfaces lean
+        readthroughs.sort(key=lambda r: (r['confidence'] != 'high', r.get('section')))
+        d['recent_readthroughs'] = readthroughs[:5]
+        pairs += len(readthroughs[:5])
+
+    deal_path.write_text(json.dumps(deal_doc, indent=2, ensure_ascii=False))
+    if pairs:
+        print(f'  readthroughs: {pairs} (deal × intel-item) pair(s) computed', flush=True)
+    return pairs
+
+
 def main():
     t0 = time.time()
     COMPILED_DIR.mkdir(parents=True, exist_ok=True)
@@ -550,6 +711,12 @@ def main():
     print('→ Overlaying fresh signals from dashboard-data.json...', flush=True)
     n = overlay_fresh_signals()
     print(f'  overlaid {n} deal(s)' if n else '  no overlay (no matching tomac entries)')
+
+    # ── Step 3.5b: compute deal readthroughs from marketCommentary
+    # (codified 2026-05-04 — U2 generic rule). Silent — writes
+    # `recent_readthroughs[]` array onto each deal in deal-system-data.json.
+    print('→ Computing deal readthroughs from market intel...', flush=True)
+    _compute_deal_readthroughs()
 
     # ── Step 3.6: ensure schema defaults + apply user overrides ──
     # potential_partner, deck_url, model_url are user-editable via the
