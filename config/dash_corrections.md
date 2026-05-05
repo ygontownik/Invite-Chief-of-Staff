@@ -1056,12 +1056,16 @@ Each discrete fact (commitment amount, owner, last meeting date, gating decision
 When sources disagree on a fact (e.g., `deal.md` says `stage: Sourcing`, briefing fullText calls it "Active Bid"), the canonical hierarchy is:
 
 1. **Calendar-confirmed event** (call took place, doc was signed) — overrides everything
-2. **Curated config** (manually-edited `deal-config.yaml`)
-3. **Compiled artifacts** (`deal-system-data.json`)
-4. **Briefing prose** (LLM-summarized)
-5. **Extracted intel** (raw `awaitingExternal`/`followUps`)
+2. **Followups doc + raw `awaitingExternal[]`** — high-fidelity ground-truth signal of who-owes-whom-what (each row is a primary observation, not an analyst's distillation)
+3. **Curated config** (manually-edited `deal-config.yaml`)
+4. **Compiled artifacts** (`deal-system-data.json`)
+5. **Briefing prose** (LLM-summarized — DOWN-RANKED because it compresses many followUps into a few sentences and can lose nuance, mis-attribute, or speculate)
 
-When (1) and (2) disagree, the curated config MUST update to reflect (1). Auditor discipline — no live lint.
+**Rule (codified 2026-05-04 after a real failure)**: when curating a deal's `takeaway` / `nextStep` / `myAction` during an analyst pass, READ THE FOLLOWUPS first. Filter `dashboard-data.json > followUps[]` for entries whose `who` or `what` mentions the deal/counterparty/asset. Synthesize curated prose from the FollowUps + transcripts (#2/#1), not from briefing prose (#5). Briefing fullText is useful for cross-reference but its "X proposal received" framing can be a paraphrase of "X proposal expected" — easy to mis-read as past tense when it's future.
+
+**Failure pattern that drove the rule**: An analyst pass updated a deal's `next_milestone` to "<counterparty> proposal received" based on briefing summary; actual followUps showed the principal team was DRAFTING the term sheet itself (not waiting for a counterparty proposal) AND was actively building an alternative-financing counterparty list as the live workstream. The briefing summary had compressed many followUps into "awaiting <counterparty>" — easy to mis-read as past tense or as the only active workstream. Tenant-specific incident details in the private log.
+
+**Detection one-liner**: `python3 -c "import json; d=json.load(open('data/compiled/dashboard-data.json')); [print(fu['who'],'|',fu.get('what','')[:140]) for fu in d['followUps'] if not (fu.get('what','') or '').startswith('[RESOLVED]') and any(k in (fu.get('who','')+fu.get('what','')).lower() for k in ['<deal_token>','<counterparty>'])]"` — replace tokens with the deal name + key counterparties.
 
 #### M4 — Recency × relevance, not just recency *(documentation-only)*
 
