@@ -316,7 +316,7 @@ def _gc_stale_tombstones() -> None:
     except Exception:
         pass
 
-    now = _dt.datetime.now(_dt.UTC)
+    now = _dt.datetime.now(_dt.timezone.utc)
     keep = []
     archive = []
     try:
@@ -332,7 +332,7 @@ def _gc_stale_tombstones() -> None:
         # No live match — check age. Format: 2026-05-04T16:30:00Z
         try:
             ts_str = (entry.get('deleted_at') or '').rstrip('Z')
-            ts = _dt.datetime.fromisoformat(ts_str).replace(tzinfo=_dt.UTC)
+            ts = _dt.datetime.fromisoformat(ts_str).replace(tzinfo=_dt.timezone.utc)
             age_days = (now - ts).days
         except Exception:
             keep.append(entry)
@@ -499,7 +499,7 @@ def _emit_g5_candidates_sidecar() -> None:
         candidates.append({'firm': firm, 'mentions_14d': n})
     candidates.sort(key=lambda x: -x['mentions_14d'])
     payload = {
-        'updated_at': _dt.datetime.now(_dt.UTC).isoformat(timespec='seconds').replace('+00:00','Z'),
+        'updated_at': _dt.datetime.now(_dt.timezone.utc).isoformat(timespec='seconds').replace('+00:00','Z'),
         'window_days': 14,
         'rule': 'G5 inverse audit — firms mentioned >= 3x but not in any curated config',
         'candidates': candidates,
@@ -765,10 +765,50 @@ def _compute_deal_logs() -> int:
         tokens = _deal_tokens(d)
         did_low = (did or '').lower()
 
+        # Build a precision-key set for parent_id explicit matching
+        # (codified 2026-05-04 EVE — V1+ precision audit found that
+        # extractors slug-ify deal names, so `pacific-fleet-solutions`
+        # was missing the `pfs` deal id, and `black-bayou` was missing
+        # `bbeh`). Set includes: id, ticker, full name (lowercased, with
+        # hyphens normalized to spaces), and all alias-needles from
+        # firm_context for this deal's canonical.
+        precision_keys = set()
+        for f in ('id', 'ticker', 'name'):
+            v = (d.get(f) or '').lower().strip()
+            if v:
+                precision_keys.add(v)
+                precision_keys.add(v.replace('-', ' ').replace('_', ' '))
+                precision_keys.add(v.replace(' ', '-'))
+        # Tokens (from _deal_tokens) already include alias-needles drawn
+        # from firm_context.yaml — fold them in for precision lookups.
+        precision_keys.update(t for t in tokens if t)
+        precision_keys.discard('')
+
+        def _precision_match(pid: str) -> bool:
+            """True iff parent_id resolves to this deal — checks raw
+            value plus hyphen↔space variants. Conservative: requires
+            equality with at least one precision key, not substring.
+            Reverse-substring (key in pid) is allowed only for
+            multi-word keys ≥ 6 chars, to handle the 'pacific-fleet-
+            solutions' → 'pacific fleet' case while rejecting noise
+            like 'uber' matching 'uber lease'."""
+            if not pid:
+                return False
+            p1 = pid.lower().strip()
+            p2 = p1.replace('-', ' ').replace('_', ' ')
+            if p1 in precision_keys or p2 in precision_keys:
+                return True
+            for k in precision_keys:
+                if ' ' in k and len(k) >= 6 and k in p2:
+                    return True
+            return False
+
         # Scan signal sources.
         # Two-pass precision strategy (codified 2026-05-04):
-        #   Pass A — explicit parent_id == deal.id  (high-precision, no false positives)
-        #   Pass B — fuzzy token-match against text  (high-recall fallback)
+        #   Pass A — explicit parent_id resolves to a precision key
+        #            for this deal (id / ticker / name / alias needle,
+        #            with hyphen↔space normalization)
+        #   Pass B — fuzzy token-match against text (high-recall fallback)
         # Items matched by Pass A skip Pass B. Future: when extraction
         # emits deal_log_entries[] explicitly, that becomes Pass A0.
         candidate_pairs = []
@@ -776,9 +816,12 @@ def _compute_deal_logs() -> int:
             if (fu.get('what') or '').startswith('[RESOLVED]'): continue
             who = (fu.get('who') or '')
             what = (fu.get('what') or '')
-            # followUps may carry linkedTo (deal slug) for precision
-            linked = (fu.get('linkedTo') or fu.get('parent_id') or '').lower()
-            explicit = bool(linked and linked == did_low)
+            # followUps `linkedTo` is most often the source-doc URL
+            # (Drive link), not a deal slug — precision rarely fires
+            # here. parent_id may or may not be present. Both checked
+            # for completeness; harmless when neither matches.
+            linked = (fu.get('linkedTo') or fu.get('parent_id') or '')
+            explicit = _precision_match(linked)
             if not explicit:
                 text_low = (who + ' ' + what).lower()
                 if not any(t in text_low for t in tokens): continue
@@ -796,8 +839,7 @@ def _compute_deal_logs() -> int:
         for ae in (dash.get('awaitingExternal') or []):
             cp = (ae.get('counterparty') or '')
             content = (ae.get('content') or '')
-            parent = (ae.get('parent_id') or '').lower()
-            explicit = bool(parent and parent == did_low)
+            explicit = _precision_match(ae.get('parent_id'))
             if not explicit:
                 text_low = (cp + ' ' + content).lower()
                 if not any(t in text_low for t in tokens): continue
@@ -815,12 +857,26 @@ def _compute_deal_logs() -> int:
         for it in ((dash.get('dealIntel') or []) + (dash.get('originationInbox') or [])):
             content = (it.get('content') or '')
             ctx = (it.get('context') or '')
-            parent = (it.get('parent_id') or '').lower()
-            explicit = bool(parent and parent == did_low)
+            # NOTE on dealIntel parent_id semantics (V1+ audit
+            # 2026-05-04 EVE): on dealIntel items, parent_id often
+            # tags the SOURCE FIRM of the intel (e.g. NEE, GEV, BE
+            # for readthrough commentary), not the receiving deal.
+            # _precision_match correctly rejects those — readthrough
+            # falls through to token match, which is the right path.
+            explicit = _precision_match(it.get('parent_id'))
             if not explicit:
                 text_low = (content + ' ' + ctx).lower()
                 if not any(t in text_low for t in tokens): continue
+            # dealIntel and originationInbox items don't carry an
+            # `addedDate` field — the date lives at `source_ref.date`.
+            # Fall back to that when addedDate is missing (codified
+            # 2026-05-04 EVE — without this, every dealIntel and
+            # originationInbox item was silently dropped from the V1
+            # auto-log, defeating the point of those signal sources).
             added = (it.get('addedDate') or '')[:10]
+            if not _re.match(r'^\d{4}-\d{2}-\d{2}$', added):
+                src_ref = it.get('source_ref') or {}
+                added = (src_ref.get('date') or '')[:10] if isinstance(src_ref, dict) else ''
             if not _re.match(r'^\d{4}-\d{2}-\d{2}$', added): continue
             if added < cutoff_30d: continue
             iid = _djb2('intel|' + ctx[:40] + '|' + content[:80] + '|' + added)
@@ -838,7 +894,7 @@ def _compute_deal_logs() -> int:
             entries = entries[:200]
             existing['deal_id'] = did
             existing['entries'] = entries
-            existing['updated_at'] = _dt.datetime.now(_dt.UTC).isoformat(timespec='seconds').replace('+00:00','Z')
+            existing['updated_at'] = _dt.datetime.now(_dt.timezone.utc).isoformat(timespec='seconds').replace('+00:00','Z')
             log_path.write_text(json.dumps(existing, indent=2, ensure_ascii=False))
             new_entries_total += len(candidate_pairs)
 
