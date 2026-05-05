@@ -1845,6 +1845,21 @@ def process_transcript(token, file_id, file_name, hint_category, source_label, s
         except Exception as e:
             print(f"    ⚠️   Envelope routing failed (non-critical): {e}", file=sys.stderr)
 
+    # Sidecar tap for deal_log_entries[] — bypasses _envelope_writer
+    # (parallel-session-owned) and feeds the V1+ Pass A0 lookup at
+    # compile time. Soft-fails to keep extraction throughput intact
+    # when the sidecar module isn't yet deployed.
+    try:
+        import _deal_log_sidecar as _dls
+        _dle = data.get("deal_log_entries", []) or []
+        if _dle:
+            _n = _dls.append(_dle, src_ref, source_id=str(file_id))
+            if _n:
+                print(f"    🏷   Deal-log sidecar: +{_n} entries", flush=True)
+    except Exception as _se:
+        print(f"    ⚠️   Deal-log sidecar skipped (non-critical): {_se}",
+              file=sys.stderr)
+
     # ── Rename file to 'YYYY-MM-DD Clean Title' ───────────────────────────────
     # Otter drops files with decorative dash-padded names. Rename on first
     # processing so the Drive folder stays readable.

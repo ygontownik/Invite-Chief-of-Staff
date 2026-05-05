@@ -810,6 +810,20 @@ def process_thread(token: str, thread_meta: dict, label_map: dict,
         except Exception as e:
             print(f"    envelope writer failed: {e}", file=sys.stderr)
 
+    # Sidecar tap for deal_log_entries[] — bypasses _envelope_writer
+    # (parallel-session-owned) and feeds the V1+ Pass A0 lookup at
+    # compile time. Soft-fails so it never blocks extraction.
+    try:
+        import _deal_log_sidecar as _dls
+        _dle = data.get("deal_log_entries", []) or []
+        if _dle:
+            _n = _dls.append(_dle, src_ref, source_id=str(tid))
+            if _n:
+                print(f"    deal-log sidecar: +{_n} entries", flush=True)
+    except Exception as _se:
+        print(f"    deal-log sidecar skipped (non-critical): {_se}",
+              file=sys.stderr)
+
     stats["followups_added"] += routed.get("routed", {}).get("my_action", 0)
     stats["contacts_added"]  += len(contacts)
     stats["processed"]       += 1
