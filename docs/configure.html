@@ -306,6 +306,10 @@
   }
   .footer a { color: var(--muted); }
 
+
+  /* ── Fix: inner icon elements should not catch clicks ── */
+  .radio-dot, .chip-order, .podcast-toggle { pointer-events: none; }
+
   @media (max-width: 600px) {
     .section { padding: 20px; }
     .field-row { flex-direction: column; }
@@ -531,26 +535,22 @@
     <div class="field">
       <label>Your role / frame</label>
       <div class="radio-group inline" id="investor-frame">
-        <label class="radio-option selected" onclick="selectRadio('investor-frame', this, 'principal investor')">
-          <input type="radio" name="frame" value="principal investor" checked>
+        <div class="radio-option selected" onclick="selectRadio('investor-frame', this, 'principal investor')">
           <div class="radio-dot"></div>
           <div><div class="radio-label">Principal investor / GP</div></div>
-        </label>
-        <label class="radio-option" onclick="selectRadio('investor-frame', this, 'LP / allocator')">
-          <input type="radio" name="frame" value="LP / allocator">
+        </div>
+        <div class="radio-option" onclick="selectRadio('investor-frame', this, 'LP / allocator')">
           <div class="radio-dot"></div>
           <div><div class="radio-label">LP / allocator</div></div>
-        </label>
-        <label class="radio-option" onclick="selectRadio('investor-frame', this, 'corporate development')">
-          <input type="radio" name="frame" value="corporate development">
+        </div>
+        <div class="radio-option" onclick="selectRadio('investor-frame', this, 'corporate development')">
           <div class="radio-dot"></div>
           <div><div class="radio-label">Corporate development</div></div>
-        </label>
-        <label class="radio-option" onclick="selectRadio('investor-frame', this, 'analyst')">
-          <input type="radio" name="frame" value="analyst">
+        </div>
+        <div class="radio-option" onclick="selectRadio('investor-frame', this, 'analyst')">
           <div class="radio-dot"></div>
           <div><div class="radio-label">Analyst</div></div>
-        </label>
+        </div>
       </div>
     </div>
 
@@ -558,16 +558,14 @@
       <label>Active job search? <span style="color:#888;font-weight:400">(opt-in — off by default)</span></label>
       <div class="hint">When On, the system enables a Personal tile with a Job Search tab, classifies inbound emails as RECRUIT, and writes a Recruiting Pipeline doc. Most tenants leave this Off.</div>
       <div class="radio-group inline" id="job-search">
-        <label class="radio-option selected" onclick="selectRadio('job-search', this, 'false')">
-          <input type="radio" name="jobsearch" value="false" checked>
+        <div class="radio-option selected" onclick="selectRadio('job-search', this, 'false')">
           <div class="radio-dot"></div>
           <div><div class="radio-label">No (recommended)</div></div>
-        </label>
-        <label class="radio-option" onclick="selectRadio('job-search', this, 'true')">
-          <input type="radio" name="jobsearch" value="true">
+        </div>
+        <div class="radio-option" onclick="selectRadio('job-search', this, 'true')">
           <div class="radio-dot"></div>
           <div><div class="radio-label">Yes — enable recruiting flow</div></div>
-        </label>
+        </div>
       </div>
     </div>
   </div>
@@ -665,82 +663,74 @@
     <div class="field">
       <label>Memo output format</label>
       <div class="radio-group" id="memo-format">
-        <label class="radio-option selected" onclick="selectRadio('memo-format', this, 'sixsection')">
-          <input type="radio" name="memoformat" checked>
+        <div class="radio-option selected" onclick="selectRadio('memo-format', this, 'sixsection')">
           <div class="radio-dot"></div>
           <div>
             <div class="radio-label">Six-section investor memo (default)</div>
             <div class="radio-desc">Core Argument · Consensus · Tension · Open Questions · What You'd Need · Key Names. Best for deal and LP calls.</div>
           </div>
-        </label>
-        <label class="radio-option" onclick="selectRadio('memo-format', this, 'brief')">
-          <input type="radio" name="memoformat">
+        </div>
+        <div class="radio-option" onclick="selectRadio('memo-format', this, 'brief')">
           <div class="radio-dot"></div>
           <div>
             <div class="radio-label">Brief summary</div>
             <div class="radio-desc">3–4 paragraph narrative. Good for advisory and check-in calls where a full memo is overkill.</div>
           </div>
-        </label>
-        <label class="radio-option" onclick="selectRadio('memo-format', this, 'comprehensive')">
-          <input type="radio" name="memoformat">
+        </div>
+        <div class="radio-option" onclick="selectRadio('memo-format', this, 'comprehensive')">
           <div class="radio-dot"></div>
           <div>
             <div class="radio-label">Comprehensive coverage</div>
             <div class="radio-desc">Extended six-section format with more depth per section. Good for IC-level calls and diligence sessions.</div>
           </div>
-        </label>
+        </div>
       </div>
     </div>
 
     <div class="field">
       <label>Primary analytical question the AI should answer first</label>
       <div class="radio-group" id="primary-question">
-        <label class="radio-option selected" onclick="selectRadio('primary-question', this, 'investment')">
-          <input type="radio" name="primq" checked>
+        <div class="radio-option selected" onclick="selectRadio('primary-question', this, 'investment')">
           <div class="radio-dot"></div>
           <div>
             <div class="radio-label">Is there an investment here?</div>
             <div class="radio-desc">Lead with the investment implication. Who else is looking? What would it take to act?</div>
           </div>
-        </label>
-        <label class="radio-option" onclick="selectRadio('primary-question', this, 'risk')">
-          <input type="radio" name="primq">
+        </div>
+        <div class="radio-option" onclick="selectRadio('primary-question', this, 'risk')">
           <div class="radio-dot"></div>
           <div>
             <div class="radio-label">What are the key risks?</div>
             <div class="radio-desc">Lead with downside. What could kill the thesis? What's not being said?</div>
           </div>
-        </label>
-        <label class="radio-option" onclick="selectRadio('primary-question', this, 'relationship')">
-          <input type="radio" name="primq">
+        </div>
+        <div class="radio-option" onclick="selectRadio('primary-question', this, 'relationship')">
           <div class="radio-dot"></div>
           <div>
             <div class="radio-label">What's the relationship / next step?</div>
             <div class="radio-desc">Lead with who to call and when. Good for pipeline-building and LP relationship calls.</div>
           </div>
-        </label>
+        </div>
       </div>
     </div>
 
     <div class="field">
       <label>Specificity preference</label>
       <div class="radio-group" id="specificity">
-        <label class="radio-option selected" onclick="selectRadio('specificity', this, 'strict')">
-          <input type="radio" name="spec" checked>
+        <div class="radio-option selected" onclick="selectRadio('specificity', this, 'strict')">
           <div class="radio-dot"></div>
           <div>
             <div class="radio-label">Named assets, firms, and numbers only — never thematic</div>
             <div class="radio-desc">If it's in the transcript, name it. No floating assertions. Good for active deal calls.</div>
           </div>
-        </label>
-        <label class="radio-option" onclick="selectRadio('specificity', this, 'mixed')">
-          <input type="radio" name="spec">
+        </div>
+        <div class="radio-option" onclick="selectRadio('specificity', this, 'mixed')">
           <div class="radio-dot"></div>
           <div>
             <div class="radio-label">Lead with specifics, thematic summary acceptable</div>
             <div class="radio-desc">Name what's named, summarize what isn't. Good for market/sector calls.</div>
           </div>
-        </label>
+        </div>
       </div>
     </div>
   </div>
@@ -758,59 +748,52 @@
     <div class="field">
       <label>Tone</label>
       <div class="radio-group" id="email-tone">
-        <label class="radio-option selected" onclick="selectRadio('email-tone', this, 'professional, direct, principal-investor frame — no fluff')">
-          <input type="radio" name="tone" checked>
+        <div class="radio-option selected" onclick="selectRadio('email-tone', this, 'professional, direct, principal-investor frame — no fluff')">
           <div class="radio-dot"></div>
           <div>
             <div class="radio-label">Professional and direct</div>
             <div class="radio-desc">Principal investor frame. No pleasantries. Answer first, context second.</div>
           </div>
-        </label>
-        <label class="radio-option" onclick="selectRadio('email-tone', this, 'warm, relationship-focused, senior professional')">
-          <input type="radio" name="tone">
+        </div>
+        <div class="radio-option" onclick="selectRadio('email-tone', this, 'warm, relationship-focused, senior professional')">
           <div class="radio-dot"></div>
           <div>
             <div class="radio-label">Warm and relationship-focused</div>
             <div class="radio-desc">Invests in the person, not just the answer. Good for LP and founder relationships.</div>
           </div>
-        </label>
-        <label class="radio-option" onclick="selectRadio('email-tone', this, 'formal, measured, institutional')">
-          <input type="radio" name="tone">
+        </div>
+        <div class="radio-option" onclick="selectRadio('email-tone', this, 'formal, measured, institutional')">
           <div class="radio-dot"></div>
           <div>
             <div class="radio-label">Formal and institutional</div>
             <div class="radio-desc">Measured. Appropriate for regulated counterparties, government contacts, formal pitches.</div>
           </div>
-        </label>
-        <label class="radio-option" onclick="selectRadio('email-tone', this, 'concise, direct, brevity above all')">
-          <input type="radio" name="tone">
+        </div>
+        <div class="radio-option" onclick="selectRadio('email-tone', this, 'concise, direct, brevity above all')">
           <div class="radio-dot"></div>
           <div>
             <div class="radio-label">Maximally concise</div>
             <div class="radio-desc">One paragraph max. Answer only. No framing.</div>
           </div>
-        </label>
+        </div>
       </div>
     </div>
 
     <div class="field">
       <label>Default reply length</label>
       <div class="radio-group inline" id="email-brevity">
-        <label class="radio-option selected" onclick="selectRadio('email-brevity', this, '2-4 sentences for routine replies; up to 8 for substantive responses')">
-          <input type="radio" name="brevity" checked>
+        <div class="radio-option selected" onclick="selectRadio('email-brevity', this, '2-4 sentences for routine replies; up to 8 for substantive responses')">
           <div class="radio-dot"></div>
           <div><div class="radio-label">Short default (2–4 sentences)</div></div>
-        </label>
-        <label class="radio-option" onclick="selectRadio('email-brevity', this, 'up to 8 sentences; match the depth of the question')">
-          <input type="radio" name="brevity">
+        </div>
+        <div class="radio-option" onclick="selectRadio('email-brevity', this, 'up to 8 sentences; match the depth of the question')">
           <div class="radio-dot"></div>
           <div><div class="radio-label">Adaptive (up to 8)</div></div>
-        </label>
-        <label class="radio-option" onclick="selectRadio('email-brevity', this, '1-2 sentences only')">
-          <input type="radio" name="brevity">
+        </div>
+        <div class="radio-option" onclick="selectRadio('email-brevity', this, '1-2 sentences only')">
           <div class="radio-dot"></div>
           <div><div class="radio-label">Always brief (1–2 sentences)</div></div>
-        </label>
+        </div>
       </div>
     </div>
 
@@ -961,6 +944,46 @@
     <div class="tip" style="margin-top: 16px;">
       <strong>CLAUDE.md placement:</strong> Save to <code style="background:#d1fae5;padding:1px 4px;border-radius:3px;font-family:monospace;font-size:12px;">~/.claude/CLAUDE.md</code> — this is Claude's global instruction file, applied to every session on your machine automatically. It does not live in the pipeline repo.
     </div>
+  </div>
+
+
+  <!-- ── Submit section ── -->
+  <div class="section" style="background: var(--blue-bg); border-color: var(--blue-border); margin-top: 32px;">
+    <div class="section-header">
+      <div class="section-num" style="background: var(--blue);">✓</div>
+      <div>
+        <div class="section-title">Send your setup to the admin</div>
+        <div class="section-sub">Submit your info and your generated config will be emailed to Yoni for review. He'll add you to the repo and confirm you're ready to install.</div>
+      </div>
+    </div>
+
+    <div class="field-row">
+      <div class="field">
+        <label>Your name</label>
+        <input type="text" id="submit-name" placeholder="Sarah Mitchell">
+      </div>
+      <div class="field">
+        <label>Your email</label>
+        <input type="text" id="submit-email" placeholder="sarah@cascadecapital.com">
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>GitHub username</label>
+        <input type="text" id="submit-github" placeholder="smitchell-cascade">
+      </div>
+      <div class="field">
+        <label>Firm name</label>
+        <input type="text" id="submit-firm" placeholder="Cascade Capital Partners">
+      </div>
+    </div>
+
+    <div id="submit-error" style="display:none; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #991b1b; margin-bottom: 12px;"></div>
+    <div id="submit-success" style="display:none; background: var(--green-bg); border: 1px solid var(--green-border); border-radius: 8px; padding: 14px 18px; font-size: 14px; color: var(--green); font-weight: 600;"></div>
+
+    <button id="submit-btn" onclick="submitSetup()" style="background: var(--blue); color: white; border: none; border-radius: 8px; padding: 12px 28px; font-size: 15px; font-weight: 700; cursor: pointer; transition: background .15s; margin-top: 4px;">
+      Send to admin →
+    </button>
   </div>
 
   <div class="footer">
@@ -1867,6 +1890,58 @@ ${text.slice(0, 4000)}`
   }
 
   btn.disabled = false;
+}
+
+
+// ── Submit setup ───────────────────────────────────────────────────────────
+async function submitSetup() {
+  const name   = document.getElementById('submit-name').value.trim();
+  const email  = document.getElementById('submit-email').value.trim();
+  const github = document.getElementById('submit-github').value.trim();
+  const firm   = document.getElementById('submit-firm').value.trim();
+  const errEl  = document.getElementById('submit-error');
+  const succEl = document.getElementById('submit-success');
+  const btn    = document.getElementById('submit-btn');
+
+  errEl.style.display = 'none';
+  succEl.style.display = 'none';
+
+  if (!name || !email || !github) {
+    errEl.textContent = 'Please fill in your name, email, and GitHub username before submitting.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+
+  const claudeMd = document.getElementById('claude-md-output').textContent;
+
+  try {
+    const resp = await fetch('https://formspree.io/f/xpwzlkqj', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({
+        name, email, github, firm,
+        subject: `COS Pipeline setup request — ${firm || name}`,
+        claude_md_preview: claudeMd.slice(0, 2000)
+      })
+    });
+
+    if (resp.ok) {
+      succEl.textContent = '✓ Sent! Yoni will add you to the repo and follow up within 24 hours.';
+      succEl.style.display = 'block';
+      btn.textContent = 'Sent ✓';
+      btn.style.background = 'var(--green)';
+    } else {
+      throw new Error('Server error ' + resp.status);
+    }
+  } catch (err) {
+    errEl.textContent = 'Submission failed — please email ygontownik@gmail.com directly with your name, GitHub username, and firm.';
+    errEl.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = 'Send to admin →';
+  }
 }
 
 // ── Main update ────────────────────────────────────────────────────────────
