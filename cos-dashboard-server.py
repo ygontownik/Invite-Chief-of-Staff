@@ -2337,6 +2337,26 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, {})
 
     def do_GET(self):
+        # 2026-05-05 BUGFIX: strip query string from self.path before
+        # exact-match route comparisons. Python's http.server keeps the
+        # query string on self.path verbatim, so "/?_t=123" did not
+        # match any of the `self.path == '/'` / `'/personal/'` /
+        # `'/deals/'` etc. branches and fell through to 404. The cache-
+        # busting cache-buster `?_t=<ts>` added to doRefresh /
+        # doSectionRefresh URLs (commit 53ff180) hit this for the home
+        # route every sync. Preserve the full self.path for query-aware
+        # handlers; only the routing comparisons read _path_route.
+        try:
+            _path_route = self.path.split('?', 1)[0]
+            # Re-bind self.path to the stripped form so all downstream
+            # routing branches (do_GET / do_POST elif chains) see a
+            # query-free path. The original is rarely needed by these
+            # routes — handlers that DO need query params parse via
+            # urllib.parse.urlparse / parse_qs on a captured copy.
+            self._raw_path = self.path
+            self.path = _path_route
+        except Exception:
+            pass
         # ── unauthenticated routes ──────────────────────────────
         if self.path.startswith('/login'):
             self._serve_login_page()
@@ -3713,6 +3733,15 @@ class Handler(BaseHTTPRequestHandler):
         self._serve_html(html, inject_chrome=True, user=user)
 
     def do_POST(self):
+        # 2026-05-05 BUGFIX (companion to do_GET fix above): strip
+        # query string from self.path before exact-match comparisons.
+        # POST handlers with `self.path == '/X'` patterns 404'd when
+        # any cache-buster or tracking query landed on the URL.
+        try:
+            self._raw_path = self.path
+            self.path = self.path.split('?', 1)[0]
+        except Exception:
+            pass
         # ── unauthenticated routes ──────────────────────────────
         if self.path == '/login':
             self._handle_login_post()
