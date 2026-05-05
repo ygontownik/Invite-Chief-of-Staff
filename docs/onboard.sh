@@ -6,7 +6,7 @@
 # added to the ygontownik/tcip-config GitHub repo.
 #
 # Usage (from the setup page):
-#   curl -fsSL https://ygontownik.github.io/Dashboard/onboard.sh -o /tmp/tcip-onboard.sh
+#   curl -fsSL https://ygontownik.github.io/Invite-Chief-of-Staff/onboard.sh -o /tmp/tcip-onboard.sh
 #   bash /tmp/tcip-onboard.sh
 
 set -e

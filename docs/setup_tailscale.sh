@@ -2,7 +2,7 @@
 # setup_tailscale.sh — Install Tailscale on this Mac and print your remote dashboard URL.
 #
 # Usage (paste into Terminal):
-#   curl -fsSL https://ygontownik.github.io/Dashboard/setup_tailscale.sh | bash
+#   curl -fsSL https://ygontownik.github.io/Invite-Chief-of-Staff/setup_tailscale.sh | bash
 
 set -uo pipefail
 
@@ -60,7 +60,7 @@ else
     echo "  Download and install Tailscale from the page that just opened."
     echo "  Then re-run this script:"
     echo ""
-    echo "    curl -fsSL https://ygontownik.github.io/Dashboard/setup_tailscale.sh | bash"
+    echo "    curl -fsSL https://ygontownik.github.io/Invite-Chief-of-Staff/setup_tailscale.sh | bash"
     echo ""
     exit 0
   fi
