@@ -763,15 +763,25 @@ def _compute_deal_logs() -> int:
         seen = {e.get('id') for e in entries if e.get('id')}
 
         tokens = _deal_tokens(d)
+        did_low = (did or '').lower()
 
-        # Scan signal sources
+        # Scan signal sources.
+        # Two-pass precision strategy (codified 2026-05-04):
+        #   Pass A — explicit parent_id == deal.id  (high-precision, no false positives)
+        #   Pass B — fuzzy token-match against text  (high-recall fallback)
+        # Items matched by Pass A skip Pass B. Future: when extraction
+        # emits deal_log_entries[] explicitly, that becomes Pass A0.
         candidate_pairs = []
         for fu in (dash.get('followUps') or []):
             if (fu.get('what') or '').startswith('[RESOLVED]'): continue
             who = (fu.get('who') or '')
             what = (fu.get('what') or '')
-            text_low = (who + ' ' + what).lower()
-            if not any(t in text_low for t in tokens): continue
+            # followUps may carry linkedTo (deal slug) for precision
+            linked = (fu.get('linkedTo') or fu.get('parent_id') or '').lower()
+            explicit = bool(linked and linked == did_low)
+            if not explicit:
+                text_low = (who + ' ' + what).lower()
+                if not any(t in text_low for t in tokens): continue
             added = (fu.get('addedDate') or fu.get('when') or '')[:10]
             if not _re.match(r'^\d{4}-\d{2}-\d{2}$', added): continue
             if added < cutoff_30d: continue
@@ -780,13 +790,17 @@ def _compute_deal_logs() -> int:
             candidate_pairs.append({
                 'id': iid, 'date': added, 'source': 'followup',
                 'who': who[:80], 'what': what[:280],
+                'match': 'explicit' if explicit else 'token',
             })
 
         for ae in (dash.get('awaitingExternal') or []):
             cp = (ae.get('counterparty') or '')
             content = (ae.get('content') or '')
-            text_low = (cp + ' ' + content).lower()
-            if not any(t in text_low for t in tokens): continue
+            parent = (ae.get('parent_id') or '').lower()
+            explicit = bool(parent and parent == did_low)
+            if not explicit:
+                text_low = (cp + ' ' + content).lower()
+                if not any(t in text_low for t in tokens): continue
             added = (ae.get('addedDate') or '')[:10]
             if not _re.match(r'^\d{4}-\d{2}-\d{2}$', added): continue
             if added < cutoff_30d: continue
@@ -795,13 +809,17 @@ def _compute_deal_logs() -> int:
             candidate_pairs.append({
                 'id': iid, 'date': added, 'source': 'awaitingExternal',
                 'who': cp[:80], 'what': content[:280],
+                'match': 'explicit' if explicit else 'token',
             })
 
         for it in ((dash.get('dealIntel') or []) + (dash.get('originationInbox') or [])):
             content = (it.get('content') or '')
             ctx = (it.get('context') or '')
-            text_low = (content + ' ' + ctx).lower()
-            if not any(t in text_low for t in tokens): continue
+            parent = (it.get('parent_id') or '').lower()
+            explicit = bool(parent and parent == did_low)
+            if not explicit:
+                text_low = (content + ' ' + ctx).lower()
+                if not any(t in text_low for t in tokens): continue
             added = (it.get('addedDate') or '')[:10]
             if not _re.match(r'^\d{4}-\d{2}-\d{2}$', added): continue
             if added < cutoff_30d: continue
@@ -810,6 +828,7 @@ def _compute_deal_logs() -> int:
             candidate_pairs.append({
                 'id': iid, 'date': added, 'source': 'intel',
                 'who': ctx[:80], 'what': content[:280],
+                'match': 'explicit' if explicit else 'token',
             })
 
         if candidate_pairs:
