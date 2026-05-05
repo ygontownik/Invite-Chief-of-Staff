@@ -743,6 +743,30 @@ def _compute_deal_logs() -> int:
     cutoff_30d = (_dt.date.today() - _dt.timedelta(days=30)).isoformat()
     new_entries_total = 0
 
+    # Pass A0 sidecar — LLM-emitted deal_log_entries[], shipped via
+    # ~/cos-pipeline/_deal_log_sidecar.py (codified 2026-05-04 LATE-EVE,
+    # closes deferred [1] in HANDOFF). Highest precision tier of the
+    # V1+ strategy: extractor explicitly tagged this entry to a deal,
+    # so no fuzzy text inference is required. Soft-fails to empty list
+    # if the sidecar module isn't yet on the path.
+    sidecar_records = []
+    try:
+        _COS_DIR = Path.home() / 'cos-pipeline'
+        if str(_COS_DIR) not in sys.path:
+            sys.path.insert(0, str(_COS_DIR))
+        import _deal_log_sidecar as _dls
+        sidecar_records = _dls.read_recent(days=30)
+    except Exception:
+        sidecar_records = []
+
+    # Group sidecar records by deal_id once so each deal's loop is O(k)
+    # rather than O(N).
+    sidecar_by_deal: dict = {}
+    for rec in sidecar_records:
+        did_key = (rec.get('deal_id') or '').lower().strip()
+        if did_key:
+            sidecar_by_deal.setdefault(did_key, []).append(rec)
+
     for d in (deal_doc.get('deals') or []):
         if not isinstance(d, dict):
             continue
@@ -804,14 +828,39 @@ def _compute_deal_logs() -> int:
             return False
 
         # Scan signal sources.
-        # Two-pass precision strategy (codified 2026-05-04):
-        #   Pass A — explicit parent_id resolves to a precision key
-        #            for this deal (id / ticker / name / alias needle,
-        #            with hyphen↔space normalization)
-        #   Pass B — fuzzy token-match against text (high-recall fallback)
-        # Items matched by Pass A skip Pass B. Future: when extraction
-        # emits deal_log_entries[] explicitly, that becomes Pass A0.
+        # Three-pass precision strategy:
+        #   Pass A0 — sidecar records: LLM-emitted deal_log_entries[]
+        #             tagged directly to this deal at extraction time.
+        #             Highest precision; no fuzzy inference at all.
+        #             (Codified 2026-05-04 LATE-EVE.)
+        #   Pass A  — envelope_items / followUps where parent_id
+        #             resolves to a precision key for this deal
+        #             (id / ticker / name / alias needle, with
+        #             hyphen↔space normalization).
+        #   Pass B  — fuzzy token-match against text (high-recall fallback).
+        # Items matched by Pass A0 / Pass A skip Pass B.
         candidate_pairs = []
+
+        # Pass A0 — sidecar
+        for rec in sidecar_by_deal.get(did_low, []):
+            added = (rec.get('date') or '')[:10]
+            if not _re.match(r'^\d{4}-\d{2}-\d{2}$', added):
+                continue
+            if added < cutoff_30d:
+                continue
+            who = (rec.get('source_title') or '')[:80]
+            what = (rec.get('summary') or '')[:280]
+            iid = _djb2(
+                'sidecar|' + (rec.get('source_id') or '') + '|'
+                + (rec.get('id') or '') + '|' + added
+            )
+            if iid in seen:
+                continue
+            candidate_pairs.append({
+                'id': iid, 'date': added, 'source': 'sidecar',
+                'who': who, 'what': what,
+                'match': 'llm_explicit',
+            })
         for fu in (dash.get('followUps') or []):
             if (fu.get('what') or '').startswith('[RESOLVED]'): continue
             who = (fu.get('who') or '')
