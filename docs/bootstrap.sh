@@ -46,14 +46,42 @@ echo "  TCIP Bootstrap — New Team Setup"
 echo "═══════════════════════════════════════════════════════════"
 echo ""
 
-# ── Dependency checks ────────────────────────────────────────────────────────
+# ── Dependency checks + auto-install ─────────────────────────────────────────
 
-MISSING=0
+install_homebrew() {
+  echo ""
+  info "Installing Homebrew (this will take a few minutes)..."
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || return 1
+  # Add Homebrew to PATH for the rest of this script
+  if [ -x /opt/homebrew/bin/brew ]; then
+    eval "$(/opt/homebrew/bin/brew shellenv)"
+  elif [ -x /usr/local/bin/brew ]; then
+    eval "$(/usr/local/bin/brew shellenv)"
+  fi
+}
+
+install_python() {
+  if ! command -v brew >/dev/null 2>&1; then
+    install_homebrew || die "Homebrew install failed — install Python manually from python.org then re-run."
+  fi
+  info "Installing Python 3 via Homebrew..."
+  brew install python || die "Python install failed — install manually from python.org then re-run."
+}
+
+# ── git ──────────────────────────────────────────────────────────────────────
 
 if ! command -v git >/dev/null 2>&1; then
-  err "git not found — install Xcode Command Line Tools: xcode-select --install"
-  MISSING=$((MISSING + 1))
+  warn "git not found — triggering Xcode Command Line Tools install..."
+  echo ""
+  echo "  A dialog will appear asking to install developer tools. Click Install."
+  echo "  After it finishes (~5 min), re-run this bootstrap."
+  echo ""
+  xcode-select --install 2>/dev/null || true
+  die "Re-run this script after Xcode Command Line Tools finishes installing."
 fi
+ok "git: $(git --version | awk '{print $3}')"
+
+# ── Python ≥3.10 ─────────────────────────────────────────────────────────────
 
 PY_BIN=""
 for cand in /opt/homebrew/bin/python3 /usr/local/bin/python3 "$(command -v python3 2>/dev/null || true)"; do
@@ -64,21 +92,26 @@ for cand in /opt/homebrew/bin/python3 /usr/local/bin/python3 "$(command -v pytho
 done
 
 if [ -z "$PY_BIN" ]; then
-  err "Python ≥3.10 not found — install from python.org or: brew install python"
-  MISSING=$((MISSING + 1))
-else
-  ok "Python: $PY_BIN"
+  warn "Python ≥3.10 not found — installing automatically..."
+  install_python
+  # Re-check after install
+  for cand in /opt/homebrew/bin/python3 /usr/local/bin/python3 "$(command -v python3 2>/dev/null || true)"; do
+    [ -x "$cand" ] || continue
+    if "$cand" -c 'import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)' 2>/dev/null; then
+      PY_BIN="$cand"; break
+    fi
+  done
+  [ -z "$PY_BIN" ] && die "Python install succeeded but python3 still not found — open a new Terminal and re-run."
 fi
+ok "Python: $PY_BIN"
 
-command -v git >/dev/null 2>&1 && ok "git: $(git --version | awk '{print $3}')"
+# ── Node.js (optional) ───────────────────────────────────────────────────────
 
 if command -v node >/dev/null 2>&1; then
   ok "Node.js: $(node --version)  (optional — enables Claude Code briefing)"
 else
   warn "Node.js not found — Claude Code briefing feature will be skipped (optional)"
 fi
-
-[ "$MISSING" -gt 0 ] && die "Fix the above, then re-run the bootstrap."
 
 # ── Clone ────────────────────────────────────────────────────────────────────
 
