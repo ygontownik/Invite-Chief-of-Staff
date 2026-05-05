@@ -756,6 +756,15 @@ async def _run_subscription_query(*, route: ModelRoute, prompt: str,
     projects = _load_claude_projects(tenant)
     project_id = projects.get(route.package or "") if route.package else None
 
+    # Clear ANTHROPIC_API_KEY in the CLI subprocess env so the bundled CLI
+    # uses Claude.ai OAuth (Max subscription) instead of the API key even
+    # when the parent process has the key loaded (e.g. from load-secrets.sh).
+    # An API key in env takes precedence over OAuth; clearing it restores
+    # the intended subscription auth path.
+    _sub_env: dict[str, str] = {}
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        _sub_env["ANTHROPIC_API_KEY"] = ""
+
     options = ClaudeAgentOptions(
         model=route.model,
         # Bare-mode options — measured 52,384 -> 0 cache_creation tokens
@@ -768,6 +777,7 @@ async def _run_subscription_query(*, route: ModelRoute, prompt: str,
         setting_sources=[],
         plugins=[],
         system_prompt=None,       # already inlined into prompt
+        env=_sub_env,
     )
 
     response_parts: list[str] = []
