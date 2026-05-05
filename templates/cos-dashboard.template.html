@@ -1748,6 +1748,16 @@ function _clusterCategory(c) {
 // filter: 'tc-only'  → deal-workstream items only (Status tab)
 //         'job-tc'   → Recruiting + TC Cove, displayed in that order (Personal tab)
 //         'all'      → no workstream filter (default / legacy)
+// Awaiting items are tagged by the server with category: 'scheduling' or
+// 'substantive'. Scheduling = call/meeting/intro/conference items where
+// "the meeting got booked" completes the ask. Substantive = sending
+// materials, commitments, decisions. The user requested 2026-05-05 that
+// these be visually separated since scheduling items are high-volume but
+// low-substance and shouldn't compete with substantive next-steps.
+function _isSchedulingItem(it) {
+  return (it && it.category === 'scheduling');
+}
+
 function buildAwaitingExternal(filter) {
   filter = filter || 'all';
   const items = Array.isArray(DATA.awaitingExternal) ? DATA.awaitingExternal : [];
@@ -1900,28 +1910,73 @@ function buildAwaitingExternal(filter) {
       ? '<div class="no-items">Nothing pending from counterparties.</div>'
       : grouped;
   } else {
-    // Status tab / all: split TC clusters into Deals and Fundraising
-    const dealClusters = clusterList.filter(c => _clusterCategory(c) === 'deal');
-    const fundClusters = clusterList.filter(c => _clusterCategory(c) === 'fundraising');
+    // Status tab / all: split TC clusters into Deals and Fundraising,
+    // and within each, separate substantive next-steps from scheduling
+    // items so the user can focus on the asks that matter (codified
+    // 2026-05-05 — scheduling items are high-volume but low-substance).
+    // A cluster is "scheduling" if EVERY item in it is a scheduling
+    // item; mixed clusters render under substantive (the substantive
+    // items dominate; scheduling tail is shown alongside).
+    const isSchedCluster = (c) => c.items.length > 0 && c.items.every(_isSchedulingItem);
+    const substantiveClusters = clusterList.filter(c => !isSchedCluster(c));
+    const schedulingClusters = clusterList.filter(isSchedCluster);
+    const dealClusters = substantiveClusters.filter(c => _clusterCategory(c) === 'deal');
+    const fundClusters = substantiveClusters.filter(c => _clusterCategory(c) === 'fundraising');
     const CAP = 6;
-    if (dealClusters.length === 0 && fundClusters.length === 0) {
+    if (clusterList.length === 0) {
       body = '<div class="no-items">Nothing pending from counterparties.</div>';
-    } else if (fundClusters.length === 0) {
-      // All deals — no split header needed, fall back to flat list
-      const expanded = !!state.expanded[aeid];
-      const vis = expanded ? dealClusters : dealClusters.slice(0, CAP);
-      const overflow = dealClusters.length - vis.length;
-      const moreLink = (overflow > 0 || (expanded && dealClusters.length > CAP))
-        ? `<div style="padding:10px 12px;border-top:1px solid rgba(148,163,184,0.12);text-align:center">
-             <a href="#" onclick="event.preventDefault();expandToggle('${aeid}')" style="font-size:11px;color:#a78bfa;font-weight:600;text-decoration:none;letter-spacing:0.04em">
-               ${expanded ? `▴ Show top ${CAP}` : `▾ Show all ${dealClusters.length} (+${overflow} more)`}
-             </a>
-           </div>`
-        : '';
-      body = vis.map(renderCluster).join('') + moreLink;
     } else {
-      body = renderSection('Deals', '#16a34a', dealClusters, CAP, aeid+'-deal')
-           + renderSection('Fundraising', '#d97706', fundClusters, CAP, aeid+'-fund');
+      // Substantive section (Next Steps) — the asks that matter, full attention.
+      let substantiveBody = '';
+      if (dealClusters.length === 0 && fundClusters.length === 0) {
+        substantiveBody = '';  // omit the section if nothing substantive
+      } else if (fundClusters.length === 0) {
+        const expanded = !!state.expanded[aeid];
+        const vis = expanded ? dealClusters : dealClusters.slice(0, CAP);
+        const overflow = dealClusters.length - vis.length;
+        const moreLink = (overflow > 0 || (expanded && dealClusters.length > CAP))
+          ? `<div style="padding:10px 12px;border-top:1px solid rgba(148,163,184,0.12);text-align:center">
+               <a href="#" onclick="event.preventDefault();expandToggle('${aeid}')" style="font-size:11px;color:#a78bfa;font-weight:600;text-decoration:none;letter-spacing:0.04em">
+                 ${expanded ? `▴ Show top ${CAP}` : `▾ Show all ${dealClusters.length} (+${overflow} more)`}
+               </a>
+             </div>`
+          : '';
+        substantiveBody = vis.map(renderCluster).join('') + moreLink;
+      } else {
+        substantiveBody = renderSection('Deals', '#16a34a', dealClusters, CAP, aeid+'-deal')
+             + renderSection('Fundraising', '#d97706', fundClusters, CAP, aeid+'-fund');
+      }
+      // Scheduling section — collapsed by default, clear visual demotion.
+      // User can expand to triage; default state hides them so substantive
+      // items get the screen real estate.
+      const schedExpandKey = aeid + '-scheduling';
+      const schedExpanded = !!state.expanded[schedExpandKey];
+      let schedulingBody = '';
+      if (schedulingClusters.length > 0) {
+        const schedItemCount = schedulingClusters.reduce((s,c) => s + c.items.length, 0);
+        const schedHeader = `
+          <div style="padding:10px 12px;border-top:2px solid rgba(148,163,184,0.18);background:rgba(148,163,184,0.04);cursor:pointer"
+               onclick="event.preventDefault();expandToggle('${schedExpandKey}')">
+            <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#94a3b8;display:flex;justify-content:space-between;align-items:center">
+              <span>Scheduling · ${schedulingClusters.length} counterpart${schedulingClusters.length === 1 ? 'y' : 'ies'} · ${schedItemCount} item${schedItemCount === 1 ? '' : 's'}</span>
+              <span style="font-size:11px">${schedExpanded ? '▴ collapse' : '▾ expand'}</span>
+            </div>
+            ${schedExpanded ? '' : `<div style="font-size:10px;color:#94a3b8;font-style:italic;margin-top:3px">Call/meeting/intro scheduling — auto-expires day after due. Expand to triage.</div>`}
+          </div>`;
+        if (schedExpanded) {
+          const schedDeals = schedulingClusters.filter(c => _clusterCategory(c) === 'deal');
+          const schedFund  = schedulingClusters.filter(c => _clusterCategory(c) === 'fundraising');
+          schedulingBody = schedHeader
+            + (schedDeals.length ? renderSection('Deals (Scheduling)', '#94a3b8', schedDeals, 0, schedExpandKey+'-deal') : '')
+            + (schedFund.length  ? renderSection('Fundraising (Scheduling)', '#94a3b8', schedFund, 0, schedExpandKey+'-fund') : '');
+        } else {
+          schedulingBody = schedHeader;
+        }
+      }
+      body = (substantiveBody || '') + schedulingBody;
+      if (!body.trim()) {
+        body = '<div class="no-items">Nothing pending from counterparties.</div>';
+      }
     }
   }
 

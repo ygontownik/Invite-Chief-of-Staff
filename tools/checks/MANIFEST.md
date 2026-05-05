@@ -41,6 +41,7 @@ deserves immediate attention.
 | `check_tenant_leak.py` (Agent A)| tenant-leak  | Any tenant-identifying token from the verbatim denylist appears in public `cos-pipeline/config/*.md` or `cos-pipeline/docs/*.md` outside the allow-listed shapes. |
 | `check_alias_precision.py` (Agent A) | G5      | Owned by Agent A; see that module for failure conditions. |
 | `check_smoke_tenant_leaks.py`   | smoke regression | Wraps `tools/smoke_test_tenant.py`. Spins up a synthetic tenant fixture, exercises code surfaces, and statically scans `*.py` for hardcoded tenant strings. >50 hits → fail; 1-50 → warn. Catches the class of bug where a fresh subscriber install would render Yoni/Tomac/etc. in their dashboard. |
+| `check_served_html_inject.py`   | served HTML inject | HTTP GET to localhost:7777, asserts every required `window.__X__` setter (DEAL_CONFIG, TOMAC_CONFIG, DELETIONS, FIRM_CONTEXT, TOPICS_INITIAL, PERSONAL_ITEMS_INITIAL, RECRUIT_CONFIG, USER_ROLE) is present in the response body. Catches the class of bug where the script-injection guard silently fails and the JS render uses empty stubs (fundraising/team-actions blank, tombstones inactive). Pure HTTP — no API credentials. Pass: all setters present. Fail: any missing. Warn: server unreachable. |
 
 ## Adding a new check
 

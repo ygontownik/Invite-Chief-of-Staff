@@ -515,14 +515,22 @@ def _materialize_next_week(items):
 _STALE_EVENT_PATTERNS = _re_src.compile(
     r'\b(conference|summit|forum|symposium|register|registration|rsvp|'
     r'attend|attending|attendance|sign[\s-]?up|enroll|'
-    r'propose\s+times?|send\s+(calendar|cal)\s+inv|calendar\s+inv|'
-    r'schedule\s+(a\s+)?(call|meeting|time|intro)|'
+    r'propose\s+times?|send\s+(calendar|cal)\s+invit\w*|calendar\s+inv|'
+    r'schedule\s+(a\s+)?(call|meeting|time|intro|separate)|'
+    # 2026-05-05: broaden — "Schedule separate intro between X and Y" /
+    # "Intro Jeff K. to Apogee and schedule separate meeting" / "Schedule
+    # one-month follow-up meeting" all left Apogee + Berkman items hanging.
+    r'schedule\s+(separate|one[\s-]?month|follow[\s-]?up|next)|'
+    r'(intro|introduce)\s+\w+\s+(to|and)\s+\w+\s+(and\s+)?schedule|'
     r'reschedule|book\s+(a\s+)?(slot|time|meeting|call)|'
-    r'confirm\s+(call\s+time|meeting\s+time|in.person|the\s+meeting)|'
+    # "Confirm availability" was the surviving phrase across 5 of the 5
+    # items the user flagged 2026-05-05 (Apogee 3×, Black Mountain 1×).
+    # Add it as a first-class event marker.
+    r'confirm\s+(availability|call\s+time|meeting\s+time|in.person|the\s+meeting)|'
     r'in.person\s+meeting|ranch\s+visit|site\s+visit|'
     r'text\s+\w+\s+schedule|schedule\s+for\s+next\s+week|'
-    r'send\s+(calendar|cal)\s+inv|hold\s+(calendar|cal)\s+inv|'
-    r'zoom\s+(calendar|cal)\s+inv|calendar\s+invite\s+for\s+\w+\s+\w+\s+\d|'
+    r'send\s+(calendar|cal)\s+invit\w*|hold\s+(calendar|cal)\s+invit\w*|'
+    r'zoom\s+(calendar|cal)\s+invit\w*|calendar\s+invite\s+for\s+\w+\s+\w+\s+\d|'
     # 2026-05-04: broadened to catch slash/and-separated forms and noun-style
     # scheduling references — see dash_corrections.md
     r'meeting\s+(day|date)?[\s/]*(and\s+)?(time|location|logistics)|'
@@ -534,6 +542,100 @@ _STALE_EVENT_PATTERNS = _re_src.compile(
     r'reconnect\s+catch[\s-]?up)\b',
     _re_src.IGNORECASE,
 )
+
+def _classify_awaiting_category(items):
+    """Tag each awaiting item with `category: 'scheduling' | 'substantive'`.
+
+    Scheduling: calendar invites, intro calls, conference registration,
+    'confirm availability', 'schedule X', reschedule — items whose
+    completion is "the meeting got booked / happened." User wants these
+    grouped separately because they're high-volume but low-substance —
+    once the call lands on the calendar, the item is dead.
+
+    Substantive: sending materials (Uber lease, term sheets), commitments
+    ($X capital, signed NDA), decisions, structural diligence asks.
+    These are the actual deal-progress items the user needs to see.
+
+    Classifier: same regex used by _auto_expire_stale_events. If content
+    matches, it's scheduling; otherwise substantive. Codified 2026-05-05
+    per user request: 'awaiting external should be broken between call
+    schedules and actual steps to be taken.'
+    """
+    for item in items:
+        content = (item.get('content') or '') + ' ' + (item.get('what') or '')
+        if _STALE_EVENT_PATTERNS.search(content):
+            item['category'] = 'scheduling'
+        else:
+            item['category'] = 'substantive'
+    return items
+
+
+def _drop_team_member_counterparties(items):
+    """Awaiting External must only show items waiting on EXTERNAL parties.
+    If after canonicalization the counterparty resolves to a team member
+    (principal or team[]), drop the item — it's not "awaiting external,"
+    it's an internal handoff that belongs in followUps or team-actions.
+
+    Also catches items whose RAW counterparty was a team member but no
+    content-alias matched (so re-derivation didn't fire). These leak
+    through with cp=Mark Saxe / Yoni / Nik as the visible label and
+    confuse the user — the dashboard claims it's waiting on an external
+    party when really it's waiting on someone on the team.
+
+    Codified 2026-05-05 per user request: 'this should be specific to
+    non-team members actions ... should NOT include mark or nik.'
+    """
+    fc_team = []
+    try:
+        principal_name = (_CTX.get('principal') or {}).get('name') or ''
+        if principal_name: fc_team.append(principal_name.lower())
+        for t in (_CTX.get('team') or []):
+            n = (t.get('name') or '').lower()
+            if n: fc_team.append(n)
+            # First-token form too — many doc rows just say "Mark"
+            if n: fc_team.append(n.split()[0])
+    except Exception:
+        pass
+    # Add tenant firm shortname / principal first-name fallbacks
+    try:
+        fname = (_CTX.get('firm') or {}).get('short_name') or ''
+        if fname: fc_team.append(fname.lower())
+        fname2 = (_CTX.get('firm') or {}).get('name') or ''
+        if fname2: fc_team.append(fname2.lower())
+    except Exception:
+        pass
+    fc_team = [t for t in fc_team if t]
+    if not fc_team:
+        return items  # no firm context loaded — pass through unchanged
+
+    kept = []
+    for item in items:
+        cp_low = (item.get('counterparty') or '').strip().lower()
+        if not cp_low:
+            kept.append(item); continue
+        # Match if the canonical counterparty IS a team member or the
+        # firm name itself. Whole-word match against the lowered cp
+        # string so "Markus Acme" doesn't trip on "mark."
+        is_team = False
+        for needle in fc_team:
+            # Anchor: cp_low equals needle, starts with needle+space/punct,
+            # or ends with space/punct+needle. This avoids matching needle
+            # as a substring of an unrelated counterparty.
+            if cp_low == needle: is_team = True; break
+            if cp_low.startswith(needle + ' ') or cp_low.startswith(needle + ','): is_team = True; break
+            if cp_low.endswith(' ' + needle): is_team = True; break
+            if (' ' + needle + ' ') in cp_low: is_team = True; break
+        if is_team:
+            print(
+                f'cos-dashboard-fetch: dropping team-member awaiting item '
+                f'(cp={item.get("counterparty","")!r}): '
+                f'{(item.get("content","") or "")[:80]!r}',
+                file=sys.stderr,
+            )
+            continue
+        kept.append(item)
+    return kept
+
 
 def _redupe_after_canonicalization(items):
     """Second-pass dedup AFTER _rederive_counterparty has canonicalized
@@ -695,7 +797,16 @@ def _auto_expire_stale_events(items):
             kept.append(item)
             continue
         days_past = (today - item_date).days
-        if days_past > 7:
+        # 2026-05-05: tightened from 7 → 0 day grace past due. Calls /
+        # conferences / scheduled meetings are time-bound — once the
+        # due date passes (today + 1 onward), the event has happened
+        # or been missed and the item is dead. The user reported 5
+        # specific items lingering with due=yesterday despite the
+        # underlying event already occurring (Apogee, EXIM, Thunderhead,
+        # Black Mountain, etc.). >=1 day past now drops, while
+        # day-of (days_past==0) still renders so the user sees the
+        # reminder on the day itself.
+        if days_past >= 1:
             print(
                 f'cos-dashboard-fetch: auto-expired stale event item '
                 f'({due_raw[:10]}, {days_past}d ago): '
@@ -2433,13 +2544,15 @@ def main(dry_run: bool = False):
         # Merge doc-authored [waiting] rows with pipeline-authored envelope items.
         # Dedupe by (counterparty, content[:60]) so a doc row and pipeline row
         # referencing the same commitment collapse.
-        'awaitingExternal':  _auto_expire_stale_events(
+        'awaitingExternal':  _classify_awaiting_category(
+                                 _auto_expire_stale_events(
                                  _supersede_workflow_stages(
                                  _redupe_after_canonicalization(
+                                 _drop_team_member_counterparties(
                                  _materialize_next_week(
                                  _rederive_counterparty(
                                  _promote_source_ref(_merge_awaiting(
-                                 state.get('awaitingExternal', []), awaiting_from_doc))))))),
+                                 state.get('awaitingExternal', []), awaiting_from_doc))))))))),
         'dealIntel':         state.get('dealIntel',         []),
         'originationInbox':  state.get('originationInbox',  []),
         'themes':            state.get('themes',            []),
