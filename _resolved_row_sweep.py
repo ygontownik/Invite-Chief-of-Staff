@@ -94,8 +94,12 @@ def _item_age_days(item: dict, today: datetime) -> int | None:
 
 
 def _exception_date(exc: dict) -> str | None:
-    """routingExceptions wrap the real item under exc["item"]."""
-    for field in ("added_at", "addedDate", "createdAt"):
+    """routingExceptions wrap the real item under exc["item"].
+    Prefer flagged_at (actual write time) over inner source_ref.date —
+    the latter reflects when the underlying call/email occurred, which
+    can be much older than when the routing failure was logged.
+    """
+    for field in ("flagged_at", "added_at", "addedDate", "createdAt"):
         if v := exc.get(field): return str(v)[:10]
     inner = exc.get("item") or {}
     return _item_date(inner)

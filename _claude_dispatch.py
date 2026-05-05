@@ -52,10 +52,21 @@ _CACHED_AUTH_MODE: Optional[str] = None
 
 
 def _resolve_auth_mode() -> str:
-    """Read auth_mode from firm_context.yaml. Defaults to 'subscription'."""
+    """Read auth_mode from CLAUDE_AUTH_MODE env / firm_context.yaml.
+
+    Resolution order (mirrors shell-side load-secrets.sh):
+      1. CLAUDE_AUTH_MODE env var (per-process override; useful for
+         ad-hoc testing or running a single script in the opposite mode).
+      2. firm_context.yaml :: auth_mode (canonical tenant config).
+      3. Default 'subscription'.
+    """
     global _CACHED_AUTH_MODE
     if _CACHED_AUTH_MODE is not None:
         return _CACHED_AUTH_MODE
+    env_mode = os.environ.get("CLAUDE_AUTH_MODE", "").strip()
+    if env_mode in ("subscription", "api"):
+        _CACHED_AUTH_MODE = env_mode
+        return env_mode
     # Try the canonical _firm_context loader first — picks up the right
     # config file per tenant. Fall back to a direct YAML scan if that
     # module isn't on the path.
