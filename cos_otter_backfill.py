@@ -1059,6 +1059,12 @@ EXTRACTION TASKS:
    • Mutual exchanges (NDAs, term sheets, mark-ups, redlines passed back and forth) → emit two items, one per direction, each with the correct owner.
    • Default if unclear: emit as `state: waiting` with the counterparty as owner — better to under-attribute to the principal than fabricate a send-verb on the wrong side. The "Astris-flip" failure (codified 2026-05-04) was a fundraising advisor pitching IN; it was wrongly written as the principal owing the send.
 
+   ABSOLUTE-DATE RULE (rule AB1) — every reference to a date or week in `content`, `context`, or `due` MUST be absolute YYYY-MM-DD form. Resolve relative phrasing against the transcript's date.
+   • ALLOWED: `2026-05-12`, `week of 2026-05-12`, `May 12 2026`
+   • FORBIDDEN: `tomorrow`, `next week`, `this Friday`, `Wed 4/29`, `Friday 5/1`, `EOD`, `early next week`, `next Monday`
+   • Example: transcript dated 2026-05-04 says "by next Monday" → emit `due: 2026-05-12`, content "Deliver X by 2026-05-12".
+   • Why: the item lives on the dashboard for days. Relative phrasing reads stale every day after extraction even when the action is still valid; absolute dates never go stale.
+
    COUNTERPARTY PLACEHOLDERS — when the firm cannot be identified from the transcript, emit `counterparty: ""` and tag the intel as `intel_type: "unattributed"`. NEVER emit a generic placeholder like "assistant", "attorneys", "Unknown", "team", a bare email address, or a person's name with no firm context. Unattributed items are routed to a review queue at compile time; placeholder firms pollute the by-firm awaiting list and make the dashboard noisier.
 
    STRICT RULES (enforced at write time — items failing these are rejected and counted in routingExceptions[], so missing them costs you data):

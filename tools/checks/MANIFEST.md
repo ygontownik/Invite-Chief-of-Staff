@@ -42,6 +42,7 @@ deserves immediate attention.
 | `check_alias_precision.py` (Agent A) | G5      | Owned by Agent A; see that module for failure conditions. |
 | `check_smoke_tenant_leaks.py`   | smoke regression | Wraps `tools/smoke_test_tenant.py`. Spins up a synthetic tenant fixture, exercises code surfaces, and statically scans `*.py` for hardcoded tenant strings. >50 hits → fail; 1-50 → warn. Catches the class of bug where a fresh subscriber install would render Yoni/Tomac/etc. in their dashboard. |
 | `check_served_html_inject.py`   | served HTML inject | HTTP GET to localhost:7777, asserts every required `window.__X__` setter (DEAL_CONFIG, TOMAC_CONFIG, DELETIONS, FIRM_CONTEXT, TOPICS_INITIAL, PERSONAL_ITEMS_INITIAL, RECRUIT_CONFIG, USER_ROLE) is present in the response body. Catches the class of bug where the script-injection guard silently fails and the JS render uses empty stubs (fundraising/team-actions blank, tombstones inactive). Pure HTTP — no API credentials. Pass: all setters present. Fail: any missing. Warn: server unreachable. |
+| `check_relative_dates.py`       | AB1          | Scans `awaitingExternal[].content/what/context`, `followUps[].what/context`, `dealIntel[]`, `originationInbox[]`, `recentActivity[]` for relative-date phrasing (`tomorrow`, `next week`, `Wed 4/29`, `Friday 5/1`, `EOD`, `by 5/12`, etc.). Per rule AB1 every date reference must be absolute YYYY-MM-DD form. >10 violations → fail; 1-10 → warn (extractor or `_materialize_next_week` post-process drift). |
 
 ## Adding a new check
 

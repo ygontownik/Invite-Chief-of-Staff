@@ -2060,3 +2060,28 @@ Each emitted log entry carries a `match` field (`explicit` | `token`) so analyst
 
 **Generic rule**: any auto-tagging routine that filters by date MUST inspect every signal source's actual schema before committing to a single field name. Where a signal source can produce items without the canonical date field, fall back to the embedded source-document date — silent date-filter drops are the worst kind of bug because the routine appears to run successfully while quietly producing partial output.
 
+
+---
+
+## TOPIC — STALE-READING DATE PHRASING
+
+### AB1 — Absolute dates only; no relative phrasing in dashboard text *(extraction-prompt enrichment + silent auto-correct)*
+
+**Codified 2026-05-05.** Universal rule across every surface that renders extracted text (awaitingExternal, followUps, recentActivity, dealIntel, action items, briefing memos).
+
+**Rule:** Any reference to a date or week in extracted text MUST be an absolute form. Specifically:
+
+- ✅ ALLOWED: `2026-05-12`, `week of 2026-05-12`, `May 12`, `5/12 2026`
+- ❌ FORBIDDEN: `tomorrow`, `next week`, `this Friday`, `Wed 4/29`, `Friday 5/1`, `EOD`, `early next week`
+
+**Why:** the extracted item lives in the dashboard for days. A line that reads "Confirm Friday 5/1 live call" is correct on the day it's extracted but reads stale every subsequent day — even when the action is still valid. The user's mental model treats stale-reading text as "the system is broken." Absolute dates never go stale; the date itself tells the reader whether the action is past or future without requiring memory of when the line was written.
+
+**Two-layer enforcement:**
+
+1. **Extraction-prompt enrichment** — the LLM extractors (cos_capture_pipeline.py / cos_email_backfill.py / cos_otter_backfill.py system prompts) instruct the model to resolve every relative date reference to YYYY-MM-DD against the email/transcript date BEFORE emitting. "Tomorrow" in an email dated 2026-05-04 must emit as `2026-05-05` in the structured output.
+
+2. **Silent auto-correct at compile time** — `_materialize_next_week()` in `cos-dashboard-fetch.py` converts any relative phrasing the extractor missed. Patterns covered: `tomorrow`, `today`, `this/next [Mon|Tue|...|Friday]`, `next week`, `this week`, `early/late next week`, `[Mon|Tue|...|Friday] M/D`, `[Mon|Tue|...|Friday] M/D/YY`. All resolve against `addedDate` (the extraction date) and emit `YYYY-MM-DD` or `week of YYYY-MM-DD`.
+
+**Failure mode (the bug this rule prevents):** dashboard awaiting items showing "Send draft Uber lease for Friday 5/1" on 2026-05-05 — the user asks "is this stale or current?" and the system has no answer. After the rule: same item reads "Send draft Uber lease for 2026-05-01" — past-due is unambiguous, the 14-day cutoff fires, the item drops.
+
+[ENFORCED via tools/checks/check_relative_dates.py]

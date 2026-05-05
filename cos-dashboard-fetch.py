@@ -471,20 +471,81 @@ def _supersede_workflow_stages(items):
 # Codified 2026-05-04 per dash_corrections.md.
 _NEXT_WEEK_PATTERNS = [
     (_re_src.compile(r'\bnext\s+week\b', _re_src.IGNORECASE), 7),
+    (_re_src.compile(r'\bthis\s+week\b', _re_src.IGNORECASE), 0),
     (_re_src.compile(r'\bearly\s+next\s+week\b', _re_src.IGNORECASE), 7),
+    (_re_src.compile(r'\bearly\s+this\s+week\b', _re_src.IGNORECASE), 0),
     (_re_src.compile(r'\blate\s+next\s+week\b', _re_src.IGNORECASE), 10),
     (_re_src.compile(r'\blater\s+this\s+week\b', _re_src.IGNORECASE), 3),
     (_re_src.compile(r'\bend\s+of\s+the\s+week\b', _re_src.IGNORECASE), 3),
     (_re_src.compile(r'\bend\s+of\s+next\s+week\b', _re_src.IGNORECASE), 10),
 ]
 
-def _materialize_next_week(items):
-    """Replace 'next week' / 'later this week' references with explicit
-    'week of YYYY-MM-DD' computed from the item's addedDate. Prevents
-    floating-time references from going silently stale.
+# Day-name + M/D forms — "Wed 4/29", "Friday 5/1", "Mon 5/12". Codified
+# 2026-05-05 (rule AB1) — extractor often emits these because they appear
+# verbatim in the source email. They read stale once the date passes
+# even when the action is still valid. This second-layer auto-correct
+# rewrites them to YYYY-MM-DD by inferring the year from the item's
+# addedDate (if M/D resolves to a month <= addedDate's month, we assume
+# same year; otherwise flip to the year that makes the date plausible).
+_DAY_NAMES = r'(?:mon|tue|wed|thu|fri|sat|sun)(?:day|s)?'
+_DAY_DATE_PAT = _re_src.compile(
+    rf'\b{_DAY_NAMES}\.?\s+(\d{{1,2}})/(\d{{1,2}})(?:/(\d{{2,4}}))?\b',
+    _re_src.IGNORECASE,
+)
+# Bare M/D without a day name (e.g. "by 5/12", "before 4/30") — broader,
+# higher false-positive risk. Restricted to forms preceded by date-action
+# words to avoid clobbering ratios / scores / page numbers.
+_BARE_MD_PAT = _re_src.compile(
+    r'\b(?:by|before|due|on|until|through|circa|circle\s+back\s+by)\s+'
+    r'(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?\b',
+    _re_src.IGNORECASE,
+)
+_TOMORROW_PAT = _re_src.compile(r'\btomorrow\b', _re_src.IGNORECASE)
+_TODAY_PAT    = _re_src.compile(r'\b(?:today|EOD)\b', _re_src.IGNORECASE)
 
-    Operates on `content` and `what` fields. Idempotent — once replaced
-    with 'week of <date>', the patterns no longer match.
+
+def _resolve_md_to_iso(month: int, day: int, year_hint, base_date):
+    """Resolve a (month, day, optional 2-or-4-digit year) tuple against
+    the item's addedDate, returning ISO YYYY-MM-DD. If year is not
+    given, pick the year that places the date closest to base_date —
+    typically same year if M/D is in the future or recent past, else
+    next year for clearly-forward references."""
+    from datetime import date as _date
+    try:
+        if year_hint:
+            y = int(year_hint)
+            if y < 100: y += 2000
+        else:
+            y = base_date.year
+            try:
+                candidate = _date(y, month, day)
+            except ValueError:
+                return None
+            # If the candidate is more than 6 months in the past, assume
+            # the writer meant next year.
+            if (base_date - candidate).days > 180:
+                y += 1
+            elif (candidate - base_date).days > 365:
+                y -= 1
+        return _date(y, month, day).isoformat()
+    except (ValueError, TypeError):
+        return None
+
+
+def _materialize_next_week(items):
+    """Replace relative-time phrases with absolute YYYY-MM-DD references.
+    Codifies rule AB1 (Absolute Dates Only) at the post-extraction layer.
+
+    Patterns covered (idempotent — once replaced, patterns no longer match):
+      - "next week" / "early next week" / "late next week" → "week of YYYY-MM-DD"
+      - "later this week" / "end of the week" → "week of YYYY-MM-DD"
+      - "tomorrow" → "YYYY-MM-DD" (addedDate + 1)
+      - "today" / "EOD" → "YYYY-MM-DD" (addedDate)
+      - "Wed 4/29" / "Friday 5/1" → "YYYY-MM-DD"
+      - "by 5/12" / "due 4/30" → "by YYYY-MM-DD" (preserves verb)
+
+    Operates on `content` and `what` fields. Reads `addedDate` to anchor
+    the resolution. If no addedDate, falls through unchanged.
     """
     from datetime import date as _date, timedelta as _td
     for item in items:
@@ -500,13 +561,30 @@ def _materialize_next_week(items):
             if not isinstance(v, str) or not v:
                 continue
             new = v
+            # 1. Week-bucket phrases → "week of YYYY-MM-DD"
             for pat, days in _NEXT_WEEK_PATTERNS:
-                # Compute the Monday of the target week (week-start convention)
                 target = base + _td(days=days)
-                # Snap forward to the Monday on/after target
                 target = target + _td(days=(7 - target.weekday()) % 7)
-                replacement = f'week of {target.isoformat()}'
-                new = pat.sub(replacement, new)
+                new = pat.sub(f'week of {target.isoformat()}', new)
+            # 2. "tomorrow" → addedDate + 1
+            if _TOMORROW_PAT.search(new):
+                new = _TOMORROW_PAT.sub((base + _td(days=1)).isoformat(), new)
+            # 3. "today" / "EOD" → addedDate
+            if _TODAY_PAT.search(new):
+                new = _TODAY_PAT.sub(base.isoformat(), new)
+            # 4. "Wed 4/29" / "Friday 5/1" → YYYY-MM-DD
+            def _day_date_sub(m):
+                iso = _resolve_md_to_iso(int(m.group(1)), int(m.group(2)), m.group(3), base)
+                return iso or m.group(0)
+            new = _DAY_DATE_PAT.sub(_day_date_sub, new)
+            # 5. "by 5/12" / "due 4/30" → "by YYYY-MM-DD" (verb preserved)
+            def _bare_md_sub(m):
+                iso = _resolve_md_to_iso(int(m.group(1)), int(m.group(2)), m.group(3), base)
+                if not iso: return m.group(0)
+                # Reinsert the leading verb (split off in the regex)
+                verb = m.group(0).split(None, 1)[0]
+                return f'{verb} {iso}'
+            new = _BARE_MD_PAT.sub(_bare_md_sub, new)
             if new != v:
                 item[fld] = new
     return items
@@ -2516,7 +2594,12 @@ def main(dry_run: bool = False):
         '_docCache':        doc_cache,   # persisted across warmups for modifiedTime skip
         'threeDays':        (now + timedelta(days=3)).strftime('%Y-%m-%d'),
         'upcomingCalls':    upcoming,
-        'followUps':        followups,
+        # 2026-05-05 (rule AB1): also run _materialize_next_week on
+        # followUps so any "tomorrow" / "next week" / "Wed 4/29" /
+        # "Friday 5/1" relative phrasing the LLM extractor missed gets
+        # rewritten to absolute YYYY-MM-DD against the row's addedDate.
+        # Same coverage as awaitingExternal — same audit catches both.
+        'followUps':        _materialize_next_week(followups),
         'deals':            deals,
         # Back-compat duplicate (read-only mirror) — remove next release.
         'tomac':            deals,
@@ -2553,8 +2636,11 @@ def main(dry_run: bool = False):
                                  _rederive_counterparty(
                                  _promote_source_ref(_merge_awaiting(
                                  state.get('awaitingExternal', []), awaiting_from_doc))))))))),
-        'dealIntel':         state.get('dealIntel',         []),
-        'originationInbox':  state.get('originationInbox',  []),
+        # Rule AB1: same materialize sweep as awaitingExternal/followUps so
+        # relative phrasing in deal-intel and origination-inbox content
+        # gets resolved to YYYY-MM-DD before render.
+        'dealIntel':         _materialize_next_week(state.get('dealIntel', [])),
+        'originationInbox':  _materialize_next_week(state.get('originationInbox', [])),
         'themes':            state.get('themes',            []),
         'routingExceptions': state.get('routingExceptions', []),
     }

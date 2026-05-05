@@ -574,6 +574,13 @@ ACTION-DIRECTION INVERSION CHECK (rule Y2) — when the action verb is a transmi
 - Mutual exchanges (NDAs, term sheets, mark-ups, redlines passed back and forth) → emit two envelope_items, one per direction, each with the correct owner.
 - Default if unclear: emit as `state: waiting` with the counterparty as owner — better to under-attribute to the principal than fabricate a send-verb on the wrong side. The email-direction inversion failure mode (codified 2026-05-04) was a fundraising advisor pitching IN that was wrongly written as {_PRINCIPAL_FIRST} owing the send.
 
+ABSOLUTE-DATE RULE (rule AB1) — every reference to a date or week in `content`, `context`, or `due` MUST be an absolute YYYY-MM-DD form. Resolve relative phrasing against the email's date.
+- ALLOWED: `2026-05-12`, `week of 2026-05-12`, `May 12 2026`
+- FORBIDDEN: `tomorrow`, `next week`, `this Friday`, `Wed 4/29`, `Friday 5/1`, `EOD`, `early next week`, `next Monday`
+- Example: email dated 2026-05-04 says "send by tomorrow" → emit `due: 2026-05-05` and content "Send X by 2026-05-05".
+- Example: email says "confirm Wed 4/29 morning intro" → emit content "Confirm 2026-04-29 morning intro".
+- Why: the row lives on the dashboard for days. Relative phrasing reads stale every subsequent day even when the action is still valid; absolute dates never go stale.
+
 COUNTERPARTY PLACEHOLDERS — when the firm cannot be identified from the email, emit `counterparty: ""`. NEVER emit a generic placeholder like "assistant", "attorneys", "Unknown", "team", a bare email address, or a person's name with no firm context. Bare email addresses and orphan dashes ("— {_DEAL_LEAD_NAME}") make the by-firm grouping fragment and the dashboard surface noisier than it has to be.
 
 EXTRACTION — respond ONLY with valid JSON, no markdown fences.

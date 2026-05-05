@@ -229,6 +229,22 @@ def build_system_prompt(ctx: dict) -> str:
         f"    'external'). Better to under-attribute to {p_first} than fabricate\n"
         f"    a send-verb on the wrong side.",
 
+        f"\nABSOLUTE-DATE RULE (rule AB1) — every reference to a date or week in\n"
+        f"the `what` / `context` / `linked_to` text MUST be an absolute form.\n"
+        f"Resolve relative phrasing against TODAY (provided in the user message)\n"
+        f"or, when emitting a row from a specific email/transcript, against\n"
+        f"that source's date.\n"
+        f"  - ALLOWED: '2026-05-12', 'week of 2026-05-12', 'May 12'\n"
+        f"  - FORBIDDEN: 'tomorrow', 'next week', 'this Friday', 'Wed 4/29',\n"
+        f"    'Friday 5/1', 'EOD', 'early next week', 'next Monday'\n"
+        f"  Example: email dated 2026-05-04 says 'send by tomorrow EOD' →\n"
+        f"    emit `what` as 'Send X by 2026-05-05 EOD' (or just '2026-05-05').\n"
+        f"  Example: 'confirm Wed 4/29 morning intro call' (year inferred from\n"
+        f"    email date) → emit 'confirm 2026-04-29 morning intro call'.\n"
+        f"  Why: the row lives on the dashboard for days; relative phrasing\n"
+        f"  reads stale every day after extraction even when the action is\n"
+        f"  still valid. Absolute dates never go stale.",
+
         "═" * 60,
         "PART B — RECONCILIATION",
         "═" * 60,
