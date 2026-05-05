@@ -3227,9 +3227,19 @@ class Handler(BaseHTTPRequestHandler):
                             }.get(e.get('source',''), '·')
                             who = (e.get('who') or '')[:50]
                             what = (e.get('what') or '')[:180]
+                            src_url = (e.get('source_url') or '').strip()
+                            src_title = (e.get('source_title') or '').strip()
+                            # If we have a source URL, append a clickable
+                            # "open source" link so the user can read the
+                            # full email / transcript. Title (if present)
+                            # is the link text; otherwise generic "open".
+                            link_suffix = ''
+                            if src_url:
+                                label = (src_title[:60] or 'open source')
+                                link_suffix = f" · [{label}]({src_url})"
                             log_lines.append(
                                 f"  {src_chip} _{e.get('date','')}_ "
-                                f"**{who}** — {what}"
+                                f"**{who}** — {what}{link_suffix}"
                             )
                     if log_lines:
                         log_section = (

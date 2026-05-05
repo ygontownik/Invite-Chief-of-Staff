@@ -785,6 +785,23 @@ def _compute_deal_logs() -> int:
             existing = {}
         entries = existing.get('entries') or []
         seen = {e.get('id') for e in entries if e.get('id')}
+        # Map from iid → existing entry, used for in-place backfill of
+        # newly-added fields (source_url / source_title) onto entries
+        # written before the field existed. Without this, the iid-dedup
+        # check below means old entries never get the link rendered in
+        # the briefing tab even after the schema is extended.
+        seen_map = {e.get('id'): e for e in entries if e.get('id')}
+        backfilled = 0
+        def _maybe_backfill(iid, src_url, src_title):
+            nonlocal backfilled
+            ex = seen_map.get(iid)
+            if not ex: return
+            changed = False
+            if src_url and not ex.get('source_url'):
+                ex['source_url'] = src_url; changed = True
+            if src_title and not ex.get('source_title'):
+                ex['source_title'] = src_title; changed = True
+            if changed: backfilled += 1
 
         tokens = _deal_tokens(d)
         did_low = (did or '').lower()
@@ -878,10 +895,18 @@ def _compute_deal_logs() -> int:
             if not _re.match(r'^\d{4}-\d{2}-\d{2}$', added): continue
             if added < cutoff_30d: continue
             iid = _djb2('fu|' + who + '|' + what[:80] + '|' + added)
-            if iid in seen: continue
+            # Capture source URL when present so the briefing tab can render
+            # the entry as a clickable link to the original email/transcript
+            # (rule AB1 — codified 2026-05-05).
+            src_url = (fu.get('linkedTo') or fu.get('sourceUrl') or '')
+            src_title = (fu.get('source') or '')
+            if iid in seen:
+                _maybe_backfill(iid, src_url, src_title[:120])
+                continue
             candidate_pairs.append({
                 'id': iid, 'date': added, 'source': 'followup',
                 'who': who[:80], 'what': what[:280],
+                'source_url': src_url, 'source_title': src_title[:120],
                 'match': 'explicit' if explicit else 'token',
             })
 
@@ -896,10 +921,16 @@ def _compute_deal_logs() -> int:
             if not _re.match(r'^\d{4}-\d{2}-\d{2}$', added): continue
             if added < cutoff_30d: continue
             iid = _djb2('ae|' + cp + '|' + content[:80] + '|' + added)
-            if iid in seen: continue
+            sref = ae.get('source_ref') or {}
+            src_url = sref.get('doc_url') if isinstance(sref, dict) else ''
+            src_title = (ae.get('source') or sref.get('title','') if isinstance(sref, dict) else '')
+            if iid in seen:
+                _maybe_backfill(iid, src_url or '', str(src_title)[:120])
+                continue
             candidate_pairs.append({
                 'id': iid, 'date': added, 'source': 'awaitingExternal',
                 'who': cp[:80], 'what': content[:280],
+                'source_url': src_url or '', 'source_title': str(src_title)[:120],
                 'match': 'explicit' if explicit else 'token',
             })
 
@@ -929,14 +960,20 @@ def _compute_deal_logs() -> int:
             if not _re.match(r'^\d{4}-\d{2}-\d{2}$', added): continue
             if added < cutoff_30d: continue
             iid = _djb2('intel|' + ctx[:40] + '|' + content[:80] + '|' + added)
-            if iid in seen: continue
+            sref = it.get('source_ref') or {}
+            src_url = sref.get('doc_url','') if isinstance(sref, dict) else ''
+            src_title = sref.get('title','') if isinstance(sref, dict) else ''
+            if iid in seen:
+                _maybe_backfill(iid, src_url or '', str(src_title)[:120])
+                continue
             candidate_pairs.append({
                 'id': iid, 'date': added, 'source': 'intel',
                 'who': ctx[:80], 'what': content[:280],
+                'source_url': src_url or '', 'source_title': str(src_title)[:120],
                 'match': 'explicit' if explicit else 'token',
             })
 
-        if candidate_pairs:
+        if candidate_pairs or backfilled:
             # Append + cap rolling window at 200 entries
             entries.extend(candidate_pairs)
             entries.sort(key=lambda e: e.get('date',''), reverse=True)
@@ -946,6 +983,8 @@ def _compute_deal_logs() -> int:
             existing['updated_at'] = _dt.datetime.now(_dt.timezone.utc).isoformat(timespec='seconds').replace('+00:00','Z')
             log_path.write_text(json.dumps(existing, indent=2, ensure_ascii=False))
             new_entries_total += len(candidate_pairs)
+            if backfilled:
+                print(f'  V1 deal-log: backfilled source_url on {backfilled} existing entries for {did}', flush=True)
 
         # Surface recent log on the deal record (top 5 by date desc)
         d['recent_log'] = sorted(
