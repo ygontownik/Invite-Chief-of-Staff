@@ -207,6 +207,28 @@ def build_system_prompt(ctx: dict) -> str:
         f"{p_first} (or {dl.get('name', '').split()[0] if dl else 'a teammate'}) and a SPECIFIC NAMED external party.\n"
         "Reject if Who is just '{p_first}' alone, counterparty is unnamed, or it's purely internal.",
 
+        f"\nACTION-DIRECTION INVERSION CHECK (rule Y2) — when the action verb is a\n"
+        f"transmission verb (`send`, `share`, `forward`, `deliver`, `provide`,\n"
+        f"`transmit`, `circulate`, `pass along`, `intro`, `ping`, `schedule`,\n"
+        f"`follow up`, `return call`, `attach`), explicitly identify which side\n"
+        f"is the SENDER from the email's From:/To: headers and role context\n"
+        f"BEFORE emitting the follow-up. Do NOT default to {p_first} just because\n"
+        f"their name appears in the thread.\n"
+        f"  - Investment banks / placement agents / fundraising advisors / brokers\n"
+        f"    pitching deal flow or capital INTO {p_first} → THEY send teasers /\n"
+        f"    CIMs / data rooms / decks / term sheets TO {p_first}. The counterparty\n"
+        f"    owes the action; emit owner='external' with counterparty='Firm — Person'.\n"
+        f"    NEVER emit a follow-up telling {p_first} to 'send' what is being\n"
+        f"    pitched IN (failure mode: 'Astris sent us the teaser' written as\n"
+        f"    '{p_first} to send teaser to Astris' — owner is Astris, NOT {p_first}).\n"
+        f"  - {p_first} sponsoring a deal OUT to LPs / co-investors / lenders →\n"
+        f"    {p_first} sends materials. Emit owner='{p_first}'.\n"
+        f"  - Mutual exchanges (NDAs, term sheets, redlines passed back and forth)\n"
+        f"    → emit two follow-ups, one per direction, each with the correct owner.\n"
+        f"  - Default if unclear: attribute the send to the counterparty (owner=\n"
+        f"    'external'). Better to under-attribute to {p_first} than fabricate\n"
+        f"    a send-verb on the wrong side.",
+
         "═" * 60,
         "PART B — RECONCILIATION",
         "═" * 60,
