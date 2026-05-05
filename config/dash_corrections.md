@@ -948,7 +948,7 @@ Log each supersession to stderr so prompt drift can be audited.
 
 ## TOPIC — DELETIONS / TOMBSTONE LOOKUP CONSISTENCY
 
-### AA1 — Tombstone-id format MUST match the schema's stable id; never hash-an-id-that's-already-a-hash *(silent auto-correct)*
+### AA1 — Tombstone-id format MUST match the schema's stable id; never hash-an-id-that's-already-a-hash *(silent auto-correct)* [ENFORCED via tools/checks/check_aa1.py]
 
 **Real-world failure (2026-05-05, with screenshots from desktop)**: 80+ tombstoned awaiting-external items kept rendering on the dashboard for weeks despite being in `data/user-state/deletions.json` with `source: "awaitingExternal"`. Root cause: the client-side render filter for awaiting items called `__isDel('followup', k)` — which computes `djb2('followup|<item-id>')` and looks for THAT hash in the `__DELETIONS__` Set. But the Set contains the RAW 8-char hex ids (because the server's `/item/delete` handler stores the raw `id` field directly when source=`awaitingExternal`). The hash never matched the raw id → ZERO awaiting items got filtered.
 
@@ -1007,7 +1007,7 @@ When an analyst pass populates a `prospectiveInvestors` / `capitalRaisingAdvisor
 
 **Failure pattern that drove the rule**: An advisory-bank entry was logged with `owner: <principal>` and `myAction: "Send teaser + data room for <deal>"` — implying the principal was sending materials to the bank. Actual: the bank was pitching deal flow to the firm; another team member was the call originator (per email-thread headers); the bank sends teasers TO the firm, not the other way. Correct config: owner = team member who originated the relationship, `sourcedBy:` capturing the upstream connector, `myAction: ""` (wait to receive). Tenant-specific incident details in private log.
 
-### Y2 — "Action direction inversion" check at extraction time *(extraction-prompt enrichment)*
+### Y2 — "Action direction inversion" check at extraction time *(extraction-prompt enrichment)* [ENFORCED via tools/checks/check_y2.py]
 
 The extraction prompts in `cos_otter_backfill.py` and `cos_email_backfill.py` should explicitly disambiguate **which side of the conversation owes the next action**. When a call/email surfaces "send teaser/CIM/data room", the extraction MUST identify which party is sending — by inspecting the role context (advisor pitching → counterparty sends; principal pitching → principal sends).
 
@@ -1017,7 +1017,7 @@ The extraction prompts in `cos_otter_backfill.py` and `cos_email_backfill.py` sh
 
 ## TOPIC — DEAL NARRATIVE TRACKING
 
-### V1 — Per-deal activity log (auto-appended, no manual maintenance) *(silent auto-correct)*
+### V1 — Per-deal activity log (auto-appended, no manual maintenance) *(silent auto-correct)* [ENFORCED via tools/checks/check_v1.py]
 
 Every active deal needs a chronological narrative — "what happened over the last 14 days, how did the situation evolve, where do things stand now" — that the user can read in 30 seconds without reconstructing from raw followups. **NO manual log maintenance** (rejected as overhead). Auto-derived from extraction signal.
 
@@ -1224,7 +1224,7 @@ Every extraction prompt that produces narrative content (call transcripts via Ot
 
 When a new extraction pipeline is added, U1 compliance is part of the acceptance criteria.
 
-### U2 — Market intel ↔ deal readthrough *(silent auto-correct, partial)*
+### U2 — Market intel ↔ deal readthrough *(silent auto-correct, partial)* [ENFORCED via tools/checks/check_u2.py]
 
 Market briefings, podcast intel, and research feeds frequently surface signal relevant to specific active deals (e.g., a Jefferies note on ERCOT pricing matters for a Texas land deal; a podcast on hyperscaler power matters for a BTM gas play). The dashboard MUST connect intel to deals — silently — so deal cards and the daily briefing can call out readthroughs.
 
@@ -1284,15 +1284,15 @@ A firm mentioned once in passing is not a new entry. Auto-promotion to `deal-con
 
 Extraction prompts emit `confidence: high|medium|low` on `new_contacts[]`. `low` mentions stay in a triage queue; only `high` (or repeated `medium`) candidates surface for promotion.
 
-#### G2 — Schema validation at config load *(silent auto-correct)*
+#### G2 — Schema validation at config load *(silent auto-correct)* [ENFORCED via tools/checks/check_g2.py]
 
 Every row in `deal-config.yaml` and `recruit-config.yaml` requires: `name`, `lastAction`, `nextTouchBase` (or `movedToDormant`), `owner`, AND either non-empty `myAction` OR explicit dormant flag. Rows violating the schema are silently dropped from render with a single line to `/tmp/cos-dashboard.log` — no admin-tab alert.
 
-#### G3 — Owner whitelist on curated config *(silent auto-correct)*
+#### G3 — Owner whitelist on curated config *(silent auto-correct)* [ENFORCED via tools/checks/check_g3.py]
 
 Curated config `owner:` field accepts only values in `firm_context.yaml > team[]` (case-insensitive normalization for nicknames). Out-of-whitelist owners are treated as `owner: ""` at render and logged. Same enforcement that already applies to extraction-emitted owner field, now extended to curated configs.
 
-#### G4 — No orphan deal directories *(silent auto-correct)*
+#### G4 — No orphan deal directories *(silent auto-correct)* [ENFORCED via tools/checks/check_g4.py]
 
 Every `data/deals/<TICKER>/` MUST contain `deal.md`, `actions.md`, `LPs.md`, `TERMS.md`. Missing files signal a half-created deal. `deal-system-compile.py > _assert_no_orphan_deal_dirs()` runs at every compile, logs the violation to stderr, and continues — no block, since compile may itself be the recovery path.
 
@@ -1312,7 +1312,7 @@ Each discrete fact (commitment amount, owner, last meeting date, gating decision
 
 `last_activity` = something happened to the deal externally (call, email, transcript, action closure). `last_reviewed` = a human last opened the curated config row and confirmed the prose still reads true. A deal can have very recent activity AND a stale curated row simultaneously. Schema add (optional field); compile picks max of either for "freshness" surfaces. Adopt when the curated config edit volume justifies the distinction.
 
-#### M3 — Fact-reconciliation hierarchy *(documentation-only)*
+#### M3 — Fact-reconciliation hierarchy *(documentation-only)* [ENFORCED via tools/checks/check_m3.py]
 
 When sources disagree on a fact (e.g., `deal.md` says `stage: Sourcing`, briefing fullText calls it "Active Bid"), the canonical hierarchy is:
 
@@ -1510,7 +1510,7 @@ last_activity = max(
 
 Tokens used to "mention the deal": canonical name, ticker, id (lowercased substring match against followUp `who`/`what` and awaiting `counterparty`/`content`).
 
-### 2026-05-04 — `next_milestone` must always reference a future date
+### 2026-05-04 — `next_milestone` must always reference a future date [ENFORCED via tools/checks/check_next_milestone.py]
 
 `data/deals/<TICKER>/deal.md > next_milestone_due` MUST be ≥ today. A past `next_milestone_due` means the milestone happened (close it; queue the next one) or slipped (roll forward with explicit reasoning). **Banned**: leaving a past `next_milestone_due` to render on the deal-pipeline mini-card.
 
@@ -1631,7 +1631,7 @@ When a recruiting/deal target has a calendared in-person meeting and the date pa
 
 **Detection**: any recruit-config / deal-config row whose `nextStep` mentions a date within the past 14 days AND `lastAction` < that date — flag for capture.
 
-### 2026-05-04 — `briefingSynopsis.captureSummary` freshness assertion
+### 2026-05-04 — `briefingSynopsis.captureSummary` freshness assertion [ENFORCED via tools/checks/check_capture_freshness.py]
 
 `/briefing/intel.json` returns `synopsis.captureSummary` with a `date` field. If `captureSummary.date < today - 1`, the capture pipeline didn't run today. Surface a warning chip on the briefing tab + log to stderr. With the routines catch-up agent live, the underlying capture should run at every wake — a stale captureSummary is now an actionable signal of pipeline failure, not an ambient background condition.
 
@@ -1682,7 +1682,7 @@ Server rules already encoded: `severity = "warn"` for 2–3 days stale, `"stale"
 
 ## TOPIC — PAST-DUE ITEM RESOLUTION
 
-### 2026-05-04 — Past-due deal action sweep: every passed date must be classified, not left
+### 2026-05-04 — Past-due deal action sweep: every passed date must be classified, not left [ENFORCED via tools/checks/check_past_due_actions.py]
 
 When a `/dash` audit finds open or in-progress actions in `data/deals/<TICKER>/actions.md` (or any equivalent tracker) whose `due` date is in the past, the session MUST classify every one before closing. Acceptable resolutions:
 
