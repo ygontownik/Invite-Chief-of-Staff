@@ -461,7 +461,25 @@ def _resolve_deal_config_path():
     if env:
         candidates.append(Path(env).expanduser() / 'config' / 'deal-config.yaml')
         candidates.append(Path(env).expanduser() / 'deal-config.yaml')
-    slug = os.environ.get('COS_TENANT_SLUG', 'tomac')
+    # Tenant slug resolution — never default to a maintainer-specific slug.
+    # Order: env var → firm_context.yaml::tenant_slug → 'default' sentinel.
+    # Mirrors the pattern in cos_email_backfill.py (commit 7b6ed62).
+    slug = os.environ.get('COS_TENANT_SLUG')
+    if not slug:
+        try:
+            import sys as _sys
+            _here = Path(__file__).resolve().parent
+            for _p in (_here, _here.parent / 'cos-pipeline'):
+                _sp = str(_p)
+                if _p.exists() and _sp not in _sys.path:
+                    _sys.path.insert(0, _sp)
+            import _firm_context as _fc  # type: ignore
+            _ctx = _fc.load_firm_context() or {}
+            slug = (_ctx.get('tenant_slug') or '').strip() or None
+        except Exception:
+            slug = None
+    if not slug:
+        slug = 'default'
     candidates.append(Path.home() / f'cos-pipeline-config-{slug}' / 'config' / 'deal-config.yaml')
     candidates.append(Path(__file__).parent.parent / 'config' / 'deal-config.yaml')
     # Legacy fallback (one-release back-compat — remove next major release)
