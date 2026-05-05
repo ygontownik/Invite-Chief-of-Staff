@@ -946,6 +946,70 @@ Log each supersession to stderr so prompt drift can be audited.
 
 ---
 
+## TOPIC — DEAL NARRATIVE TRACKING
+
+### V1 — Per-deal activity log (auto-appended, no manual maintenance) *(silent auto-correct)*
+
+Every active deal needs a chronological narrative — "what happened over the last 14 days, how did the situation evolve, where do things stand now" — that the user can read in 30 seconds without reconstructing from raw followups. **NO manual log maintenance** (rejected as overhead). Auto-derived from extraction signal.
+
+**Implementation (codified 2026-05-04)**:
+- `deal-system-compile.py > _compute_deal_logs()` runs at every compile.
+- For each deal in `data/deals/<TICKER>/`:
+  1. Compute deal-tokens: canonical name + ticker + id + alias needles (via `firm_context.yaml > counterparty_aliases`).
+  2. Scan `dashboard-data.json > followUps[]`, `awaitingExternal[]`, `dealIntel[]`, `originationInbox[]` for items whose `who`/`counterparty`/`content` matches any token (substring, case-insensitive).
+  3. For each match, compute a stable `id = djb2(source|who|what|date)`. If the id is not already in `data/deals/<TICKER>/log.json > entries[]`, append.
+  4. Cap at 200 entries per deal (rolling window, newest first).
+- Output: per-deal `log.json` files + `recent_log[]` array (top 5 newest) on each deal in `deal-system-data.json`.
+- The briefing handler renders a "Deal Activity Log" section with last 3 entries per deal.
+
+**Idempotency**: stable djb2 id prevents re-appending the same item across compiles. Manual edits to `log.json` are preserved (the auto-append only adds, never deletes).
+
+**Rule for analyst passes**: when curating a deal's takeaway/nextStep/myAction, READ THE LOG FIRST (M3 rule extension). The log is where the chronological narrative lives; the curated config is the synthesis.
+
+**Rule for new deals**: when adding a new `data/deals/<TICKER>/` directory, the log.json file is auto-created on first compile that finds matching signal — no manual seeding needed.
+
+### V2 — Auto-extracted entries beat manual narrative *(documentation)*
+
+If the user manually appends to `log.json > entries[]` (or any future structured log), the auto-extract MUST NOT overwrite manual entries. The append-only invariant: extraction adds entries with new ids; manual entries (different id format or marked `manual: true`) are preserved indefinitely. The mechanism currently relies on djb2 id uniqueness and rolling window cap — manual entries get the same treatment as auto entries (rolled out at 200-entry cap, newest first).
+
+If manual narrative becomes a workflow, add `pinned: true` flag that excludes from rolling-window eviction.
+
+---
+
+## TOPIC — CONFIG PATH PRECEDENCE & SYMLINK DISCIPLINE
+
+### W1 — Tenant configs: cos-pipeline-config-<slug> wins; dashboards/config is a symlink *(silent auto-correct + analyst discipline)*
+
+**Real-world failure pattern (incident: 2026-05-04)**: `_resolve_deal_config_path()` in `cos-dashboard-server.py` checks paths in priority order:
+
+1. `$COS_CONFIG_DIR/config/deal-config.yaml` (env-var override)
+2. `~/cos-pipeline-config-<slug>/config/deal-config.yaml` (tenant repo)
+3. `~/dashboards/config/deal-config.yaml` (legacy path)
+
+When the tenant repo path exists, the dashboards-path file is silently ignored. Multiple analyst passes edited `~/dashboards/config/deal-config.yaml` thinking they were editing the canonical file; the server kept reading the older tenant-repo copy. Result: every "fix" appeared to apply but the live dashboard rendered stale state.
+
+**Rule (codified 2026-05-04)**: any config file that has a tenant-repo equivalent (`~/cos-pipeline-config-<slug>/config/<name>.yaml` or similar) MUST be symlinked from the dashboards path to the tenant-repo path. This makes the dashboards-path edit-target visibly the SAME file the server reads. No silent precedence inversion possible.
+
+**Detection**: `for f in ~/dashboards/config/*.yaml ~/dashboards/config/*.json; do tenant=~/cos-pipeline-config-tomac/config/$(basename "$f"); if [ -f "$tenant" ] && [ ! -L "$f" ]; then echo "DRIFT: $f is a regular file but tenant copy exists at $tenant"; fi; done`
+
+**This session's fix**: `~/dashboards/config/deal-config.yaml` symlinked to `~/cos-pipeline-config-tomac/config/deal-config.yaml`. Same fix recommended for `recruit-config.yaml`, `email-capture.yaml`, `strings.yaml`, `user-tasks.yaml`, `users.json`, `deal_buckets.json` if/when the tenant-repo migration completes for those files.
+
+---
+
+## TOPIC — BROWSER CACHE / RESPONSE HEADERS
+
+### X1 — HTML responses must set `Cache-Control: no-store` *(silent auto-correct)*
+
+Server-side data (deal-config, recruit-config, fundraising user-state, deletions, etc.) is freshly injected into the HTML on every page-serve via `_load_*` calls. But if the browser caches the HTML response, a reload-after-sync serves the stale cached page — config edits the user just made appear to not take effect.
+
+**iOS Safari** is the primary offender: it aggressively bfcaches HTML responses across navigation, even with same-URL reloads.
+
+**Rule (codified 2026-05-04 in `_serve_html()`)**: every HTML response sets `Cache-Control: no-store, no-cache, must-revalidate, max-age=0` + `Pragma: no-cache` + `Expires: 0`. Page weight is small (~3MB gzipped); the bandwidth cost of always-fresh is negligible vs. the correctness cost of stale.
+
+**Companion rule for the sync button**: `tcSyncAll()` in `_topnav.html` triggers `window.location.replace(url + '?_t=' + Date.now())` after the `/refresh-all` POST completes. The query-param cache-buster forces a new URL → bypasses bfcache even on browsers that ignore Cache-Control. Without the cache-buster, iOS Safari can still serve the bfcached page.
+
+---
+
 ## TOPIC — UNIFIED EXTRACTION + READTHROUGH STANDARD
 
 Codified 2026-05-04. Extension to the lifecycle standard below — addresses the question "is the same overlay applied across all transcript sources, and how do we tie market intel back to active deals?"

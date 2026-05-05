@@ -3107,13 +3107,46 @@ class Handler(BaseHTTPRequestHandler):
                         break
                 if full_text:
                     break
-            # 2026-05-04: append a "Deal Readthrough" section to fullText
-            # listing intel items that match active deals (computed by
-            # _compute_deal_readthroughs in deal-system-compile.py). U2 rule.
+            # 2026-05-04: append two auto-derived sections to fullText —
+            #   1. "Deal Activity Log" (V1 rule): per-deal recent extraction
+            #      signal (followUps / awaitingExternal / dealIntel) auto-
+            #      tagged to deals at compile time. NO manual log
+            #      maintenance.
+            #   2. "Deal Readthrough" (U2 rule): market intel matched to
+            #      active deals.
             try:
                 ds_path = Path(__file__).parent.parent / 'data' / 'compiled' / 'deal-system-data.json'
                 if ds_path.exists():
                     ds = json.loads(ds_path.read_text())
+                    # ── Deal Activity Log ──
+                    log_lines = []
+                    for d in (ds.get('deals') or []):
+                        rl = d.get('recent_log') or []
+                        if not rl:
+                            continue
+                        log_lines.append(f"\n**{d.get('name','')}** · {d.get('stage','')}")
+                        for e in rl[:3]:
+                            src_chip = {
+                                'followup': '📌', 'awaitingExternal': '⏳',
+                                'intel': '📰',
+                            }.get(e.get('source',''), '·')
+                            who = (e.get('who') or '')[:50]
+                            what = (e.get('what') or '')[:180]
+                            log_lines.append(
+                                f"  {src_chip} _{e.get('date','')}_ "
+                                f"**{who}** — {what}"
+                            )
+                    if log_lines:
+                        log_section = (
+                            "\n\n---\n\n### Deal Activity Log\n"
+                            "_Recent signals auto-tagged to each deal "
+                            "(followups, awaiting items, deal intel)._\n"
+                            + "\n".join(log_lines) + "\n"
+                        )
+                    else:
+                        log_section = ''
+
+                    # ── Deal Readthrough ──
                     rt_lines = []
                     for d in (ds.get('deals') or []):
                         rts = d.get('recent_readthroughs') or []
@@ -3132,17 +3165,22 @@ class Handler(BaseHTTPRequestHandler):
                             "_Market intel matched to active deals (auto, last refresh)._\n"
                             + "\n".join(rt_lines) + "\n"
                         )
+                    else:
+                        rt_section = ''
+
+                    combined = log_section + rt_section
+                    if combined:
                         # Insert before "### Intelligence" if present, else append
                         if '### Intelligence' in full_text:
                             full_text = full_text.replace(
                                 '### Intelligence',
-                                rt_section + '\n### Intelligence',
+                                combined + '\n### Intelligence',
                                 1,
                             )
                         else:
-                            full_text = full_text + rt_section
+                            full_text = full_text + combined
             except Exception as _e:
-                print(f'[briefing_intel] readthrough merge skipped: {_e}', flush=True)
+                print(f'[briefing_intel] log/readthrough merge skipped: {_e}', flush=True)
 
             payload = {
                 'synopsis': synopsis,
@@ -3365,7 +3403,16 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({"error": str(e)}).encode())
 
     def _serve_html(self, html: str, inject_chrome: bool = True, user: str = 'owner'):
-        """Serve an HTML string; optionally inject shared design-system + topnav."""
+        """Serve an HTML string; optionally inject shared design-system + topnav.
+
+        2026-05-04: explicit Cache-Control: no-store headers added. iOS Safari
+        was serving stale HTML on reload-after-sync, masking config edits the
+        user had just made (e.g., owner reassignment in deal-config.yaml).
+        Server-side data is freshly injected on every serve via
+        _load_deal_config / _load_recruit_config, so disabling browser cache
+        for the HTML shell is safe — page weight is small and the JSON
+        payloads inside already have their own cache headers.
+        """
         if inject_chrome:
             html = _inject_shared_chrome(html, user)
         body = html.encode('utf-8')
@@ -3376,11 +3423,17 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header('Content-Type', 'text/html; charset=utf-8')
             self.send_header('Content-Encoding', 'gzip')
             self.send_header('Content-Length', str(len(body)))
+            self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+            self.send_header('Pragma', 'no-cache')
+            self.send_header('Expires', '0')
             self.end_headers()
         else:
             self.send_response(200)
             self.send_header('Content-Type', 'text/html; charset=utf-8')
             self.send_header('Content-Length', str(len(body)))
+            self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+            self.send_header('Pragma', 'no-cache')
+            self.send_header('Expires', '0')
             self.end_headers()
         self.wfile.write(body)
 

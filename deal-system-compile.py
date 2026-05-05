@@ -670,6 +670,171 @@ def _compute_deal_readthroughs() -> int:
     return pairs
 
 
+def _compute_deal_logs() -> int:
+    """V1 silent auto-log (codified 2026-05-04): append per-deal entries
+    to `data/deals/<TICKER>/log.json` from extraction signal. NO manual
+    process — every relevant followUp / awaitingExternal / dealIntel
+    item is auto-tagged to the deal it touches and appended to that
+    deal's chronological log.
+
+    Idempotency via stable djb2 id per (who, what, date). Already-logged
+    ids are tracked in the same file so re-runs don't duplicate.
+
+    Output: `recent_log[]` on each deal in deal-system-data.json (last
+    20 entries, newest first). The briefing handler renders the latest
+    1-3 entries per deal as the "Recent Activity" feed.
+
+    Returns count of new entries appended."""
+    import re as _re, hashlib as _hl, datetime as _dt
+    dash_path = COMPILED_DIR / 'dashboard-data.json'
+    deal_path = DATA_DST
+    if not dash_path.exists() or not deal_path.exists():
+        return 0
+    if not DEAL_SYSTEM.exists():
+        return 0
+    try:
+        dash = json.loads(dash_path.read_text())
+        deal_doc = json.loads(deal_path.read_text())
+    except Exception:
+        return 0
+
+    def _djb2(s: str) -> str:
+        h = 5381
+        for c in s:
+            h = ((h << 5) + h) ^ ord(c)
+        return format(h & 0xFFFFFFFF, '08x')
+
+    # Build alias-needles map for each deal-system deal (so we know which
+    # signal items match which deal).
+    fc_path = Path.home() / 'cos-pipeline-config-tomac' / 'firm_context.yaml'
+    if not fc_path.exists():
+        fc_path = Path.home() / 'cos-pipeline-config' / 'firm_context.yaml'
+    canonical_to_needles: dict = {}
+    try:
+        import yaml as _yaml
+        if fc_path.exists():
+            fc = _yaml.safe_load(fc_path.read_text()) or {}
+            for entry in (fc.get('counterparty_aliases') or []):
+                canon = (entry.get('canonical') or '').strip()
+                if not canon: continue
+                needles = [(n or '').lower() for n in (entry.get('needles') or [])]
+                needles.append(canon.lower())
+                canonical_to_needles[canon.lower()] = needles
+    except Exception:
+        pass
+
+    def _deal_tokens(d: dict) -> list:
+        """Return all lowercase token substrings to match an item to this deal."""
+        tokens = []
+        for f in ('name', 'ticker', 'id'):
+            v = (d.get(f) or '').lower()
+            if v: tokens.append(v)
+        # Find canonical match → use all needles
+        n = (d.get('name') or '').lower()
+        nid = (d.get('id') or '').lower()
+        for canon_low, needles in canonical_to_needles.items():
+            if canon_low in n or canon_low == nid or any(nd and nd in n for nd in needles):
+                tokens.extend(needles)
+                break
+        # Filter out tokens that are too short or too generic
+        return [t for t in set(tokens) if t and len(t) >= 3]
+
+    today = _dt.date.today().isoformat()
+    cutoff_30d = (_dt.date.today() - _dt.timedelta(days=30)).isoformat()
+    new_entries_total = 0
+
+    for d in (deal_doc.get('deals') or []):
+        if not isinstance(d, dict):
+            continue
+        did = d.get('id') or ''
+        if not did:
+            continue
+        deal_dir = DEAL_SYSTEM / did
+        if not deal_dir.is_dir():
+            continue
+        log_path = deal_dir / 'log.json'
+
+        # Load existing log + seen-id set
+        try:
+            existing = json.loads(log_path.read_text()) if log_path.exists() else {}
+        except Exception:
+            existing = {}
+        entries = existing.get('entries') or []
+        seen = {e.get('id') for e in entries if e.get('id')}
+
+        tokens = _deal_tokens(d)
+
+        # Scan signal sources
+        candidate_pairs = []
+        for fu in (dash.get('followUps') or []):
+            if (fu.get('what') or '').startswith('[RESOLVED]'): continue
+            who = (fu.get('who') or '')
+            what = (fu.get('what') or '')
+            text_low = (who + ' ' + what).lower()
+            if not any(t in text_low for t in tokens): continue
+            added = (fu.get('addedDate') or fu.get('when') or '')[:10]
+            if not _re.match(r'^\d{4}-\d{2}-\d{2}$', added): continue
+            if added < cutoff_30d: continue
+            iid = _djb2('fu|' + who + '|' + what[:80] + '|' + added)
+            if iid in seen: continue
+            candidate_pairs.append({
+                'id': iid, 'date': added, 'source': 'followup',
+                'who': who[:80], 'what': what[:280],
+            })
+
+        for ae in (dash.get('awaitingExternal') or []):
+            cp = (ae.get('counterparty') or '')
+            content = (ae.get('content') or '')
+            text_low = (cp + ' ' + content).lower()
+            if not any(t in text_low for t in tokens): continue
+            added = (ae.get('addedDate') or '')[:10]
+            if not _re.match(r'^\d{4}-\d{2}-\d{2}$', added): continue
+            if added < cutoff_30d: continue
+            iid = _djb2('ae|' + cp + '|' + content[:80] + '|' + added)
+            if iid in seen: continue
+            candidate_pairs.append({
+                'id': iid, 'date': added, 'source': 'awaitingExternal',
+                'who': cp[:80], 'what': content[:280],
+            })
+
+        for it in ((dash.get('dealIntel') or []) + (dash.get('originationInbox') or [])):
+            content = (it.get('content') or '')
+            ctx = (it.get('context') or '')
+            text_low = (content + ' ' + ctx).lower()
+            if not any(t in text_low for t in tokens): continue
+            added = (it.get('addedDate') or '')[:10]
+            if not _re.match(r'^\d{4}-\d{2}-\d{2}$', added): continue
+            if added < cutoff_30d: continue
+            iid = _djb2('intel|' + ctx[:40] + '|' + content[:80] + '|' + added)
+            if iid in seen: continue
+            candidate_pairs.append({
+                'id': iid, 'date': added, 'source': 'intel',
+                'who': ctx[:80], 'what': content[:280],
+            })
+
+        if candidate_pairs:
+            # Append + cap rolling window at 200 entries
+            entries.extend(candidate_pairs)
+            entries.sort(key=lambda e: e.get('date',''), reverse=True)
+            entries = entries[:200]
+            existing['deal_id'] = did
+            existing['entries'] = entries
+            existing['updated_at'] = _dt.datetime.now(_dt.UTC).isoformat(timespec='seconds').replace('+00:00','Z')
+            log_path.write_text(json.dumps(existing, indent=2, ensure_ascii=False))
+            new_entries_total += len(candidate_pairs)
+
+        # Surface recent log on the deal record (top 5 by date desc)
+        d['recent_log'] = sorted(
+            entries, key=lambda e: e.get('date',''), reverse=True
+        )[:5]
+
+    deal_doc['deals'] = [d for d in (deal_doc.get('deals') or []) if isinstance(d, dict)]
+    deal_path.write_text(json.dumps(deal_doc, indent=2, ensure_ascii=False))
+    if new_entries_total:
+        print(f'  V1 deal-log: appended {new_entries_total} new entries across deals', flush=True)
+    return new_entries_total
+
+
 def main():
     t0 = time.time()
     COMPILED_DIR.mkdir(parents=True, exist_ok=True)
@@ -717,6 +882,13 @@ def main():
     # `recent_readthroughs[]` array onto each deal in deal-system-data.json.
     print('→ Computing deal readthroughs from market intel...', flush=True)
     _compute_deal_readthroughs()
+
+    # ── Step 3.5c: auto-append per-deal activity log from extraction
+    # signal (codified 2026-05-04 — V1 generic rule). Silent — writes
+    # entries to data/deals/<TICKER>/log.json + recent_log[] onto each
+    # deal record. NO manual log maintenance.
+    print('→ Appending per-deal activity log from extraction signal...', flush=True)
+    _compute_deal_logs()
 
     # ── Step 3.6: ensure schema defaults + apply user overrides ──
     # potential_partner, deck_url, model_url are user-editable via the

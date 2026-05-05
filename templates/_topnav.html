@@ -61,10 +61,19 @@ function tcSyncAll() {
   var mBtn = document.getElementById('tc-mobile-sync-btn');
   if (btn) { btn.classList.add('syncing'); btn.disabled = true; }
   if (mBtn) { mBtn.classList.add('syncing'); mBtn.disabled = true; }
+  // 2026-05-04: append a cache-buster query param on reload. iOS Safari was
+  // serving the previously-loaded HTML even after Cache-Control: no-store on
+  // the server, because the response had been kept in the bfcache. The query-
+  // param trick forces a new URL → new HTTP request → fresh server response.
+  function _reloadFresh() {
+    var u = new URL(window.location.href);
+    u.searchParams.set('_t', Date.now().toString());
+    window.location.replace(u.toString());
+  }
   fetch(''+window.location.origin+'/refresh-all', {method: 'POST'})
     .then(function(r) { return r.json(); })
-    .then(function() { setTimeout(function() { window.location.reload(); }, 150); })
-    .catch(function() { setTimeout(function() { window.location.reload(); }, 300); });
+    .then(function() { setTimeout(_reloadFresh, 150); })
+    .catch(function() { setTimeout(_reloadFresh, 300); });
 }
 </script>
 <script>
