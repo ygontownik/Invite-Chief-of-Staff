@@ -105,7 +105,7 @@ Every extracted action gets a `dashboard_path` field that controls where it appe
 - `COS › Recruiting › [firm name]` — recruiting actions (only when `features.job_search: true`)
 - `COS › Follow-ups` — fallback for actions with no specific deal/LP
 
-The `[DEAL_WORKSTREAM]` token is replaced at runtime with `firm_context.yaml.workstream_categories.deal` (e.g. "Tomac Cove" or "Meridian Deals").
+The `[DEAL_WORKSTREAM]` token is replaced at runtime with `firm_context.yaml.workstream_categories.deal` (e.g. "ExampleCo Deals" or "Meridian Deals").
 
 ## Cost profile
 
@@ -287,7 +287,7 @@ Two possibilities:
 1. Claude decided no email needed a reply. Check the log for `drafts: 0` in the summary.
 2. The provider's `create_draft` failed. Search the log for "Draft failed":
    ```bash
-   grep "Draft failed\|create_draft" ~/tomac-cove-pipeline/logs/capture_pipeline.log | tail -10
+   grep "Draft failed\|create_draft" ~/cos-pipeline/logs/capture_pipeline.log | tail -10
    ```
 
 **Drafts created but with wrong tone or content**
