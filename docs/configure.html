@@ -553,21 +553,6 @@
         </div>
       </div>
     </div>
-
-    <div class="field">
-      <label>Active job search? <span style="color:#888;font-weight:400">(opt-in — off by default)</span></label>
-      <div class="hint">When On, the system enables a Personal tile with a Job Search tab, classifies inbound emails as RECRUIT, and writes a Recruiting Pipeline doc. Most tenants leave this Off.</div>
-      <div class="radio-group inline" id="job-search">
-        <div class="radio-option selected" onclick="selectRadio('job-search', this, 'false')">
-          <div class="radio-dot"></div>
-          <div><div class="radio-label">No (recommended)</div></div>
-        </div>
-        <div class="radio-option" onclick="selectRadio('job-search', this, 'true')">
-          <div class="radio-dot"></div>
-          <div><div class="radio-label">Yes — enable recruiting flow</div></div>
-        </div>
-      </div>
-    </div>
   </div>
 
   <!-- Section 2: Firm -->
@@ -827,7 +812,7 @@
       <div class="section-num">7</div>
       <div>
         <div class="section-title">Active deals &amp; classification keywords</div>
-        <div class="section-sub">The primary classification engine — update this every time you start a new deal. Recruiting fields below are opt-in (only used when "Active job search?" is Yes).</div>
+        <div class="section-sub">The primary classification engine — update this every time you start a new deal.</div>
       </div>
     </div>
 
@@ -837,15 +822,6 @@
       <div class="tag-input-wrap" onclick="this.querySelector('input').focus()">
         <div id="deal-tags"></div>
         <input class="tag-input" id="deal-input" placeholder="Type deal name, press Enter" onkeydown="addTag(event, 'deal')">
-      </div>
-    </div>
-
-    <div class="field">
-      <label>Recruiting firms watching you <span style="color:#888;font-weight:400">(only used when "Active job search?" is Yes)</span></label>
-      <div class="hint">Emails from these firms route to your Recruiting doc — only when <code>features.job_search</code> is on. Leave blank otherwise.</div>
-      <div class="tag-input-wrap" onclick="this.querySelector('input').focus()">
-        <div id="recruit-tags"></div>
-        <input class="tag-input" id="recruit-input" placeholder="(opt-in) e.g. search firm names…" onkeydown="addTag(event, 'recruit')">
       </div>
     </div>
 
@@ -997,7 +973,7 @@
 // ── State ──────────────────────────────────────────────────────────────────
 const state = {
   investorFrame: 'principal investor',
-  jobSearch: 'false',  // opt-in per scope A; default off for new tenants
+  jobSearch: 'false',
   memoFormat: 'sixsection',
   primaryQuestion: 'investment',
   specificity: 'strict',
@@ -1006,7 +982,6 @@ const state = {
   focusItems: [],   // {label, value} in priority order
   peerTags: [],
   dealTags: [],
-  recruitTags: [],
   keypeopleEntries: [],
   teamMembers: [],
   newsletterTags: [],
@@ -1177,7 +1152,6 @@ function selectRadio(groupId, el, value) {
   state[groupId.replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = value;
   // Special cases for differently-named state keys
   if (groupId === 'investor-frame') state.investorFrame = value;
-  if (groupId === 'job-search') state.jobSearch = value;
   if (groupId === 'memo-format') state.memoFormat = value;
   if (groupId === 'primary-question') state.primaryQuestion = value;
   if (groupId === 'email-tone') state.emailTone = value;
@@ -1217,7 +1191,6 @@ function addTag(e, type) {
   if (!val) return;
   const arr = type === 'peer' ? state.peerTags
             : type === 'deal' ? state.dealTags
-            : type === 'recruit' ? state.recruitTags
             : state.keypeopleEntries;
   if (!arr.includes(val)) { arr.push(val); }
   input.value = '';
@@ -1228,7 +1201,6 @@ function addTag(e, type) {
 function removeTag(type, val) {
   const arr = type === 'peer' ? state.peerTags
             : type === 'deal' ? state.dealTags
-            : type === 'recruit' ? state.recruitTags
             : state.keypeopleEntries;
   const i = arr.indexOf(val);
   if (i !== -1) arr.splice(i, 1);
@@ -1240,7 +1212,6 @@ function renderTags(type) {
   const containerId = `${type}-tags`;
   const arr = type === 'peer' ? state.peerTags
             : type === 'deal' ? state.dealTags
-            : type === 'recruit' ? state.recruitTags
             : state.keypeopleEntries;
   const el = document.getElementById(containerId);
   el.innerHTML = arr.map(v =>
@@ -1509,7 +1480,6 @@ ${genIntelligenceSourcesYaml()}
 # Each toggle gates pipelines, dashboard tiles, and classifier behavior.
 # Per-user overrides live in $CONFIG_DIR/config/users.json :: users[].features.
 features:
-  job_search: ${state.jobSearch}            # off by default; enables Personal tile + RECRUIT classification + Recruiting Doc
   call_recording: false           # ~/tomac-cove-pipeline/ Twilio + call_scheduler chain (off by default; turn on if you need dial-in recording)
   podcast_transcription: true     # AssemblyAI-driven podcast feed digestion
   research_pdfs: false            # Jefferies / GS / RBN / FVR PDF processing (off by default)
@@ -1532,7 +1502,6 @@ principal:
   background: "${bg}"
   prior_firm: "${prior}"
   investor_frame: "${frame}"
-  job_search_active: ${state.jobSearch}     # legacy field; superseded by features.job_search
   investment_focus:
 ${focus || '    - "fill in your sectors"'}
 
@@ -1579,38 +1548,15 @@ prompt_overrides:
 
 function genFirmConfigJson() {
   const deals   = state.dealTags;
-  const recruits= state.recruitTags;
   const dealLine = deals
     .map(d => `"${d.toLowerCase()}"`)
     .concat(['"term sheet"','"loi"','"nda"','"diligence"','"ic memo"','"bid"','"proposal"'])
     .join(',
     ');
 
-  // Recruit keywords only emitted when job_search is on (scope A: recruiting
-  // is opt-in; off by default produces a cleaner config and skips RECRUIT
-  // classification entirely in cos_gmail_mini_v2.py).
-  if (state.jobSearch !== 'true') {
-    return `{
-  "deal_keywords": [
-    ${dealLine}
-  ]
-  // recruit_keywords omitted — features.job_search is off
-}`;
-  }
-
-  const recLine = recruits
-    .map(r => `"${r.toLowerCase()}"`)
-    .concat(['"interview"','"role"','"opportunity"','"resume"','"cv"','"offer"','"comp"','"compensation"','"headhunter"','"recruiter"'])
-    .join(',
-    ');
-
   return `{
   "deal_keywords": [
     ${dealLine}
-  ],
-
-  "recruit_keywords": [
-    ${recLine}
   ]
 }`;
 }
