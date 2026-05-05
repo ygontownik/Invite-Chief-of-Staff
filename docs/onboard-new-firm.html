@@ -322,16 +322,36 @@
         <div class="step-num">2</div>
         <div class="step-title-wrap">
           <div class="step-title">Create your accounts</div>
-          <div class="step-sub">API keys you'll paste when the installer asks</div>
+          <div class="step-sub">Set these up before running the installer — takes ~20 min</div>
         </div>
-        <div class="step-time-badge">~15 min</div>
+        <div class="step-time-badge">~20 min</div>
       </div>
       <div class="step-body">
 
         <div class="account-grid">
 
+          <div class="account-card" style="border-left: 3px solid #7c3aed;">
+            <div class="account-card-title" style="color:#7c3aed;">① Claude Max subscription — start here</div>
+            <div class="url-block">
+              <a href="https://claude.ai/upgrade" target="_blank">https://claude.ai/upgrade</a>
+              <button class="url-copy-btn" onclick="copyUrl(this)">Copy URL</button>
+            </div>
+            <div class="account-card-note">Choose <strong>Max ($100/mo)</strong>. This gives you the Claude Code CLI for interactive analysis — the part you'll use most. After subscribing, install the CLI:<br><br>
+              <code style="display:block;background:#f0ece4;padding:8px 10px;border-radius:4px;font-size:12px;margin-top:4px;">npm install -g @anthropic-ai/claude-code<br>claude  <span style="color:#999;"># opens browser auth — sign in with your Claude account</span></code>
+            </div>
+          </div>
+
           <div class="account-card">
-            <div class="account-card-title">GitHub account</div>
+            <div class="account-card-title">② Anthropic API key — for automated pipelines</div>
+            <div class="url-block">
+              <a href="https://console.anthropic.com/settings/keys" target="_blank">https://console.anthropic.com/settings/keys</a>
+              <button class="url-copy-btn" onclick="copyUrl(this)">Copy URL</button>
+            </div>
+            <div class="account-card-note">The scheduled pipelines (briefings, transcripts, email triage) call the API directly — separate from your Max subscription. The installer prompts you for this key and stores it in macOS Keychain. Sign in with the same Anthropic account you used above.</div>
+          </div>
+
+          <div class="account-card">
+            <div class="account-card-title">③ GitHub account</div>
             <div class="url-block">
               <a href="https://github.com/signup" target="_blank">https://github.com/signup</a>
               <button class="url-copy-btn" onclick="copyUrl(this)">Copy URL</button>
@@ -340,31 +360,12 @@
           </div>
 
           <div class="account-card">
-            <div class="account-card-title">Anthropic API key</div>
-            <div class="url-block">
-              <a href="https://console.anthropic.com/settings/keys" target="_blank">https://console.anthropic.com/settings/keys</a>
-              <button class="url-copy-btn" onclick="copyUrl(this)">Copy URL</button>
-            </div>
-            <div class="account-card-note">The installer opens this page automatically when it needs the key — you don't need to visit it in advance. Just have an account ready. Stored in macOS Keychain, never in a file.</div>
-          </div>
-
-          <div class="account-card">
-            <div class="account-card-title">AssemblyAI API key (for podcast transcription)</div>
+            <div class="account-card-title">④ AssemblyAI — for podcast &amp; call transcription</div>
             <div class="url-block">
               <a href="https://www.assemblyai.com/dashboard" target="_blank">https://www.assemblyai.com/dashboard</a>
               <button class="url-copy-btn" onclick="copyUrl(this)">Copy URL</button>
             </div>
-            <div class="account-card-note">The installer opens this page automatically too. Sign up (credit card required), ~$0.009/min of audio — a few dollars/month typical. Press Enter to skip if you don't need podcast transcription yet.</div>
-          </div>
-
-          <div class="account-card">
-            <div class="account-card-title">Claude Code CLI — optional, for daily briefing</div>
-            <div class="code-block">
-              <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
-              <code>npm install -g @anthropic-ai/claude-code
-claude</code>
-            </div>
-            <div class="account-card-note">Requires Node.js 18+. Run <code class="inline">node --version</code> to check. The second command opens authentication in your browser.</div>
+            <div class="account-card-note">Sign up (credit card required). ~$0.009/min of audio — a few dollars/month typical. The installer prompts for this key automatically. Press Enter to skip if you don't need transcription yet.</div>
           </div>
 
         </div>
