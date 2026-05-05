@@ -5,7 +5,7 @@ cos_email_backfill.py — Gmail poller for the dashboard-capture label.
 Mirrors the architecture of cos_otter_backfill.py:
   1. Refresh OAuth token (Gmail-only pickle at ~/credentials/gmail_token.pickle).
   2. Enumerate threads tagged `dashboard-capture` (+ sub-labels for parent
-     hints like `dashboard-capture/att-ftth`).
+     hints like `dashboard-capture/<deal-slug>`).
   3. Dedup by thread-id + message history-id in
      ~/credentials/processed_emails.json. A re-run where the latest
      message hasn't changed is a no-op.
@@ -23,10 +23,34 @@ Scopes: gmail.readonly + gmail.labels ONLY. This pipeline never sends,
 composes, modifies, or forwards. See docs/CLAUDE.md security rules and
 scripts/bootstrap-gmail-auth.sh for the consent flow.
 
-Config: ~/dashboards/config/email-capture.yaml (label name, parent
-hints, lookback window, caps).
+── TENANT CONFIG ─────────────────────────────────────────────────────
+This script is tenant-agnostic: every firm/principal-specific value is
+loaded at runtime from `firm_context.yaml` in the tenant config dir
+(default `~/cos-pipeline-config-<slug>/`, override via `$COS_CONFIG_DIR`
+or `--config-dir`). Keys consumed:
 
-Dedup: ~/credentials/processed_emails.json.
+  principal.name / .email / .role / .background — owner attribution,
+                                                   prompt header
+  firm.name      / .short_name                  — DEAL PIPELINE TARGETS
+                                                   header label
+  team[]                                        — speaker / role context
+  owner_whitelist                               — JSON owner enum
+  workstream_categories.deal                    — workstream tag
+  counterparty_aliases / peer_firms / key_people — cross-reference hints
+                                                   surfaced via the
+                                                   shared header builder
+
+── ENV VARS ──────────────────────────────────────────────────────────
+  ANTHROPIC_API_KEY     — required when auth_mode=api (subscription mode
+                          uses CLAUDE_CODE_OAUTH_TOKEN via _claude_dispatch).
+  COS_CONFIG_DIR        — explicit tenant config dir override.
+
+── INVOKING AS A NEW SUBSCRIBER ──────────────────────────────────────
+  1. Clone/scaffold your tenant config to ~/cos-pipeline-config-<slug>/
+     (see firm_context.template.yaml for the schema).
+  2. Bootstrap Gmail auth: ~/dashboards/scripts/bootstrap-gmail-auth.sh
+  3. Run: python3 cos_email_backfill.py --backfill --list
+     (or `--config-dir ~/cos-pipeline-config-<slug>` to be explicit).
 
 CLI:
   --list                Enumerate matching threads; do not process.
@@ -34,6 +58,8 @@ CLI:
   --force               Re-process threads already in the dedup tracker.
   --id THREAD_ID        Limit to one Gmail thread id (implies --force for it).
   --since YYYY-MM-DD    Override the Gmail q= date filter.
+  --config-dir PATH     Override tenant config directory (sets COS_CONFIG_DIR).
+  --print-prompt        Diagnostic: print the rendered LLM preamble and exit.
   --download-approved MESSAGE_ID
                         Helper — prints attachments Gmail would download
                         and writes them to Drive. Gated explicitly per
@@ -75,15 +101,41 @@ except Exception:  # pragma: no cover
 
 import _firm_context as _fc  # noqa: E402
 
+# ── Early --config-dir handling ───────────────────────────────────────────────
+# Honor `--config-dir PATH` before _CTX loads at module scope so the override
+# applies to every downstream load (firm_context.yaml, drive-docs.yaml, etc.).
+# Falls through silently when the flag is absent — argparse handles validation
+# in main(). Env var COS_CONFIG_DIR is the canonical knob _firm_context reads.
+def _peek_config_dir() -> None:
+    argv = sys.argv[1:]
+    for i, a in enumerate(argv):
+        if a == "--config-dir" and i + 1 < len(argv):
+            os.environ["COS_CONFIG_DIR"] = str(Path(argv[i + 1]).expanduser())
+            return
+        if a.startswith("--config-dir="):
+            os.environ["COS_CONFIG_DIR"] = str(Path(a.split("=", 1)[1]).expanduser())
+            return
+
+_peek_config_dir()
+
 _CTX             = _fc.load_firm_context()
 _PRINCIPAL_FULL  = _fc.principal_full_name(_CTX)
 _PRINCIPAL_FIRST = _fc.principal_first_name(_CTX)
 _PRINCIPAL_EMAIL = _fc.principal_email(_CTX)
+_PRINCIPAL_ROLE  = _fc.principal_role(_CTX)
 _DEAL_LEAD_NAME  = _fc.deal_lead_name(_CTX)
-_OWNERS_PIPE     = _fc.owner_whitelist_str(_CTX)   # e.g. "Yoni|Mark|Nik"
+_OWNERS_PIPE     = _fc.owner_whitelist_str(_CTX)   # e.g. "Principal|Partner|Analyst"
 _OWNER_LIST      = _CTX.get("owner_whitelist", []) or []
 _OWNERS_QUOTED   = ", ".join(f'"{o}"' for o in _OWNER_LIST + ["external"])
 _DEAL_WS         = _fc.workstream_deal(_CTX)
+_FIRM_NAME       = _fc.firm_name(_CTX)
+_FIRM_SHORT      = (_CTX.get("firm", {}) or {}).get("short_name", "") or _FIRM_NAME
+# Header label for the cross-reference block emitted to the LLM. Uses the
+# deal-workstream tag (firm_context.yaml :: workstream_categories.deal),
+# which is the same colloquial form already used elsewhere in the pipeline
+# (example: "<WORKSTREAM_DEAL> DEAL PIPELINE TARGETS" — substituted at
+# runtime from tenant config). Preserves the pre-parameterization label.
+_PIPELINE_BLOCK_LABEL = f"{(_DEAL_WS or _FIRM_SHORT or 'FIRM').upper()} DEAL PIPELINE TARGETS"
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
@@ -584,8 +636,16 @@ def _load_pipeline_context() -> str:
         data = json.loads(PIPELINE_DATA_PATH.read_text())
     except Exception:
         return ""
-    deals = data.get("deals") or data.get("tomac") or []
-    lines = ["TOMAC COVE DEAL PIPELINE TARGETS (name → slug):"]
+    # Look up by canonical "deals" key first, then fall back to a
+    # workstream-keyed bucket (legacy data files keyed deals under the
+    # firm-specific workstream slug — kept for shape-compat).
+    workstream_key = (_DEAL_WS or "").lower().split()[0] if _DEAL_WS else ""
+    deals = (
+        data.get("deals")
+        or (data.get(workstream_key) if workstream_key else None)
+        or []
+    )
+    lines = [f"{_PIPELINE_BLOCK_LABEL} (name → slug):"]
     for d in deals[:80]:
         slug = d.get("ticker") or d.get("id") or d.get("slug") or ""
         name = d.get("name") or slug
@@ -892,9 +952,23 @@ def main():
     p.add_argument("--force",    action="store_true", help="Re-process threads already in dedup")
     p.add_argument("--id", dest="thread_id", help="Limit to one thread id (implies --force)")
     p.add_argument("--since", help="Override Gmail q= date filter (YYYY-MM-DD)")
+    p.add_argument("--config-dir", dest="config_dir",
+                   help="Tenant config directory (overrides $COS_CONFIG_DIR; "
+                        "default ~/cos-pipeline-config-<slug>/). Honored at "
+                        "module-load via _peek_config_dir().")
+    p.add_argument("--print-prompt", action="store_true",
+                   help="Print the rendered LLM preamble (header + body) and exit. "
+                        "Useful for verifying tenant-config interpolation.")
     p.add_argument("--download-approved", dest="download_approved",
                    help="Download attachments from a specific message_id (gated action)")
     args = p.parse_args()
+
+    # Diagnostic: render the cached preamble and exit. Does not touch Gmail.
+    if args.print_prompt:
+        print("=== EMAIL_PREAMBLE (header + body) ===")
+        print(EMAIL_PREAMBLE)
+        print("=== END ===")
+        return
 
     cfg = _load_capture_config()
 
@@ -997,10 +1071,11 @@ def main():
     max_per_run = int(cfg["max_threads_per_run"])
     try:
         # Scan the main capture_label AND every sub-label independently.
-        # Gmail labels are orthogonal — a thread tagged only with
-        # `dashboard-capture/cholla` does NOT appear under `dashboard-capture`.
-        # So we union results across [main_label, *sub_labels] to ensure any
-        # sub-label tag alone is sufficient to pull a thread in.
+        # Gmail labels are orthogonal — a thread tagged only with e.g.
+        # `dashboard-capture/<deal-slug>` does NOT appear under the bare
+        # `dashboard-capture`. So we union results across
+        # [main_label, *sub_labels] to ensure any sub-label tag alone is
+        # sufficient to pull a thread in.
         label_scan_targets = []
         if main_label:
             label_scan_targets.append(main_label)
