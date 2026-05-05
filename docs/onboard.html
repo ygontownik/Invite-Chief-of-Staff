@@ -451,7 +451,8 @@
       <h2>You're set up.</h2>
       <p>Three background tasks are now running on your machine:</p>
       <p style="margin: 12px 0 4px; font-size: 13px;">
-        <strong>7:22am Mon–Fri</strong> — daily intelligence capture &nbsp;·&nbsp;
+        <strong>7:22am Mon–Fri</strong> — intelligence capture &nbsp;·&nbsp;
+        <strong>7:51am Mon–Fri</strong> — personal briefing &nbsp;·&nbsp;
         <strong>Every 2h</strong> — email triage &nbsp;·&nbsp;
         <strong>Always on</strong> — dashboard server
       </p>
@@ -460,6 +461,80 @@
     </div>
 
   </div>
+
+
+    <!-- First steps section -->
+    <div style="margin-top: 32px; background: white; border: 1px solid var(--border); border-radius: 12px; overflow: hidden;">
+      <div style="padding: 20px 24px 16px; border-bottom: 1px solid var(--border);">
+        <div style="font-size: 17px; font-weight: 700; color: var(--ink);">First steps in your dashboard</div>
+        <div style="font-size: 13px; color: var(--muted); margin-top: 4px;">What to do after the installer finishes — takes 5 minutes</div>
+      </div>
+      <div style="padding: 24px;">
+
+        <div style="display: flex; flex-direction: column; gap: 20px;">
+
+          <div style="display: flex; gap: 16px; align-items: flex-start;">
+            <div style="width: 28px; height: 28px; border-radius: 50%; background: var(--blue); color: white; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px;">1</div>
+            <div>
+              <div style="font-size: 14px; font-weight: 600; color: var(--ink); margin-bottom: 4px;">Open the dashboard and log in</div>
+              <div style="font-size: 13px; color: var(--muted); margin-bottom: 10px;">Use the username and password you set during the installer. The URL is on this machine:</div>
+              <div class="url-block">
+                <a href="http://localhost:7777" target="_blank">http://localhost:7777</a>
+                <button class="url-copy-btn" onclick="copyUrl(this)">Copy URL</button>
+              </div>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 16px; align-items: flex-start;">
+            <div style="width: 28px; height: 28px; border-radius: 50%; background: var(--blue); color: white; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px;">2</div>
+            <div>
+              <div style="font-size: 14px; font-weight: 600; color: var(--ink); margin-bottom: 4px;">Tour the main tabs</div>
+              <div style="font-size: 13px; color: var(--muted);">The dashboard has four areas:</div>
+              <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
+                <div style="background: var(--paper); border-radius: 8px; padding: 10px 14px; font-size: 13px;">
+                  <strong style="color: var(--ink);">Chief of Staff</strong>
+                  <span style="color: var(--muted);"> — follow-ups, action items, and the daily briefing extracted from your emails and calls</span>
+                </div>
+                <div style="background: var(--paper); border-radius: 8px; padding: 10px 14px; font-size: 13px;">
+                  <strong style="color: var(--ink);">Deal Pipeline</strong>
+                  <span style="color: var(--muted);"> — active deals, targets, and IC memos sourced from market intel and call transcripts</span>
+                </div>
+                <div style="background: var(--paper); border-radius: 8px; padding: 10px 14px; font-size: 13px;">
+                  <strong style="color: var(--ink);">Market Intelligence</strong>
+                  <span style="color: var(--muted);"> — podcast summaries, Jefferies/GS/RBN research digests, and sector memos</span>
+                </div>
+                <div style="background: var(--paper); border-radius: 8px; padding: 10px 14px; font-size: 13px;">
+                  <strong style="color: var(--ink);">People / CRM</strong>
+                  <span style="color: var(--muted);"> — contacts and firms extracted from calls and emails, auto-merged daily</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 16px; align-items: flex-start;">
+            <div style="width: 28px; height: 28px; border-radius: 50%; background: var(--blue); color: white; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px;">3</div>
+            <div>
+              <div style="font-size: 14px; font-weight: 600; color: var(--ink); margin-bottom: 4px;">Check your scheduled routines</div>
+              <div style="font-size: 13px; color: var(--muted); margin-bottom: 10px;">All pipelines are managed from the admin tab. You can see when each last ran, trigger a manual run, or pause one.</div>
+              <div class="url-block">
+                <a href="http://localhost:7777/admin/routines" target="_blank">http://localhost:7777/admin/routines</a>
+                <button class="url-copy-btn" onclick="copyUrl(this)">Copy URL</button>
+              </div>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 16px; align-items: flex-start;">
+            <div style="width: 28px; height: 28px; border-radius: 50%; background: var(--blue); color: white; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px;">4</div>
+            <div>
+              <div style="font-size: 14px; font-weight: 600; color: var(--ink); margin-bottom: 4px;">What to expect on day one</div>
+              <div style="font-size: 13px; color: var(--muted);">Pipelines run on schedule — the dashboard will show data after the first automatic runs tomorrow morning. If you want to see output now, go to <a href="http://localhost:7777/admin/routines" style="color: var(--blue);">/admin/routines</a> and trigger the <strong>Intelligence Capture</strong> or <strong>Email Triage</strong> run manually. Each takes 2–5 minutes.</div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </div>
 
   <!-- FAQ -->
   <div style="margin-top: 48px; border-top: 1px solid var(--border); padding-top: 36px;">
