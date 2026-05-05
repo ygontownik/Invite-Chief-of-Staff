@@ -1088,19 +1088,30 @@ User feedback (2026-05-04): Personal tab items rendered with multi-step terminal
 
 ### Z6 — Personal tab grid columns broken on narrow viewports *(documentation — UI rule)*
 
-User feedback (2026-05-04, with screenshot): the Personal tab three-column grid (Job Search | Personal | Deal Pipeline) renders catastrophically on narrower widths — the "Status" column header wraps to one character per line ("S/T/A/T/U/S"), action text wraps to one character per line, and the page becomes unreadable.
+**Trigger**: User feedback 2026-05-04 with screenshot — the Personal tab three-column outer grid (Job Search | Personal | Deal Pipeline) renders catastrophically below ~1100px wide. The "Status" header wraps to one character per line ("S/T/A/T/U/S"), action text wraps to one character per line, and the page is unreadable on a 13" laptop with the dock visible.
 
-**Root cause**: the `.pt-row` grid (codified in earlier session as `minmax(160px, 1.2fr) minmax(0, 1.6fr) 110px 80px` plus `min-width: 0; overflow-wrap: break-word`) handled long content within the FIRST column but didn't account for the THREE-COLUMN OUTER LAYOUT pinching each panel below the per-cell minimum widths. When the viewport is narrow, each of the three columns gets squeezed below its minmax-min and the inner grid still tries to render four columns inside ~250px — which triggers character-by-character wrap.
+**Surface**:
+- File: `/Users/ygontownik/cos-pipeline/templates/cos-dashboard.template.html`
+- CSS: `.grid-3` (line 65) — outer three-column container.
+- CSS: `.pt-row` (line 385) — inner 4-column grid `minmax(160px, 1.2fr) minmax(0, 1.6fr) 110px 80px`.
+- Existing mobile fallback at `@media (max-width: 780px)` (lines 838–846) collapses the inner grid but does NOT cover the 780–1100px middle band, which is where the breakage shows up.
+- Affected panels rendered at lines ~2560 (Job Search), ~2835 (Personal), and the Deal Pipeline column on the Personal route.
 
-**Rule (UI backlog for parallel session)**:
-- The three-column outer layout MUST collapse to single-column when viewport < (3 × 320px + gaps + padding) — roughly 1100px total.
-- Within each panel, the four-column inner grid MUST collapse to two columns (Item | Action+Status+Task) when panel width < 280px — OR the columns auto-stack vertically.
-- Add `text-overflow: ellipsis; white-space: nowrap` on the firm-name cell with hover-to-reveal full text.
-- The "Status" column should never appear narrower than ~80px or be hidden entirely on tight layouts.
+**Data source**: pure CSS — no data shape change. The misrender is a layout issue, not a data issue.
 
-**Companion rule (general)**: any grid layout rendered on the dashboard should have a single-column-collapse breakpoint AND per-cell ellipsis fallback. Test by resizing to 800px width — if any text wraps to one character per line, the layout is broken.
+**Behavior spec**:
+1. Add a NEW breakpoint `@media (max-width: 1100px)` that collapses `.grid-3 { grid-template-columns: 1fr !important; }` for the Personal route. Don't widen the existing 780px breakpoint — keep its current effect for true mobile.
+2. Within each panel, `.pt-row` should ALSO collapse to two columns (Item | Action+Status+Task stacked) when the panel itself is narrower than 280px. Implement via container query `@container (max-width: 280px)` with `container-type: inline-size` on the panel wrapper, OR a second media-query band at `(max-width: 880px)` that stacks the inner grid even before the outer collapses.
+3. On the firm-name cell (first child of `.pt-row`) add `text-overflow: ellipsis; white-space: nowrap; overflow: hidden;` plus `title="${esc(t.name)}"` for hover reveal of the full string. This is in addition to the existing `min-width: 0; overflow-wrap: break-word` (which alone is insufficient).
+4. The Status pill column must never render narrower than 80px or hidden — if there isn't room, stack the row instead.
 
-**Defer**: implementation belongs to the parallel UI session that's restructuring templates. Captured here so it's not lost.
+**Companion rule (general)**: any grid layout rendered on the dashboard must have a single-column-collapse breakpoint AND a per-cell ellipsis fallback. Manual smoke test: resize to 800px wide and to 1024px wide; no text should wrap to one character per line.
+
+**Acceptance**:
+- At 1024px viewport, the Personal route renders three columns stacked vertically (or two-up if you prefer that intermediate band — call it out in the PR).
+- At 800px viewport, no text in any `.pt-row` wraps to one-character-per-line.
+- At 1280px+ viewport, the existing three-column layout is unchanged.
+- Hovering a truncated firm name shows the full string via `title`.
 
 ---
 
@@ -1108,23 +1119,57 @@ User feedback (2026-05-04, with screenshot): the Personal tab three-column grid 
 
 ### Z3 — Fundraising panel must be visible on HQ without drilldown *(documentation — UI rule)*
 
-User feedback (2026-05-04): fundraising activity is core to the principal's day; it should NOT require clicking the deal-pipeline tile drilldown to surface. The HQ top-row should always render a Fundraising panel (the curated `capitalRaisingAdvisors[]` + `prospectiveInvestors[]` rows) alongside Live Deals and Team Actions.
+**Trigger**: User feedback 2026-05-04 — fundraising activity is core to the principal's day; it should NOT require a tile drilldown to surface. The HQ (Status route, `/`) top row currently renders Fundraising as one of three cards via `buildStatusTopRow()`, but the column is conditionally hidden when a tile-drilldown overlay is active, and is missing entirely on the briefing/post-capture re-render path.
 
-**Rule**: HQ top-row is `[Deal Pipeline panel | Fundraising panel | Team Actions panel]` — always all three, no conditional rendering on tile clicks. The deal-pipeline tile drilldown can remain a counterparty-lens deep-dive (per the prior tile-drilldown rule), but the top-line fundraising activity is part of the always-visible information architecture.
+**Surface**:
+- File: `/Users/ygontownik/cos-pipeline/templates/cos-dashboard.template.html`
+- Function: `buildStatusTopRow()` (line 1940) — the `[TC Overview | Fundraising | Team Actions]` three-column wrapper.
+- Function: `buildFundraisingCard()` (line 1952) — the actual card body.
+- The grid is hard-coded: `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;...">` (line 1942). Any code path that replaces the HQ top row's innerHTML with a tile drilldown's content must keep this row above the drilldown, not replace it.
+
+**Data source**: `TOMAC_CONFIG.capitalRaisingAdvisors[]` and `TOMAC_CONFIG.prospectiveInvestors[]` (line 933, sourced from `__TOMAC_CONFIG__` server-injected blob). Plus `DATA.lpData[]` for the count chip. No new server endpoint required — the data is already on the page.
+
+**Behavior spec**:
+1. The HQ Status route (`/`) top row MUST always render `[TC Overview | Fundraising | Team Actions]` — three columns, no conditional rendering, no replacement on tile click. Tile drilldowns render BELOW this row, not in place of it.
+2. When `capitalRaisingAdvisors[]` and `prospectiveInvestors[]` are both empty, render the Fundraising column as an empty-state card per H4 ("No active fundraising activity") rather than removing the column — preserving the three-column visual rhythm.
+3. The deal-pipeline tile drilldown remains a counterparty-lens deep-dive (per prior tile-drilldown rule) but renders as a section below the always-visible top row.
+4. On viewport collapse (< 1100px) the three columns stack vertically (per Z6) but order is preserved: TC Overview, then Fundraising, then Team Actions.
+
+**Acceptance**:
+- Loading `/` with any combination of TOMAC_CONFIG content shows three top-row columns; Fundraising is one of them.
+- Clicking any deal-pipeline tile reveals a drilldown BELOW the top row; the Fundraising column remains visible above.
+- A page state with zero advisors and zero investors still renders a "No active fundraising activity" card in the middle column.
+- No JS path can `display:none` or `replaceChild` the Fundraising column without also replacing the entire top row.
 
 ### Z4 — Click-on-name → history drill *(documentation — UI rule)*
 
-User feedback (2026-05-04): on any name (counterparty, advisor, deal, contact), clicking should open a history drill showing chronological communication + decisions. Today the priority-target modal opens on row click but only shows the curated config row — not the underlying log of calls/emails/follow-ups.
+**Trigger**: User feedback 2026-05-04 — clicking a counterparty / advisor / deal / contact name today opens `showPriorityTarget()` (template line 3350) which only shows the curated config row from `recruit-config.yaml` / `deal-config.yaml`. The user wants the underlying chronological history (calls + emails + follow-ups + decisions) on the same modal.
 
-**Rule**: the click-on-name modal should source from:
-1. `data/deals/<TICKER>/log.json` (when the click is on a deal-related entity — V1 auto-log)
-2. `dashboard-data.json > followUps[]` filtered to that entity name + alias needles
-3. `awaitingExternal[]` filtered to the entity counterparty
-4. Email/transcript references via `source_ref.doc_url` (already on each item)
+**Surface**:
+- File: `/Users/ygontownik/cos-pipeline/templates/cos-dashboard.template.html`
+- Function: `showPriorityTarget(rowKey)` (line 3350) — the existing modal entry point. Extend, don't replace.
+- Click sites that already route here: `.pt-row` (line 2480), `.tc-orig-row` (lines 2760, 3704), and the recruit-row variant (line 2553) which uses `showRecruiterModal` — apply the same extension there.
+- Modal container: `<div id="modal" class="modal-overlay hidden">` (line 874).
 
-Render as a chronological timeline. Each entry shows: date, source type (call/email/followup), one-line summary, link to original doc. Decision marker (✓/⚠/⏳) on entries that explicitly captured a decision.
+**Data source**: all data is already shipped to the client; no new endpoint. Sources, in priority order:
+1. `data/deals/<TICKER>/log.json` — V1 auto-log of decisions / activity per deal. Loaded via `DATA.dealLogs[ticker]` if present, else fetched lazily via `GET /deal-log?ticker=<TICKER>`. Match the click target's `rowKey` → ticker via the alias map (`__cpClusterKey`).
+2. `DATA.followUps[]` — filter where `__cpClusterKey(item.counterparty) === __cpClusterKey(targetName)` OR `item.target_name === targetName` OR any alias from `_CP_ALIASES` matches.
+3. `DATA.awaitingExternal[]` — same cluster-key filter as (2).
+4. `source_ref.doc_url` on each above record — already populated, used as the per-row "open original" link.
 
-**Implementation**: the data is all available today (V1 log is in place; followUps + awaitingExternal already source via `__cpClusterKey`). The UI render is what's missing — defer to parallel UI session.
+**Behavior spec**:
+1. Modal layout: existing curated-config row stays at top (header). Below it, a new "History" section renders a chronological timeline (newest first) merging sources 1–4.
+2. Each timeline entry: `[date]  [source-type pill: call|email|followup|decision]  [one-line summary]  [→ link to source_ref.doc_url]`.
+3. Decision marker glyph on entries flagged as decisions (presence of `decision: true` or non-empty `result` field): `✓` resolved, `⚠` blocked, `⏳` pending. Render in the source-type pill color slot.
+4. Empty-history fallback: render `<div class="empty-state">No logged history yet — first activity will appear here.</div>` rather than collapsing the section.
+5. Performance: dedup by `(date, source_ref.doc_url, summary[:60])` to avoid the same email surfacing as both a follow-up and an awaiting-external item.
+6. Accessibility: timeline entries are list items, keyboard-navigable; pressing Enter on an entry opens `source_ref.doc_url` in a new tab.
+
+**Acceptance**:
+- Click a row whose name has at least one matching log.json entry, one followUp, and one awaitingExternal — modal shows all three in chronological order, deduped where they overlap.
+- Click a row with no matches — modal shows curated config header plus the empty-history fallback (no JS error, no blank panel).
+- Click a recruiter row — same modal extension applies via `showRecruiterModal`.
+- Existing modal close behavior (overlay click, Esc key) still works.
 
 ---
 
@@ -1333,11 +1378,61 @@ Briefing fullText and curated `deal-config.yaml > takeaway` for the same deal mu
 
 #### H4 — Empty-state rendering *(documentation-only — UI rule)*
 
-When all items in a section are dormant or empty, the section should collapse to a tasteful "Nothing live here" rather than render an empty card. UI discipline; for the parallel UI session.
+**Trigger**: When all items in a section are dormant or filtered out, today's templates render an empty card with a header and zero rows — visually identical to a loading state, and indistinguishable from a render bug. Multiple analyst passes have flagged "is this section broken?" when it was simply empty.
+
+**Surface**:
+- File: `/Users/ygontownik/cos-pipeline/templates/cos-dashboard.template.html`
+- Apply to all section renderers that loop over a list and emit rows: `buildFundraisingCard()` (line 1952), `buildTeamActionsCard()` (line 2007), `buildAwaitingExternal()` (referenced ~line 1874), `buildFollowUps()`, the priority-target panel renderers (~lines 2440, 2560, 2835), and the deal-pipeline tile renderer (line ~3556).
+- Add a shared helper: `function emptyStateCard(message)` that returns a uniform grayed-out card body — re-use across all sections.
+
+**Data source**: pure UI — triggered when the input array (after all filters: dormancy, tombstones, `[RESOLVED]` strip) is `length === 0`.
+
+**Behavior spec**:
+1. Each section renderer must check: after filters, if rows.length === 0, render `emptyStateCard(message)` instead of an empty body. Do NOT remove the card header — the user still needs to see what section is empty.
+2. Standard empty-state copy by section (use these exact strings):
+   - Fundraising: `"No active fundraising activity."`
+   - Team Actions: `"No team actions queued."`
+   - Awaiting External: `"Nothing waiting on counterparties right now."`
+   - Follow-ups: `"No follow-ups queued."`
+   - Live Deals: `"No active deals in this view."`
+   - Priority Targets / Job Search: `"No priority targets in this bucket."`
+3. Empty-state styling: `color: var(--ink-mid); font-style: italic; padding: 18px 14px; font-size: 12px;` — visually clearly an intentional blank, not a loading state.
+4. Section header chrome (title, refresh button, count badge showing `(0)`) MUST still render. The count badge in particular signals "we checked, there are zero" vs. "we haven't loaded yet."
+5. If a parent grid (e.g. the HQ three-column top row, Z3) requires a section to be present for layout reasons, empty-state honors that — never `display:none` the entire card.
+
+**Acceptance**:
+- Force-empty each section (e.g. by filtering all items out via the deal-config dormancy flag) — every section shows its specific empty-state message with the count badge `(0)` in the header.
+- No section renders as a header with zero body content (the bug we're fixing).
+- The HQ three-column top row (Z3) remains visually balanced when one column is empty.
 
 #### H5 — Past-due staleness escalation visibility *(documentation-only — UI rule)*
 
-Past-due items without resolution should escalate visibility (red border, top of list, "URGENT — classify or resolve" prompt). Don't blend with future-dated items. UI discipline.
+**Trigger**: Past-due items today blend visually with future-dated items in the same list. The principal's eye doesn't catch them. Multiple sessions found "this counterparty has been waiting 23 days" buried mid-list with no visual escalation.
+
+**Surface**:
+- File: `/Users/ygontownik/cos-pipeline/templates/cos-dashboard.template.html`
+- Apply to: `.pt-row` rendering (line 2480), `.fu-item` follow-up rows, `.dp-row` deal-pipeline rows, awaiting-external rows in `buildAwaitingExternal()`.
+- Existing precedent: `.pt-row.pt-row-today` (line 442) already adds an amber left border for today-dated items. Extend this pattern — don't reinvent.
+
+**Data source**: each row item's `due` / `nextTouchBase` / `expectedDate` field. The existing `urgencyLabel(t.nextTouchBase)` helper (line 1959) already classifies into `'overdue' | 'soon' | null`. Reuse — do not re-derive from raw dates.
+
+**Behavior spec**:
+1. Add a CSS class `.pt-row-overdue` (and analogous `.fu-item-overdue`, `.dp-row-overdue`) with:
+   - `border-left: 3px solid #dc2626 !important;`
+   - `background: rgba(220, 38, 38, 0.04);`
+   - `padding-left: 5px;` (match existing tier-class padding)
+2. Apply the class when `urgencyLabel(...).cls === 'overdue'`. The class wins over `pt-row-tier-1/2` and `pt-row-today` (use `!important` and class-order).
+3. **Sort order**: overdue items render at the TOP of their containing section, before all other items, descending by `daysOverdue`. Within the overdue block, preserve any existing tier sub-ordering. Implement in the section renderer's sort comparator — not via DOM reordering.
+4. Add an inline prompt label on each overdue row: `<span class="overdue-prompt" title="Click to classify">URGENT — classify or resolve</span>` rendered in the right-hand metadata column (next to the `urgLbl` pill, line 1974). Style: red text, uppercase, 9px, letter-spacing 0.06em.
+5. Clicking the prompt opens the same `showPriorityTarget()` modal as a row click, but pre-scrolled to a "Classify this past-due item" CTA region (resolved / superseded / stage-graduated / re-propose / drop, per the Past-Due Item Resolution rules at line 1547).
+6. Mobile fallback (≤780px): the prompt label collapses to a red dot indicator; full prompt visible only via the modal.
+
+**Acceptance**:
+- A row with `due = today - 5` renders with red left border, light-red background, and the "URGENT" prompt visible.
+- All overdue rows in a section appear above all non-overdue rows regardless of original list order.
+- Overdue rows on mobile still show the red border and dot indicator.
+- Clicking the URGENT prompt opens the priority-target modal.
+- Re-resolving an overdue item (advancing its date or marking resolved) immediately removes the overdue styling on next render.
 
 #### H6 — Promotion / demotion as explicit transitions *(documentation-only)*
 
@@ -1540,7 +1635,48 @@ When a recruiting/deal target has a calendared in-person meeting and the date pa
 
 `/briefing/intel.json` returns `synopsis.captureSummary` with a `date` field. If `captureSummary.date < today - 1`, the capture pipeline didn't run today. Surface a warning chip on the briefing tab + log to stderr. With the routines catch-up agent live, the underlying capture should run at every wake — a stale captureSummary is now an actionable signal of pipeline failure, not an ambient background condition.
 
-**Implementation (2026-05-04 EOD)**: `/briefing/intel.json` now returns a `captureStaleness` payload field — `{date, daysStale, severity, message}`. `severity = "warn"` for 2–3 days stale, `"stale"` for >3 days, `"unknown"` when no date is present. The frontend chip should render off this field rather than re-deriving the comparison client-side.
+### I4 — Capture-staleness chip on briefing tab *(documentation — UI rule)*
+
+**Trigger**: Capture pipeline failures (API quota, OAuth drift, plist not loaded) silently degrade the briefing — yesterday's content is shown today with no warning. The principal needs an unmissable chip on the briefing tab. Server-side comparison was added 2026-05-04 EOD so the frontend stops re-deriving and they don't drift.
+
+**Surface**:
+- File: `/Users/ygontownik/cos-pipeline/templates/briefing-dashboard.html` (and any HQ-tab briefing summary card if it appears on `/`).
+- Render location: top of the briefing tab body, immediately above `synopsis.captureSummary` content. A horizontal pill chip, full-width or right-aligned in the section header.
+- File for reference (server side, do NOT modify): `/Users/ygontownik/cos-pipeline/cos-dashboard-server.py` — `_handle_briefing_intel` (line 3176), payload assembly at line 3408, captureStaleness construction at lines 3380–3406.
+
+**Data source**: `GET /briefing/intel.json` response field `captureStaleness`:
+```
+captureStaleness: {
+  date: "YYYY-MM-DD" | "",       // last successful capture-summary date
+  daysStale: number | null,       // integer days, null when severity=unknown
+  severity: "fresh" | "warn" | "stale" | "unknown",
+  message: "<human string>",      // pre-rendered, render verbatim
+  blocker: "<diagnostic>" | null, // optional cause hint (e.g., "API quota")
+}
+```
+Server rules already encoded: `severity = "warn"` for 2–3 days stale, `"stale"` for >3 days, `"unknown"` when no date is present, `"fresh"` for <2 days. **Do NOT re-derive the comparison client-side** — render the chip directly off `severity` and `message`.
+
+**Behavior spec**:
+1. When `severity === "fresh"`: render NO chip. Section is unchanged.
+2. When `severity === "warn"`: render a yellow chip.
+   - Style: `border: 1px solid #d4a017; background: #fef9e7; color: #7a5b00; padding: 6px 12px; border-radius: 4px; font-size: 12px;`
+   - Icon: `⚠` prepended.
+   - Body text: `captureStaleness.message` rendered verbatim (already user-facing).
+3. When `severity === "stale"`: render a red chip.
+   - Style: `border: 1px solid #dc2626; background: #fef2f2; color: #7a1a1a; padding: 6px 12px; border-radius: 4px; font-size: 12px; font-weight: 600;`
+   - Icon: `⛔` prepended.
+   - Body text: `captureStaleness.message`.
+4. When `severity === "unknown"`: render a gray chip with the message; same dimensions, `border: 1px solid #94a3b8; background: #f8fafc; color: #475569;`.
+5. If `captureStaleness.blocker` is non-null, append it after the message in parentheses, smaller font: ` <span style="font-size:11px;opacity:0.8">(${blocker})</span>`.
+6. Chip is clickable → opens `/admin/#tab-routines` so the user can inspect the failing routine.
+7. Refresh cadence: chip re-renders when `/briefing/intel.json` is re-fetched. Don't poll independently.
+
+**Acceptance**:
+- Force `severity:"warn"` (e.g., touch `synopsis.captureSummary` to 2 days old via test harness) — yellow chip renders with the server's exact message.
+- Force `severity:"stale"` — red chip renders.
+- `severity:"fresh"` — no chip.
+- Click the chip → navigates to `/admin/#tab-routines`.
+- Frontend code does NOT contain its own `today - cs.date` comparison; it only branches on `severity`.
 
 ---
 
@@ -1803,6 +1939,45 @@ unavailable). When `loaded == false`, the record carries a
 a chip off these two fields. Catch-up agent normally bootstraps
 missing plists on first run, so this surface mainly catches
 install-time and post-reboot drift before the next catch-up cycle.
+
+### 5a — Routines `launchctl_loaded` chip on admin routines table *(documentation — UI rule)*
+
+**Trigger**: A plist on disk that isn't loaded into launchctl is silently broken — no run history, no error, just absence. Renaming a plist or post-reboot drift is the typical cause. The principal can't tell from the routines table whether `never_run` means "scheduled but not yet fired" vs. "broken: not in launchctl." Server-side detection added 2026-05-04 EOD so the frontend can render a chip directly.
+
+**Surface**:
+- File: `/Users/ygontownik/cos-pipeline/templates/admin-dashboard.html` — the routines table on the admin route.
+- Render location: a per-row chip in the status column, alongside the existing `status` field (`ok` | `running` | `failed` | `never_run`).
+- File for reference (server side, do NOT modify): `/Users/ygontownik/cos-pipeline/cos-dashboard-server.py` — `_handle_routines_list` / `_handle_routines_health` (lines 3856–3859), `_routines_data()` payload construction (lines 1906–1985), `_launchctl_loaded_labels()` (line 1712).
+
+**Data source**: `GET /routines` response — each routine record now includes:
+```
+{
+  name: "<task-name>",
+  status: "ok" | "running" | "failed" | "never_run",
+  launchctl_loaded: true | false | null,     // null = launchctl unavailable
+  warning: "<bootstrap command string>",     // only present when launchctl_loaded === false
+  ...
+}
+```
+Construction at server line 1966 (`launchctl_loaded`) and 1974–1980 (`warning` with full `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/<full_label>.plist` command).
+
+**Behavior spec**:
+1. When `launchctl_loaded === true`: render no extra chip. Existing status indicator is sufficient.
+2. When `launchctl_loaded === false`: render a red "NOT LOADED" chip in the status cell, alongside (not replacing) the existing status indicator.
+   - Style: `border: 1px solid #dc2626; background: #fef2f2; color: #7a1a1a; padding: 2px 8px; border-radius: 3px; font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;`
+   - Label: `NOT LOADED`
+   - Tooltip (`title` attribute): full text of `record.warning` (the bootstrap command).
+3. When `launchctl_loaded === null`: render a gray "UNKNOWN" chip with the same dimensions and `title="launchctl status unavailable"`.
+4. Add a "Copy bootstrap command" affordance: clicking the red chip copies `record.warning` to the clipboard and briefly shows "Copied" confirmation. Don't open a new tab; the user runs the command in Terminal.
+5. Sort: rows with `launchctl_loaded === false` should sort above all loaded rows in the routines table — broken pipelines deserve top-of-list visibility.
+6. Refresh: re-fetch `/routines` on the existing routines-table refresh interval. Don't poll separately.
+
+**Acceptance**:
+- A plist that exists on disk but is not in `launchctl list` shows the red "NOT LOADED" chip; tooltip shows the bootstrap command.
+- A loaded plist shows no chip beyond its normal status.
+- Clicking the red chip copies the bootstrap command to clipboard.
+- Rows with `NOT LOADED` chips appear at the top of the routines table.
+- After running the bootstrap command and refreshing, the chip disappears for that row.
 
 **Sub-finding (general)**: macOS launchd does not run missed
 `StartCalendarInterval` events on wake. If routines must catch up
