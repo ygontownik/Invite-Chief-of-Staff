@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>COS Pipeline — What Gets Captured</title>
+<style>
+  :root {
+    --cream:    #faf8f4;
+    --paper:    #f4f1ea;
+    --border:   #ddd8cc;
+    --ink:      #1a1714;
+    --muted:    #6b6460;
+    --blue:     #2563eb;
+    --blue-bg:  #eff6ff;
+    --green:    #15803d;
+    --green-bg: #f0fdf4;
+    --amber:    #92400e;
+    --amber-bg: #fffbeb;
+    --red:      #991b1b;
+    --red-bg:   #fef2f2;
+    --code-bg:  #1e1b18;
+    --code-fg:  #e8e3da;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    background: var(--cream);
+    color: var(--ink);
+  }
+
+  /* ── Nav ── */
+  .site-nav {
+    background: var(--ink);
+    display: flex; align-items: center;
+    padding: 0 28px; height: 48px;
+    position: sticky; top: 0; z-index: 200; gap: 4px;
+  }
+  .nav-brand {
+    color: white; font-weight: 700; font-size: 14px;
+    text-decoration: none; margin-right: 20px; letter-spacing: .01em; flex-shrink: 0;
+  }
+  .nav-link {
+    color: rgba(255,255,255,.55); text-decoration: none;
+    font-size: 13px; font-weight: 500;
+    padding: 0 14px; height: 48px;
+    display: flex; align-items: center;
+    border-bottom: 2px solid transparent; transition: all .15s; white-space: nowrap;
+  }
+  .nav-link:hover { color: white; }
+  .nav-link.active { color: white; border-bottom-color: white; }
+
+  /* ── Header ── */
+  .header {
+    border-bottom: 1px solid var(--border);
+    background: var(--paper);
+    padding: 32px 0;
+    text-align: center;
+  }
+  .header .label { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+  .header h1 { font-size: 26px; font-weight: 700; }
+  .header p  { margin-top: 8px; color: var(--muted); font-size: 14px; }
+
+  /* ── Layout ── */
+  .container { max-width: 760px; margin: 0 auto; padding: 48px 24px 80px; }
+
+  /* ── Section ── */
+  .section { margin-bottom: 40px; }
+  .section-label {
+    font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 16px; padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* ── Source cards (auto-captured) ── */
+  .source-grid { display: flex; flex-direction: column; gap: 16px; }
+
+  .source-card {
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .source-header {
+    display: flex; align-items: center; gap: 14px;
+    padding: 18px 20px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .source-icon {
+    width: 36px; height: 36px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; flex-shrink: 0;
+  }
+  .source-icon.green { background: var(--green-bg); }
+  .source-icon.blue  { background: var(--blue-bg); }
+  .source-icon.amber { background: var(--amber-bg); }
+
+  .source-title { font-size: 16px; font-weight: 700; color: var(--ink); }
+  .source-schedule { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  .source-badge {
+    margin-left: auto;
+    font-size: 11px; font-weight: 700; padding: 3px 10px;
+    border-radius: 20px; white-space: nowrap; flex-shrink: 0;
+  }
+  .source-badge.auto { background: var(--green-bg); color: var(--green); }
+  .source-badge.manual { background: var(--amber-bg); color: var(--amber); }
+
+  .source-body { padding: 16px 20px; display: flex; flex-direction: column; gap: 10px; }
+
+  .source-row {
+    display: grid;
+    grid-template-columns: 130px 1fr;
+    gap: 8px;
+    font-size: 13px;
+    align-items: baseline;
+  }
+  .source-row-label { font-weight: 600; color: var(--ink); font-size: 12px; }
+  .source-row-val { color: var(--muted); }
+
+  .tip-inline {
+    background: var(--green-bg);
+    border: 1px solid #86efac;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 13px;
+    color: #166534;
+    margin-top: 4px;
+  }
+
+  /* ── Service table ── */
+  .service-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin: 12px 0;
+  }
+  .service-table th {
+    text-align: left;
+    font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--muted); padding: 8px 12px;
+    border-bottom: 2px solid var(--border);
+    background: var(--paper);
+  }
+  .service-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    color: var(--ink); vertical-align: top;
+    line-height: 1.5;
+  }
+  .service-table tr:last-child td { border-bottom: none; }
+  .service-table td:first-child { font-weight: 600; white-space: nowrap; }
+  .service-table tr:hover td { background: var(--cream); }
+
+  /* ── Code block ── */
+  .code-block {
+    background: var(--code-bg);
+    border-radius: 8px;
+    margin: 12px 0;
+    overflow: hidden;
+  }
+  .code-label {
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
+    color: #6b7280; padding: 8px 14px 6px;
+    border-bottom: 1px solid #2a2520;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .copy-btn {
+    font-size: 11px; font-weight: 600; color: #9ca3af;
+    background: none; border: 1px solid #374151; border-radius: 4px;
+    padding: 2px 8px; cursor: pointer; transition: all .15s;
+  }
+  .copy-btn:hover { color: white; border-color: #6b7280; }
+  .copy-btn.copied { color: #34d399; border-color: #34d399; }
+  .code-block code {
+    display: block; padding: 14px;
+    font-family: "SFMono-Regular", "Menlo", "Consolas", monospace;
+    font-size: 12px; line-height: 1.7; color: var(--code-fg);
+    white-space: pre; overflow-x: auto;
+  }
+
+  /* ── Exclusions table ── */
+  .exclusions-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    background: white;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .exclusions-table th {
+    text-align: left; font-size: 11px; font-weight: 700;
+    letter-spacing: .06em; text-transform: uppercase;
+    color: var(--muted); padding: 10px 16px;
+    background: var(--paper); border-bottom: 2px solid var(--border);
+  }
+  .exclusions-table td {
+    padding: 10px 16px; border-bottom: 1px solid var(--border);
+    font-size: 13px; vertical-align: top; line-height: 1.5;
+  }
+  .exclusions-table tr:last-child td { border-bottom: none; }
+  .exclusions-table td:first-child { font-weight: 600; color: var(--ink); }
+  .exclusions-table td:last-child { color: var(--muted); }
+  .exclusions-table tr:hover td { background: var(--red-bg); }
+
+  /* ── Quick ref table ── */
+  .qr-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    background: white;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .qr-table th {
+    text-align: left; font-size: 11px; font-weight: 700;
+    letter-spacing: .06em; text-transform: uppercase;
+    color: var(--muted); padding: 10px 16px;
+    background: var(--paper); border-bottom: 2px solid var(--border);
+  }
+  .qr-table td {
+    padding: 10px 16px; border-bottom: 1px solid var(--border);
+    font-size: 13px; line-height: 1.5; vertical-align: top;
+  }
+  .qr-table tr:last-child td { border-bottom: none; }
+  .qr-table td:first-child { font-weight: 600; color: var(--ink); white-space: nowrap; }
+  .qr-table td:last-child { color: var(--muted); }
+  .qr-table tr:hover td { background: var(--cream); }
+
+  /* ── Pipeline flow ── */
+  .flow-steps { display: flex; flex-direction: column; gap: 0; }
+  .flow-step {
+    display: flex; gap: 16px; padding: 14px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .flow-step:last-child { border-bottom: none; }
+  .flow-num {
+    width: 24px; height: 24px; border-radius: 50%;
+    background: var(--ink); color: white;
+    font-size: 11px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .flow-title { font-size: 13px; font-weight: 600; color: var(--ink); margin-bottom: 2px; }
+  .flow-desc  { font-size: 13px; color: var(--muted); }
+  code.inline {
+    font-family: "SFMono-Regular", "Menlo", monospace;
+    font-size: 12px; background: #f0ece4; padding: 1px 5px;
+    border-radius: 3px; color: var(--ink);
+  }
+
+  .note {
+    background: var(--amber-bg); border: 1px solid #fcd34d;
+    border-radius: 8px; padding: 12px 16px; font-size: 13px; color: var(--amber);
+    margin: 12px 0;
+  }
+  .note strong { display: block; margin-bottom: 2px; }
+
+  /* ── Formats bar ── */
+  .formats-bar {
+    display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0;
+  }
+  .fmt-chip {
+    font-family: "SFMono-Regular", monospace;
+    font-size: 12px; padding: 3px 10px;
+    border-radius: 4px; font-weight: 600;
+  }
+  .fmt-chip.ok  { background: var(--green-bg); color: var(--green); }
+  .fmt-chip.no  { background: var(--red-bg); color: var(--red); text-decoration: line-through; opacity: .7; }
+</style>
+</head>
+<body>
+
+<nav class="site-nav">
+  <a href="index.html" class="nav-brand">COS Pipeline</a>
+  <a href="index.html" class="nav-link">Home</a>
+  <a href="HOW_IT_ALL_WORKS.html" class="nav-link">How It Works</a>
+  <a href="what_gets_captured.html" class="nav-link active">What Gets Captured</a>
+  <a href="onboard.html" class="nav-link">Get Started</a>
+  <a href="configure.html" class="nav-link">Configure</a>
+</nav>
+
+<div class="header">
+  <div class="label">COS Pipeline</div>
+  <h1>What Gets Captured</h1>
+  <p>What's automatic, what you need to save, and what stays out of scope.</p>
+</div>
+
+<div class="container">
+
+  <!-- ── Automatically captured ── -->
+  <div class="section">
+    <div class="section-label">Automatically captured — no action needed</div>
+    <div class="source-grid">
+
+      <div class="source-card">
+        <div class="source-header">
+          <div class="source-icon green">📧</div>
+          <div>
+            <div class="source-title">Email</div>
+            <div class="source-schedule">Gmail or Outlook · scanned every 2 hours on weekdays</div>
+          </div>
+          <span class="source-badge auto">Automatic</span>
+        </div>
+        <div class="source-body">
+          <div class="source-row">
+            <div class="source-row-label">What's captured</div>
+            <div class="source-row-val">Every inbound email received since the last run</div>
+          </div>
+          <div class="source-row">
+            <div class="source-row-label">What's skipped</div>
+            <div class="source-row-val">Emails already processed (tracked in <code class="inline">~/credentials/processed_emails.json</code>)</div>
+          </div>
+          <div class="source-row">
+            <div class="source-row-label">Where results go</div>
+            <div class="source-row-val">Follow-ups Doc (action items) · Pipeline Doc (deal threads) · People Doc (contact rollup) · Recruiting Doc (job-search threads, only when <code class="inline">features.job_search</code> is enabled)</div>
+          </div>
+          <div class="tip-inline">You don't save anything — the pipeline reads directly from your inbox via OAuth.</div>
+        </div>
+      </div>
+
+      <div class="source-card">
+        <div class="source-header">
+          <div class="source-icon blue">🎙</div>
+          <div>
+            <div class="source-title">Podcasts &amp; blogs</div>
+            <div class="source-schedule">RSS feeds in <code class="inline">personal.content_feeds</code> · checked daily at 6:45am</div>
+          </div>
+          <span class="source-badge auto">Automatic</span>
+        </div>
+        <div class="source-body">
+          <div class="source-row">
+            <div class="source-row-label">What's captured</div>
+            <div class="source-row-val">New episodes published since the last run</div>
+          </div>
+          <div class="source-row">
+            <div class="source-row-label">What's skipped</div>
+            <div class="source-row-val">Episodes already transcribed (tracked in <code class="inline">~/credentials/processed_podcasts.json</code>)</div>
+          </div>
+          <div class="source-row">
+            <div class="source-row-label">Where results go</div>
+            <div class="source-row-val">Per-show Google Doc in your transcripts folder + aggregate Podcast Summaries Doc</div>
+          </div>
+          <div class="tip-inline">You don't save anything — the pipeline fetches audio from the RSS feed URL and transcribes it.</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Call transcripts ── -->
+  <div class="section">
+    <div class="section-label">What you need to save — call transcripts</div>
+
+    <div class="source-card">
+      <div class="source-header">
+        <div class="source-icon amber">📋</div>
+        <div>
+          <div class="source-title">Call transcripts</div>
+          <div class="source-schedule">Scanned from your configured Drive folders · processed daily at 7:22am + real-time webhook</div>
+        </div>
+        <span class="source-badge manual">Save to Drive</span>
+      </div>
+      <div class="source-body">
+        <div class="source-row">
+          <div class="source-row-label">Where to save</div>
+          <div class="source-row-val">Any Google Drive folder listed under <code class="inline">transcript_sources</code> in your <code class="inline">firm_context.yaml</code></div>
+        </div>
+        <div class="source-row">
+          <div class="source-row-label">Supported formats</div>
+          <div class="source-row-val">
+            <div class="formats-bar">
+              <span class="fmt-chip ok">.txt</span>
+              <span class="fmt-chip ok">.vtt</span>
+              <span class="fmt-chip ok">.srt</span>
+              <span class="fmt-chip ok">.md</span>
+              <span class="fmt-chip ok">.rtf</span>
+              <span class="fmt-chip ok">Google Docs</span>
+              <span class="fmt-chip no">.m4a</span>
+              <span class="fmt-chip no">.mp3</span>
+              <span class="fmt-chip no">.pdf</span>
+            </div>
+          </div>
+        </div>
+        <div class="source-row">
+          <div class="source-row-label">Where results go</div>
+          <div class="source-row-val">Follow-ups Doc (action items) · Pipeline Doc (deal threads) · People Doc (contacts)</div>
+        </div>
+
+        <div style="margin-top: 8px; font-size: 13px; font-weight: 600; color: var(--ink); margin-bottom: 10px;">How to get transcripts into Drive — by recording service</div>
+        <table class="service-table">
+          <tr>
+            <th>Service</th>
+            <th>How to connect</th>
+          </tr>
+          <tr><td>Otter AI</td><td>Set up a Zapier automation: <em>New Otter recording → Upload to Google Drive folder</em>. Use the folder ID from your <code class="inline">transcript_sources</code> config. One-time setup, then automatic.</td></tr>
+          <tr><td>Beside AI</td><td>In Beside AI settings, enable Google Drive sync and point it at your configured folder.</td></tr>
+          <tr><td>Fireflies</td><td>In Fireflies integrations, connect Google Drive and select your transcript folder.</td></tr>
+          <tr><td>Grain</td><td>In Grain workspace settings, enable Drive export to your configured folder.</td></tr>
+          <tr><td>Read AI</td><td>Enable Drive integration in Read AI settings, point at your folder.</td></tr>
+          <tr><td>Fathom</td><td>In Fathom settings, enable Drive sync.</td></tr>
+          <tr><td>Zoom / Teams / Meet</td><td>If using the built-in <code class="inline">call_recorder.py</code>, recordings save to <code class="inline">~/recordings</code> automatically. Configure a <code class="inline">local_folder</code> source pointing there.</td></tr>
+          <tr><td>Manual</td><td>Paste transcript text into a <code class="inline">.txt</code> file, save to any configured Drive folder. The filename becomes the call title.</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Find folder IDs ── -->
+  <div class="section">
+    <div class="section-label">Finding your folder IDs</div>
+    <div style="background: white; border: 1px solid var(--border); border-radius: 12px; padding: 24px;">
+      <p style="font-size: 14px; color: var(--muted); margin-bottom: 16px;">Your configured transcript folders are in <code class="inline">firm_context.yaml</code> under <code class="inline">transcript_sources</code>:</p>
+      <div class="code-block">
+        <div class="code-label">firm_context.yaml <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <code>transcript_sources:
+  - type: "google_drive_folder"
+    name: "Otter AI"
+    folder_ids:
+      - "1zJly0cCiqsbZ3umYBXse7nYE7tUpFGOr"   ← this is the folder ID
+      - "1pHmuq_TfLY46GDg0BzRIwrq57ictIT5S"</code>
+      </div>
+      <p style="font-size: 13px; color: var(--muted); margin-bottom: 10px;">To open a folder in Drive from its ID:</p>
+      <div class="code-block">
+        <div class="code-label">URL pattern <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <code>https://drive.google.com/drive/folders/PASTE_FOLDER_ID_HERE</code>
+      </div>
+      <p style="font-size: 13px; color: var(--muted);">To find a folder ID from an existing Drive folder: open it in Drive, copy the last segment of the URL.</p>
+
+      <div style="margin-top: 20px; font-size: 13px; font-weight: 600; color: var(--ink); margin-bottom: 10px;">Adding a new transcript source</div>
+      <div class="code-block">
+        <div class="code-label">firm_context.yaml <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <code>transcript_sources:
+  - type: "google_drive_folder"
+    name: "Beside AI"              # shown in logs and memo headers
+    folder_ids:
+      - "YOUR_BESIDE_AI_FOLDER_ID" # from your Beside AI Drive sync settings
+    category_hint: "auto"          # or "Deal" / "Personal" / "Other"</code>
+      </div>
+      <p style="font-size: 13px; color: var(--muted);">Then configure the recording service to sync to that folder. No code changes needed.</p>
+    </div>
+  </div>
+
+  <!-- ── What doesn't get captured ── -->
+  <div class="section">
+    <div class="section-label">What does NOT get captured</div>
+    <table class="exclusions-table">
+      <tr>
+        <th>Content</th>
+        <th>Why it's excluded</th>
+      </tr>
+      <tr><td>Google Drive files outside your configured folders</td><td>Drive API only queries the specific folder IDs you listed</td></tr>
+      <tr><td>Google Docs you didn't create or explicitly share</td><td>OAuth scope limits access to designated files only</td></tr>
+      <tr><td>PDFs (research reports, pitch decks, etc.)</td><td>Not yet supported — text extraction from PDFs is a planned future feature</td></tr>
+      <tr><td>Slack / Teams messages</td><td>No integration built</td></tr>
+      <tr><td>Calendar event content / meeting notes</td><td>Calendar is read for scheduling context only, not content</td></tr>
+      <tr><td>Files on your Desktop not in a configured folder</td><td>Not scanned unless you add a <code class="inline">local_folder</code> source pointing there</td></tr>
+      <tr><td>Other people's emails</td><td>Pipeline reads your inbox only, authenticated with your credentials</td></tr>
+    </table>
+  </div>
+
+  <!-- ── Quick reference ── -->
+  <div class="section">
+    <div class="section-label">Quick reference — where do I put X?</div>
+    <table class="qr-table">
+      <tr>
+        <th>You have…</th>
+        <th>Save it here</th>
+      </tr>
+      <tr><td>Otter AI transcript</td><td>Configure Zapier → auto-deposits to your Otter folder</td></tr>
+      <tr><td>Beside AI transcript</td><td>Configure Drive sync in Beside settings</td></tr>
+      <tr><td>Manual transcript</td><td>Paste into a <code class="inline">.txt</code> file → save to any configured Drive folder</td></tr>
+      <tr><td>Desktop recording</td><td><code class="inline">call_recorder.py</code> saves to <code class="inline">~/recordings</code> automatically (if configured as a <code class="inline">local_folder</code> source)</td></tr>
+      <tr><td>Podcast you want summarized</td><td>Add the RSS feed to <code class="inline">personal.content_feeds.podcasts</code> in <code class="inline">firm_context.yaml</code></td></tr>
+      <tr><td>Blog or newsletter for briefing</td><td>Add the RSS URL to <code class="inline">personal.content_feeds.blogs</code></td></tr>
+      <tr><td>Research PDF</td><td>Not yet supported — planned for a future release</td></tr>
+      <tr><td>Email thread</td><td>Nothing to do — your inbox is scanned automatically every 2 hours</td></tr>
+    </table>
+  </div>
+
+  <!-- ── Pipeline decision flow ── -->
+  <div class="section">
+    <div class="section-label">How the pipeline decides what to process</div>
+    <div style="background: white; border: 1px solid var(--border); border-radius: 12px; padding: 24px;">
+      <div class="flow-steps">
+        <div class="flow-step">
+          <div class="flow-num">1</div>
+          <div>
+            <div class="flow-title">List files</div>
+            <div class="flow-desc">For each <code class="inline">folder_id</code> in <code class="inline">transcript_sources</code>, lists files modified since the last run. On <code class="inline">--backfill</code>, processes all files regardless of modification date.</div>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-num">2</div>
+          <div>
+            <div class="flow-title">Check dedup</div>
+            <div class="flow-desc">Skips files already in <code class="inline">~/credentials/processed_cos_transcripts.json</code>.</div>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-num">3</div>
+          <div>
+            <div class="flow-title">Filter format</div>
+            <div class="flow-desc">Skips audio files and unsupported formats (PDFs, images, spreadsheets).</div>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-num">4</div>
+          <div>
+            <div class="flow-title">Process</div>
+            <div class="flow-desc">Pass 1 (Sonnet memo) → Pass 2 (Opus extraction) → writes action items and deal intel to shared Google Docs.</div>
+          </div>
+        </div>
+        <div class="flow-step">
+          <div class="flow-num">5</div>
+          <div>
+            <div class="flow-title">Mark done</div>
+            <div class="flow-desc">Adds file ID to the dedup tracker so it won't be processed again.</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top: 20px; display: flex; gap: 12px; flex-wrap: wrap;">
+        <div style="flex: 1; min-width: 240px;">
+          <div style="font-size: 12px; font-weight: 600; color: var(--ink); margin-bottom: 6px;">Re-process a specific file</div>
+          <div class="code-block" style="margin: 0;">
+            <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+            <code>python3 cos_otter_backfill.py --force --id FILE_ID</code>
+          </div>
+        </div>
+        <div style="flex: 1; min-width: 240px;">
+          <div style="font-size: 12px; font-weight: 600; color: var(--ink); margin-bottom: 6px;">Check what would be processed (dry run)</div>
+          <div class="code-block" style="margin: 0;">
+            <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+            <code>python3 cos_otter_backfill.py --list</code>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="text-align: center; color: var(--muted); font-size: 12px; padding-top: 8px;">
+    <a href="HOW_IT_ALL_WORKS.html" style="color: var(--muted);">How it all works →</a>
+    &nbsp;·&nbsp;
+    TCIP internal — not indexed by search engines
+  </div>
+
+</div>
+
+<script>
+function copyCode(btn) {
+  const code = btn.closest('.code-block').querySelector('code').textContent;
+  navigator.clipboard.writeText(code).then(() => {
+    btn.textContent = 'Copied!'; btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+</script>
+
+</body>
+</html>
