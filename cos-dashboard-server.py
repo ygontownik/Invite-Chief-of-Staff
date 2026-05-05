@@ -1978,6 +1978,50 @@ def _routines_data():
                 f'~/Library/LaunchAgents/{full_label}.plist` or wait '
                 f'for the catch-up agent to bootstrap it.'
             )
+
+        # Stuck-failing detector (codified 2026-05-05): three-or-more
+        # consecutive non-zero exits in the recent history is a real
+        # alarm — the catch-up agent will keep retrying a routine that
+        # can't succeed (e.g. API quota hit), burning quota and
+        # generating noise. Surface a `stuck` flag + a one-line
+        # diagnostic so the routines tab can render a distinct chip.
+        stuck = False
+        recent_codes = [r.get('exit_code') for r in history]
+        if len(recent_codes) >= 3 and all(
+            c is not None and c != 0 for c in recent_codes[-3:]
+        ):
+            stuck = True
+        if stuck:
+            # Mine the last 16KB of stdout for a one-line cause.
+            cause = ''
+            try:
+                stdout_p = ROUTINES_LOG_DIR / f'{stem}.stdout.log'
+                if stdout_p.exists():
+                    sz = stdout_p.stat().st_size
+                    with stdout_p.open('rb') as fh:
+                        if sz > 16 * 1024:
+                            fh.seek(sz - 16 * 1024)
+                            fh.readline()
+                        tail = fh.read().decode('utf-8', errors='replace')
+                    ms = re.findall(
+                        r'You have reached your specified API usage limits.{0,80}?regain access on (\d{4}-\d{2}-\d{2})',
+                        tail,
+                    )
+                    if ms:
+                        cause = (
+                            f'API spend limit — regain access on {ms[-1]}'
+                        )
+                    elif re.search(r'rate.?limit|429', tail, re.IGNORECASE):
+                        cause = 'Rate-limit pattern in recent runs'
+                    elif re.search(
+                        r'(403.*Forbidden|invalid_grant|token_expired)',
+                        tail,
+                    ):
+                        cause = 'OAuth 403 / invalid_grant — refresh tokens'
+            except Exception:
+                pass
+            item['stuck'] = True
+            item['stuck_cause'] = cause or 'Unknown — check stdout/stderr'
         out.append(item)
     rank = {'fail': 0, 'running': 1, 'never_run': 2, 'ok': 3, 'expected_fail': 4}
     out.sort(key=lambda x: (rank.get(x['status'], 5), x['task']))
@@ -3227,7 +3271,65 @@ class Handler(BaseHTTPRequestHandler):
             # captureSummary.date freshness assertion (rule I4, codified
             # 2026-05-04). Surface a staleness signal so the /briefing/ tab
             # can render a chip when the synopsis is out of date.
+            #
+            # Enhanced 2026-05-05: when stale, scan the cos-capture-pipeline
+            # log tail for the actual blocker — distinguishes "didn't run"
+            # from "tried to run but the API/CLI returned an error". Common
+            # patterns surfaced:
+            #   • API spend-limit reached (Anthropic 400)
+            #   • Claude CLI exit code 1 / stderr pattern
+            #   • OAuth 403 on Calendar / Drive
+            # The principal sees "API quota blocked until X" instead of the
+            # useless "Run cos-capture-pipeline to refresh" when the
+            # underlying problem isn't a missed schedule but a hard block.
             capture_staleness = None
+
+            def _diagnose_capture_blocker():
+                """Return a one-line context string from recent capture
+                logs, or '' when nothing actionable surfaces. Reads at
+                most the last ~16KB of each candidate log so a runaway
+                file doesn't slow the request."""
+                candidates = [
+                    Path.home() / 'dashboards' / 'logs' / 'cos-capture-pipeline.log',
+                    Path.home() / 'dashboards' / 'logs' / 'claude-tasks' / 'cos-capture-pipeline.stdout.log',
+                ]
+                tails = []
+                for p in candidates:
+                    try:
+                        if not p.exists():
+                            continue
+                        size = p.stat().st_size
+                        with p.open('rb') as fh:
+                            if size > 16 * 1024:
+                                fh.seek(size - 16 * 1024)
+                                fh.readline()
+                            tails.append(fh.read().decode('utf-8', errors='replace'))
+                    except Exception:
+                        continue
+                blob = '\n'.join(tails)
+                if not blob:
+                    return ''
+                # Pattern 1 — Anthropic spend-limit / quota message.
+                # Logs are append-only chronological, so use the LAST match
+                # (most recent reset date) — the file may carry an earlier
+                # spend-limit incident with a now-passed reset date.
+                ms = re.findall(
+                    r'You have reached your specified API usage limits.{0,80}?regain access on (\d{4}-\d{2}-\d{2})',
+                    blob,
+                )
+                if ms:
+                    return f'API spend limit reached — pipeline blocked until {ms[-1]}'
+                # Pattern 2 — generic 429 / rate limit
+                if re.search(r'rate.?limit|429', blob, re.IGNORECASE):
+                    return 'Rate-limit pattern in recent runs — investigate'
+                # Pattern 3 — Claude CLI sub-exit
+                if re.search(r'Fatal error in message reader.*exit code 1', blob):
+                    return 'Claude CLI sub-call failing (exit 1) — check Claude subscription / SDK auth'
+                # Pattern 4 — OAuth 403 on Google APIs
+                if re.search(r'(403.*Forbidden|invalid_grant|token_expired)', blob):
+                    return 'OAuth 403 / invalid_grant — refresh tokens'
+                return ''
+
             try:
                 cs_date = ((synopsis.get('captureSummary') or {}).get('date') or '')[:10]
                 if re.match(r'^\d{4}-\d{2}-\d{2}$', cs_date):
@@ -3236,15 +3338,24 @@ class Handler(BaseHTTPRequestHandler):
                     days_stale = (today_d - cs_d).days
                     if days_stale > 1:
                         severity = 'stale' if days_stale > 3 else 'warn'
+                        diag = _diagnose_capture_blocker()
+                        if diag:
+                            msg = (
+                                f'Capture summary is {days_stale} days old '
+                                f'({cs_date}). {diag}.'
+                            )
+                        else:
+                            msg = (
+                                f'Capture summary is {days_stale} day'
+                                f'{"s" if days_stale != 1 else ""} old '
+                                f'({cs_date}). Run cos-capture-pipeline to refresh.'
+                            )
                         capture_staleness = {
                             'date': cs_date,
                             'daysStale': days_stale,
                             'severity': severity,
-                            'message': (
-                                f'Capture summary is {days_stale} day'
-                                f'{"s" if days_stale != 1 else ""} old '
-                                f'({cs_date}). Run cos-capture-pipeline to refresh.'
-                            ),
+                            'message': msg,
+                            'blocker': diag or None,
                         }
                 else:
                     capture_staleness = {
@@ -3252,6 +3363,7 @@ class Handler(BaseHTTPRequestHandler):
                         'daysStale': None,
                         'severity': 'unknown',
                         'message': 'Capture summary has no date — pipeline may not have run.',
+                        'blocker': None,
                     }
             except Exception as _e:
                 pass
