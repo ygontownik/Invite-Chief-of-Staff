@@ -946,6 +946,28 @@ Log each supersession to stderr so prompt drift can be audited.
 
 ---
 
+## TOPIC — RELATIONSHIP DIRECTION & OWNERSHIP
+
+### Y1 — Counterparty relationship direction must come from source-traffic, not analyst guess *(documentation)*
+
+When an analyst pass populates a `prospectiveInvestors` / `capitalRaisingAdvisors` row, the `owner:` and `myAction:` fields define who-does-what. Getting the direction wrong is high-cost: the user looks at the dashboard and sees an action attributed to themself when it actually belongs to a counterparty (or to another team member who was the one with the relationship).
+
+**Rule (codified 2026-05-04 after a real failure)**: before writing `owner:` for a new or updated counterparty row, confirm the direction by checking:
+
+1. **Email traffic**: who introduced whom? Search the email pipeline for the firm name. If the originating thread `from:` is a team member (not the principal), the relationship was sourced/owned by them — set `owner:` accordingly + `sourcedBy: "<introducer name / firm>"` capturing the upstream connector.
+2. **Call-attendee context**: who attended the kickoff call? If the principal was on the call but didn't initiate the relationship, the owner is still whoever drove the intro.
+3. **Action direction**: who is sending materials TO whom? If the counterparty is the originator (e.g., an investment bank pitching deal flow), the `myAction:` is "wait to receive" not "send" — and may even be empty if the counterparty is the active party.
+
+**Failure pattern that drove the rule**: An advisory-bank entry was logged with `owner: <principal>` and `myAction: "Send teaser + data room for <deal>"` — implying the principal was sending materials to the bank. Actual: the bank was pitching deal flow to the firm; another team member was the call originator (per email-thread headers); the bank sends teasers TO the firm, not the other way. Correct config: owner = team member who originated the relationship, `sourcedBy:` capturing the upstream connector, `myAction: ""` (wait to receive). Tenant-specific incident details in private log.
+
+### Y2 — "Action direction inversion" check at extraction time *(extraction-prompt enrichment)*
+
+The extraction prompts in `cos_otter_backfill.py` and `cos_email_backfill.py` should explicitly disambiguate **which side of the conversation owes the next action**. When a call/email surfaces "send teaser/CIM/data room", the extraction MUST identify which party is sending — by inspecting the role context (advisor pitching → counterparty sends; principal pitching → principal sends).
+
+**Rule extension (2026-05-04)**: every `awaiting_external` envelope item already requires `owner: "external"` + `counterparty:` so that semantically the action is owed BY the counterparty TO the principal. The corresponding deal-config curated `myAction:` field must reflect THE PRINCIPAL'S ACTION (which can legitimately be "wait" / empty when the counterparty owes the next move). When in doubt, mark `myAction: ""` and `task: ""` rather than fabricate a verb.
+
+---
+
 ## TOPIC — DEAL NARRATIVE TRACKING
 
 ### V1 — Per-deal activity log (auto-appended, no manual maintenance) *(silent auto-correct)*
@@ -973,6 +995,89 @@ Every active deal needs a chronological narrative — "what happened over the la
 If the user manually appends to `log.json > entries[]` (or any future structured log), the auto-extract MUST NOT overwrite manual entries. The append-only invariant: extraction adds entries with new ids; manual entries (different id format or marked `manual: true`) are preserved indefinitely. The mechanism currently relies on djb2 id uniqueness and rolling window cap — manual entries get the same treatment as auto entries (rolled out at 200-entry cap, newest first).
 
 If manual narrative becomes a workflow, add `pinned: true` flag that excludes from rolling-window eviction.
+
+---
+
+## TOPIC — DEAL CARD ENRICHMENT
+
+### Z1 — Capital-need estimates required even when imprecise *(analyst discipline)*
+
+When a transcript mentions concrete capital sizing (per-project equity gap, equipment capex, deposit equity, etc.), the deal's `phase_capital[]` array MUST capture it — even as an illustrative scenario with `notes:` explaining the assumption.
+
+**Rule**: the deal-card render shows `capital_in_play` derived from `phase_capital[]`. If the array is empty/abstract, the dashboard says "$0 in play" and the deal looks dormant when it isn't. When the principal mentions "buy first site at ~$100M, 50/50 debt/equity = $50M equity" or a transcript captures "5 sites / 3-4 GW; equipment capex $1,200-1,500/kW; 500 MW initial ramp ≈ $750M equipment; 40% gap = $150-300M LC/PG" — those numbers go directly into `phase_capital[]` with `notes:` field citing the source.
+
+**Companion rule**: when a deal's capital structure has multiple legitimate scenarios (e.g., a sourcing-fee model AND an outright site-purchase model for the same deal), capture EACH as a separate `phase_capital[]` entry with explicit `phase:` labels. Don't pick one and bury the other.
+
+### Z2 — `expecting_from_counterparty` block in actions.md *(analyst discipline)*
+
+When a counterparty promises to share specific information (purchase price, energization cost, term-sheet specifics, equipment package details), it lives as a tracked-expectation row — NOT as a generic "follow up" action. Different shape: the principal is waiting to receive, not waiting to act.
+
+**Rule** (codified 2026-05-04): every `data/deals/<TICKER>/actions.md` SHOULD have an "Awaiting from counterparty" sub-section listing each promised deliverable with: counterparty name, what was promised, when promised (call/email date), and tracking status. Surfaces the "what's the counterparty going to send next" view distinct from the "what does TC owe next" view.
+
+**Why this matters**: dashboards naturally bias toward "what do I owe?" (myAction). The reverse view — "what is OWED TO me?" — is the predictor of when the deal advances next. Without it, the user re-asks "what was the counterparty supposed to send me?" each call.
+
+---
+
+## TOPIC — PERSONAL-ITEMS PROSE LENGTH
+
+### Z5 — Brief layman text on the Personal tab; no inline terminal commands *(documentation — content discipline)*
+
+User feedback (2026-05-04): Personal tab items rendered with multi-step terminal-command prose ("1) Check Keychain: `security find-generic-password...` 2) Verify ~/dashboards/scripts/load-secrets.sh...") in the visible action column. The Status column is narrow; long technical text wraps awfully and is unreadable.
+
+**Rule** for `data/user-state/personal-items.json` (and any analogous personal-action surface):
+
+- `name:` is a 5–8 word imperative summary in plain language ("Confirm AI key reaches briefing routine"), NOT a multi-clause technical title.
+- `nextStep:` is ONE plain-English sentence (under 25 words) describing what will change in laymans terms. NEVER includes terminal commands, file paths with backticks, or step-numbered procedures.
+- `myAction:` is a verb-first 5–10 word imperative ("Trigger manual run + watch for run.log"), NOT prose.
+- Multi-step technical implementation detail goes in a separate `implementation_notes:` field — hidden by default in the rendered view; expandable for the engineer who will execute.
+
+**Rationale**: the Personal tab is the principal's morning-glance surface. He reads it in 30 seconds. Technical step-by-step procedures belong in a runbook, not on the dashboard. When the dashboard surfaces a sysadmin task, the principal needs to know WHAT will change — not the commands to make it happen.
+
+**Detection**: `python3 -c "import json; pi=json.load(open('data/user-state/personal-items.json')); [print(r['name'],'->',len(r.get('nextStep') or '')) for r in pi['items'] if len(r.get('nextStep') or '') > 200]"` — any nextStep over 200 chars probably violates the rule.
+
+---
+
+## TOPIC — PERSONAL TAB LAYOUT (UI BACKLOG)
+
+### Z6 — Personal tab grid columns broken on narrow viewports *(documentation — UI rule)*
+
+User feedback (2026-05-04, with screenshot): the Personal tab three-column grid (Job Search | Personal | Deal Pipeline) renders catastrophically on narrower widths — the "Status" column header wraps to one character per line ("S/T/A/T/U/S"), action text wraps to one character per line, and the page becomes unreadable.
+
+**Root cause**: the `.pt-row` grid (codified in earlier session as `minmax(160px, 1.2fr) minmax(0, 1.6fr) 110px 80px` plus `min-width: 0; overflow-wrap: break-word`) handled long content within the FIRST column but didn't account for the THREE-COLUMN OUTER LAYOUT pinching each panel below the per-cell minimum widths. When the viewport is narrow, each of the three columns gets squeezed below its minmax-min and the inner grid still tries to render four columns inside ~250px — which triggers character-by-character wrap.
+
+**Rule (UI backlog for parallel session)**:
+- The three-column outer layout MUST collapse to single-column when viewport < (3 × 320px + gaps + padding) — roughly 1100px total.
+- Within each panel, the four-column inner grid MUST collapse to two columns (Item | Action+Status+Task) when panel width < 280px — OR the columns auto-stack vertically.
+- Add `text-overflow: ellipsis; white-space: nowrap` on the firm-name cell with hover-to-reveal full text.
+- The "Status" column should never appear narrower than ~80px or be hidden entirely on tight layouts.
+
+**Companion rule (general)**: any grid layout rendered on the dashboard should have a single-column-collapse breakpoint AND per-cell ellipsis fallback. Test by resizing to 800px width — if any text wraps to one character per line, the layout is broken.
+
+**Defer**: implementation belongs to the parallel UI session that's restructuring templates. Captured here so it's not lost.
+
+---
+
+## TOPIC — DASHBOARD UX (FUNDRAISING ALWAYS-VISIBLE + CLICK-TO-HISTORY)
+
+### Z3 — Fundraising panel must be visible on HQ without drilldown *(documentation — UI rule)*
+
+User feedback (2026-05-04): fundraising activity is core to the principal's day; it should NOT require clicking the deal-pipeline tile drilldown to surface. The HQ top-row should always render a Fundraising panel (the curated `capitalRaisingAdvisors[]` + `prospectiveInvestors[]` rows) alongside Live Deals and Team Actions.
+
+**Rule**: HQ top-row is `[Deal Pipeline panel | Fundraising panel | Team Actions panel]` — always all three, no conditional rendering on tile clicks. The deal-pipeline tile drilldown can remain a counterparty-lens deep-dive (per the prior tile-drilldown rule), but the top-line fundraising activity is part of the always-visible information architecture.
+
+### Z4 — Click-on-name → history drill *(documentation — UI rule)*
+
+User feedback (2026-05-04): on any name (counterparty, advisor, deal, contact), clicking should open a history drill showing chronological communication + decisions. Today the priority-target modal opens on row click but only shows the curated config row — not the underlying log of calls/emails/follow-ups.
+
+**Rule**: the click-on-name modal should source from:
+1. `data/deals/<TICKER>/log.json` (when the click is on a deal-related entity — V1 auto-log)
+2. `dashboard-data.json > followUps[]` filtered to that entity name + alias needles
+3. `awaitingExternal[]` filtered to the entity counterparty
+4. Email/transcript references via `source_ref.doc_url` (already on each item)
+
+Render as a chronological timeline. Each entry shows: date, source type (call/email/followup), one-line summary, link to original doc. Decision marker (✓/⚠/⏳) on entries that explicitly captured a decision.
+
+**Implementation**: the data is all available today (V1 log is in place; followUps + awaitingExternal already source via `__cpClusterKey`). The UI render is what's missing — defer to parallel UI session.
 
 ---
 
