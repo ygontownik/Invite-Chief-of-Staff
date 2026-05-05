@@ -946,6 +946,53 @@ Log each supersession to stderr so prompt drift can be audited.
 
 ---
 
+## TOPIC — DELETIONS / TOMBSTONE LOOKUP CONSISTENCY
+
+### AA1 — Tombstone-id format MUST match the schema's stable id; never hash-an-id-that's-already-a-hash *(silent auto-correct)*
+
+**Real-world failure (2026-05-05, with screenshots from desktop)**: 80+ tombstoned awaiting-external items kept rendering on the dashboard for weeks despite being in `data/user-state/deletions.json` with `source: "awaitingExternal"`. Root cause: the client-side render filter for awaiting items called `__isDel('followup', k)` — which computes `djb2('followup|<item-id>')` and looks for THAT hash in the `__DELETIONS__` Set. But the Set contains the RAW 8-char hex ids (because the server's `/item/delete` handler stores the raw `id` field directly when source=`awaitingExternal`). The hash never matched the raw id → ZERO awaiting items got filtered.
+
+This bug existed for ~2 months and is the actual reason the user kept seeing past-event scheduling items, completed-meeting confirmations, and superseded NDA-draft items long after the underlying events resolved. All rules + tombstones from prior sessions WORKED — they wrote to `deletions.json` correctly. The render layer just never read them correctly for awaitingExternal. Tenant-specific incident details in private log.
+
+**Rule**: when an item type already has a STABLE id field on it (extracted hash, UUID, db key), the deletion lookup is direct Set membership: `window.__DELETIONS__.has(item.id)`. Do NOT call `__isDel(source, item.id)` — that's for items whose id is computed from `djb2(source + '|' + content[:60])` (followups, recruit rows, relationship rows where the "id" is itself a content-hash key).
+
+**Two distinct deletion-id schemas in this dashboard**:
+1. **Content-hash schema** (followups, recruit, rel): no stable item id; the "id" used for tombstoning is `djb2(source + '|' + content[:60])` computed at delete time + filter time. Use `__isDel(source, content)`.
+2. **Stable-id schema** (awaitingExternal, deal actions, build-backlog): items carry a stable `id` field (8-char hex from extraction). Tombstone stores `id: <raw>`. Filter uses `dels.has(item.id)` directly.
+
+Mixing them silently fails: the filter never matches, items render forever.
+
+**Detection**: write a test that tombstones one awaiting item via the API, reloads the page, asserts the item is not in the rendered DOM. Run after any change to a render filter.
+
+**Fix shipped 2026-05-05**: `buildAwaitingExternal()` and `awaitingCount` calculator in `cos-dashboard.template.html` switched from `__isDel('followup', k)` to direct `dels.has(k)` against `window.__DELETIONS__`.
+
+**Companion rule for new render filters**: every time you write a new `.filter(i => ...)` against an item array, audit which deletion-id schema applies. If items have a stable `id` field, use direct Set membership. If they don't, use `__isDel(source, content)`. Never use `__isDel('<some-source>', i.id)` — that's almost always wrong (you're double-hashing or hashing-an-already-hash).
+
+---
+
+## TOPIC — RULES-IN-PLACE vs RULES-ENFORCED-IN-CODE
+
+### AA2 — Documented rules without code enforcement are not actually rules *(meta-rule)*
+
+**Diagnosis (2026-05-05)**: `dash_corrections.md` accumulated ~30 rules over multiple sessions. Many were "documentation only" — capturing the IDEAL behavior with no compile-step or render-layer code actually enforcing them. Examples that bit:
+- D3 (curated config wins over awaitingExternal): documented as auto-tombstone rule; no code ever auto-tombstoned overlapping items.
+- M3 (followUps doc ranked above briefing prose): documented as analyst-pass discipline; no code reconciles when sources conflict.
+- Y1 (relationship direction from email-traffic): documented as analyst-pass check; no code surfaces source-line attribution.
+
+The user reasonably asks "why didn't the rules catch this?" — because most rules ARE the analyst pass, not the code. When the analyst pass is me, the rules apply. When the dashboard runs unattended for a week, only the code-enforced subset applies.
+
+**Rule (codified 2026-05-05)**: every rule in `dash_corrections.md` MUST declare its enforcement mode in the section header:
+- `*(silent auto-correct)*` — code in compile/render enforces; no user action.
+- `*(extraction-prompt enrichment)*` — extraction prompt emits the right field at write time.
+- `*(analyst-pass discipline)*` — applied during a `/dash` review only; not enforced live.
+- `*(documentation — UI rule)*` — UI implementation lives in another session; not enforced live.
+
+**Companion rule**: when a "documentation" or "analyst-pass" rule keeps getting violated by the unattended pipeline, promote it to "silent auto-correct" by writing the code. The rules log is for capturing the standard; the code is what enforces it.
+
+**Action**: audit existing rules quarterly (or after a recurring failure like the awaiting tombstone bug). Each rule should have a clear answer to "if I close my eyes for a week, will the dashboard still uphold this rule?"
+
+---
+
 ## TOPIC — RELATIONSHIP DIRECTION & OWNERSHIP
 
 ### Y1 — Counterparty relationship direction must come from source-traffic, not analyst guess *(documentation)*

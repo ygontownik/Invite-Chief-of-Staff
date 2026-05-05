@@ -1530,11 +1530,17 @@ function buildStatsBar() {
   })();
   const fundTotal = (DATA.lpData || []).length;
   // Awaiting External: count of unique counterparties with an open item.
+  // 2026-05-04: filter uses RAW id-set membership against window.__DELETIONS__
+  // (NOT __isDel('followup', k) — that computes djb2('followup|<id>') which
+  // never matches the raw 8-char hex ids stored in deletions.json by the
+  // awaitingExternal tombstone flow). Bug-for-bug compatibility maintained
+  // via the dismissedActions list for legacy in-session dismissals.
   const awaitingCount = (() => {
     const ae = DATA.awaitingExternal || [];
+    const dels = (typeof window.__DELETIONS__ !== 'undefined') ? window.__DELETIONS__ : new Set();
     const visible = ae.filter(i => {
       const k = i.id || '';
-      return k && !state.dismissedActions.includes(k) && !__isDel('followup', k);
+      return k && !state.dismissedActions.includes(k) && !dels.has(k);
     });
     return new Set(visible.map(i => __cpClusterKey(i.counterparty || '—').toLowerCase())).size;
   })();
@@ -1716,9 +1722,17 @@ function _clusterCategory(c) {
 function buildAwaitingExternal(filter) {
   filter = filter || 'all';
   const items = Array.isArray(DATA.awaitingExternal) ? DATA.awaitingExternal : [];
+  // 2026-05-04 BUGFIX: filter against raw __DELETIONS__ set membership.
+  // Previous code called __isDel('followup', k) which computes
+  // djb2('followup|<id>') — that hash never matches the raw 8-char hex
+  // ids stored in deletions.json (server tombstones awaiting items with
+  // source='awaitingExternal' and stores the raw id directly). Result:
+  // ZERO awaiting items were ever filtered out, so 80+ tombstoned items
+  // (Kechejian, Apogee, Black Mountain, etc.) kept rendering forever.
+  const dels = (typeof window.__DELETIONS__ !== 'undefined') ? window.__DELETIONS__ : new Set();
   let visible = items.filter(i => {
     const k = i.id || '';
-    return k && !state.dismissedActions.includes(k) && !__isDel('followup', k);
+    return k && !state.dismissedActions.includes(k) && !dels.has(k);
   });
   // Apply workstream filter using _itemWorkstream()
   if (filter === 'tc-only') {
