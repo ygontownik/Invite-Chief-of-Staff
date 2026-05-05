@@ -981,7 +981,45 @@ else
   fi
 fi
 
-# ── Step 7b: Tailscale (optional — remote/iPhone access) ────────────────────
+# ── Step 7b: Claude OAuth — bind scheduled tasks to Pro/Max subscription ───
+# Runs ONLY when auth_mode is subscription (the default for new tenants per
+# firm_context.template.yaml). Tenants on api mode skip this entirely.
+# Codified 2026-05-05. Closes the prior gap where new GitHub users had to
+# manually run claude /login + claude setup-token + inject-claude-oauth-
+# token.sh after install. Now: at most ONE browser sign-in (or zero, if
+# the user is already logged in to Claude Code).
+echo ""
+step "[7b/8] Claude OAuth (Pro/Max binding for scheduled tasks)"
+
+AUTH_MODE_FOR_OAUTH=$(grep -E '^auth_mode:' "$CONFIG_DIR/firm_context.yaml" 2>/dev/null \
+                     | head -1 | awk -F: '{print $2}' | tr -d ' \r')
+AUTH_MODE_FOR_OAUTH="${AUTH_MODE_FOR_OAUTH:-subscription}"
+
+if [ "$AUTH_MODE_FOR_OAUTH" = "api" ]; then
+  info "auth_mode=api in firm_context.yaml — scheduled tasks will use"
+  info "ANTHROPIC_API_KEY from keychain. Skipping subscription OAuth setup."
+elif [ -x "$HOME/dashboards/scripts/setup-claude-oauth.sh" ]; then
+  # New-tenant plists follow the LAUNCH_LABEL_PREFIX convention. Pass the
+  # discovered label list so a tenant with prefix com.cos.acme.* gets all
+  # their plists injected automatically (not the hardcoded tomac default).
+  DISCOVERED_LABELS=$(ls "$HOME/Library/LaunchAgents/${LAUNCH_PREFIX}"*.plist 2>/dev/null \
+                     | xargs -n1 basename 2>/dev/null | sed 's/\.plist$//' | tr '\n' ' ')
+  if [ -n "$DISCOVERED_LABELS" ]; then
+    info "Will inject OAuth token into: $DISCOVERED_LABELS"
+    CLAUDE_OAUTH_PLIST_LABELS="$DISCOVERED_LABELS" \
+      "$HOME/dashboards/scripts/setup-claude-oauth.sh" \
+      || warn "Subscription OAuth setup reported issues — review above"
+  else
+    warn "No plists matched ${LAUNCH_PREFIX}* yet — re-run after Step 7"
+    warn "completes with: ~/dashboards/scripts/setup-claude-oauth.sh"
+  fi
+else
+  warn "$HOME/dashboards/scripts/setup-claude-oauth.sh not found —"
+  warn "skipping. Re-run setup.sh after the dashboards repo is in place,"
+  warn "or run scripts/setup-claude-oauth.sh manually."
+fi
+
+# ── Step 7c: Tailscale (optional — remote/iPhone access) ────────────────────
 echo ""
 read -p "  Set up Tailscale for remote/iPhone dashboard access? [Y/n]: " _ts_confirm
 if [ "$_ts_confirm" != "n" ] && [ "$_ts_confirm" != "N" ]; then

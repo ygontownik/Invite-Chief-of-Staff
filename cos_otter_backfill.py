@@ -1883,9 +1883,10 @@ def main():
     else:
         since = (datetime.now(timezone.utc) - timedelta(days=args.days)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    if not ANTHROPIC_KEY:
-        print("ERROR: ANTHROPIC_API_KEY not set.", file=sys.stderr)
-        sys.exit(1)
+    # Note (2026-05-05): legacy ANTHROPIC_API_KEY guard removed —
+    # _claude_dispatch.call() now enforces auth availability per
+    # the active mode (subscription → CLAUDE_CODE_OAUTH_TOKEN; api →
+    # ANTHROPIC_API_KEY). See cos_email_backfill.py for the same edit.
 
     print("=== COS Otter/Call Transcript Backfill ===", flush=True)
     print(f"Run at: {datetime.now().strftime('%Y-%m-%d %H:%M')}", flush=True)

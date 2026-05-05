@@ -205,26 +205,33 @@ def load_active_packages(firm_config_path=None) -> list:
 # ── Subscription-mode accessors (added Run 6 pass 3) ─────────────────────────
 
 def load_auth_mode():
-    """Return firm_context.yaml :: auth_mode, or None if absent.
+    """Return firm_context.yaml :: auth_mode (defaults to 'subscription').
 
-    Values: 'subscription' | 'api' | None.
+    Values: 'subscription' | 'api'.
 
-    The model router treats 'subscription' / 'api' as a HARD tenant-level
-    override that forces all non-daemon routines to that mode regardless
-    of routines.yaml :: mode. None preserves the routine.mode (backward
-    compatible — no behavior change for existing tenants).
+    The model router treats this as a HARD tenant-level override that
+    forces all non-daemon routines to the chosen mode regardless of
+    routines.yaml :: mode.
 
-    Falls back to None on any read error (missing file, bad YAML, unset
-    field) so the router stays usable.
+    Default 2026-05-05: 'subscription'. Aligned with
+    firm_context.template.yaml ship-default and load-secrets.sh shell-
+    side default. Tenants without an explicit field land on
+    subscription, which closes the prior cross-language inconsistency
+    (Python returned None → routine.mode → typically 'api'; shell
+    defaulted to 'subscription'). Tenants explicitly opting into api
+    must set `auth_mode: api` in firm_context.yaml.
+
+    Falls back to 'subscription' on any read error (missing file, bad
+    YAML) so the router stays usable on a fresh install.
     """
     try:
         ctx = load_firm_context()
     except (FileNotFoundError, OSError):
-        return None
+        return "subscription"
     val = ctx.get("auth_mode") if isinstance(ctx, dict) else None
     if val in ("subscription", "api"):
         return val
-    return None
+    return "subscription"
 
 
 def load_claude_projects(firm_config_path=None) -> dict:

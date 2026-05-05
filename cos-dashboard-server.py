@@ -2011,13 +2011,22 @@ def _routines_data():
                         cause = (
                             f'API spend limit — regain access on {ms[-1]}'
                         )
+                    elif re.search(
+                        r'(invalid[_ -]?(api[_ -]?key|token)|'
+                        r'expired[_ -]?token|oauth[_ -]?(expired|invalid)|'
+                        r'401\b.*(unauthor|invalid[_ -]?token)|'
+                        r'CLAUDE_CODE_OAUTH_TOKEN.*(expired|invalid))',
+                        tail, re.IGNORECASE,
+                    ):
+                        cause = ('Claude OAuth token expired/invalid — '
+                                 'regenerate via claude setup-token')
                     elif re.search(r'rate.?limit|429', tail, re.IGNORECASE):
                         cause = 'Rate-limit pattern in recent runs'
                     elif re.search(
                         r'(403.*Forbidden|invalid_grant|token_expired)',
                         tail,
                     ):
-                        cause = 'OAuth 403 / invalid_grant — refresh tokens'
+                        cause = 'Google OAuth 403 / invalid_grant — refresh tokens'
             except Exception:
                 pass
             item['stuck'] = True
@@ -3319,15 +3328,33 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 if ms:
                     return f'API spend limit reached — pipeline blocked until {ms[-1]}'
-                # Pattern 2 — generic 429 / rate limit
+                # Pattern 2 — Claude OAuth token expired (subscription path).
+                # Codified 2026-05-05. The injected long-lived OAuth token
+                # has a finite TTL; when it expires every plist that depends
+                # on it stops working until the principal regenerates via
+                # `claude setup-token` and re-runs inject-claude-oauth-token.sh.
+                if re.search(
+                    r'(invalid[_ -]?(api[_ -]?key|token)|'
+                    r'expired[_ -]?token|oauth[_ -]?(expired|invalid)|'
+                    r'401\b.*(unauthor|invalid[_ -]?token)|'
+                    r'CLAUDE_CODE_OAUTH_TOKEN.*(expired|invalid))',
+                    blob, re.IGNORECASE,
+                ):
+                    return ('Claude OAuth token expired or invalid — '
+                            'regenerate via `claude setup-token` + re-run '
+                            'scripts/inject-claude-oauth-token.sh')
+                # Pattern 3 — generic 429 / rate limit
                 if re.search(r'rate.?limit|429', blob, re.IGNORECASE):
                     return 'Rate-limit pattern in recent runs — investigate'
-                # Pattern 3 — Claude CLI sub-exit
+                # Pattern 4 — Claude CLI sub-exit (auth-context failure
+                # in launchd, missing OAuth token in plist, etc.)
                 if re.search(r'Fatal error in message reader.*exit code 1', blob):
-                    return 'Claude CLI sub-call failing (exit 1) — check Claude subscription / SDK auth'
-                # Pattern 4 — OAuth 403 on Google APIs
+                    return ('Claude CLI sub-call failing (exit 1) — check '
+                            'CLAUDE_CODE_OAUTH_TOKEN is set in plist env, or '
+                            'subscription auth available')
+                # Pattern 5 — OAuth 403 on Google APIs
                 if re.search(r'(403.*Forbidden|invalid_grant|token_expired)', blob):
-                    return 'OAuth 403 / invalid_grant — refresh tokens'
+                    return 'Google OAuth 403 / invalid_grant — refresh tokens'
                 return ''
 
             try:

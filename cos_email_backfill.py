@@ -1075,10 +1075,13 @@ def main():
             print("\n--list mode: exiting without processing.", flush=True)
             return
 
-    # Anthropic key required past this point
-    if not ANTHROPIC_KEY:
-        print("ERROR: ANTHROPIC_API_KEY not set.", file=sys.stderr)
-        sys.exit(1)
+    # Note (2026-05-05): the legacy "ANTHROPIC_API_KEY required" guard
+    # was removed when this script migrated to _claude_dispatch. The
+    # shim handles the auth choice: in subscription mode it routes via
+    # claude-agent-sdk → CLAUDE_CODE_OAUTH_TOKEN, no API key needed; in
+    # api mode it requires ANTHROPIC_API_KEY and raises a clear error
+    # if it's missing. Either way, we let the dispatch layer be the
+    # single point of auth-availability enforcement.
 
     pipeline_context = _load_pipeline_context()
     if pipeline_context:
