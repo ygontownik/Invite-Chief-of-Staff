@@ -60,8 +60,20 @@ except Exception:
 
 CREDS_DIR      = Path.home() / "credentials"
 PROCESSED_FILE = CREDS_DIR / "processed_emails.json"
-CONFIG_FILE    = Path.home() / "tomac-cove-pipeline" / "firm_config.json"
-LOG_FILE       = Path.home() / "tomac-cove-pipeline" / "logs" / "gmail_mini.log"
+
+# CONFIG_FILE / LOG_FILE resolve via _firm_context._find_config_dir() so this
+# script is tenant-agnostic. The tenant config dir is also where we drop the
+# log file (under logs/) — keeps state co-located with the firm_config.json
+# the script consumes. Falls back to the pipeline source dir on a fresh
+# install where the config dir hasn't been provisioned yet.
+try:
+    sys.path.insert(0, str(_HERE))
+    import _firm_context as _fc_paths  # noqa: E402
+    _CONFIG_DIR = _fc_paths._find_config_dir()
+except Exception:
+    _CONFIG_DIR = Path.home() / "cos-pipeline-config"
+CONFIG_FILE    = _CONFIG_DIR / "firm_config.json"
+LOG_FILE       = _CONFIG_DIR / "logs" / "gmail_mini.log"
 
 LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(
@@ -90,20 +102,22 @@ DEFAULT_CONFIG = {
     # Required: firm_config.json :: research_senders — may be {} if no routing.
     "research_senders": {},
 
-    # Keywords that signal DEAL classification in subject/sender
+    # Keywords that signal DEAL classification in subject/sender.
+    # Tenant-specific deal/asset names are NOT hardcoded — they are derived
+    # at runtime from firm_context.yaml :: counterparty_aliases[].needles
+    # and deal-config.yaml :: deals[]/liveDeals[] (see _build_deal_keywords).
+    # This list is the universal generic-vocabulary fallback only.
     "deal_keywords": [
-        "cholla", "gideon", "venus", "bbeh", "black bayou",
-        "pngts", "pfs", "thunderhead", "arclight", "takanock",
-        "encore", "ercot", "oncor", "term sheet", "loi", "nda",
-        "diligence", "ic memo", "bid", "proposal"
+        "term sheet", "loi", "nda",
+        "diligence", "ic memo", "bid", "proposal",
     ],
 
-    # Keywords that signal RECRUIT classification
+    # Keywords that signal RECRUIT classification.
+    # Generic vocabulary only — tenant-specific firm names should live in
+    # the per-tenant firm_config.json :: recruit_keywords override.
     "recruit_keywords": [
-        "castleton", "related digital", "reinova", "ridgewood",
-        "piper maddox", "one search", "barton partnership",
         "interview", "role", "opportunity", "resume", "cv",
-        "offer", "comp", "compensation", "headhunter", "recruiter"
+        "offer", "comp", "compensation", "headhunter", "recruiter",
     ],
 
     # Max emails per run (safety cap)
@@ -112,6 +126,78 @@ DEFAULT_CONFIG = {
     # Default lookback on first run (hours)
     "first_run_lookback_hours": 2,
 }
+
+
+# Module-level cache for tenant-derived deal keywords (built once per process)
+_DEAL_KEYWORDS_CACHE: list[str] | None = None
+
+
+def _slug_tokens(s: str) -> list[str]:
+    """Lowercase a string and split into alpha tokens (≥3 chars). Used to
+    extract searchable substrings from deal names like "US Towers" → ["towers"]."""
+    if not s:
+        return []
+    return [t for t in re.findall(r"[a-z]+", s.lower()) if len(t) >= 3]
+
+
+def _build_deal_keywords(ctx: dict, generic_fallback: list[str]) -> list[str]:
+    """Flatten counterparty alias needles + active deal slugs into a deal-
+    keyword list. Cached at module level so we only walk the config tree once.
+
+    Sources (in priority order):
+      1. firm_context.yaml :: counterparty_aliases[].needles  (flattened)
+      2. <tenant_config>/config/deal-config.yaml :: deals[] OR liveDeals[]
+         — slugified deal names contribute multi-char tokens.
+      3. generic_fallback — universal verbs/nouns from DEFAULT_CONFIG.
+
+    Returns a deduped list preserving discovery order. If config is missing
+    or unparseable, returns the generic fallback alone — the script still
+    runs, just without tenant-specific deal-name routing.
+    """
+    global _DEAL_KEYWORDS_CACHE
+    if _DEAL_KEYWORDS_CACHE is not None:
+        return _DEAL_KEYWORDS_CACHE
+
+    seen: set[str] = set()
+    out: list[str] = []
+
+    def _add(k: str) -> None:
+        k2 = (k or "").strip().lower()
+        if k2 and k2 not in seen:
+            seen.add(k2)
+            out.append(k2)
+
+    # 1. Counterparty alias needles
+    for entry in (ctx or {}).get("counterparty_aliases", []) or []:
+        for needle in entry.get("needles", []) or []:
+            _add(needle)
+
+    # 2. Active deal slugs from deal-config.yaml
+    try:
+        config_dir = _CONFIG_DIR
+        deal_cfg = config_dir / "config" / "deal-config.yaml"
+        if not deal_cfg.exists():
+            deal_cfg = config_dir / "deal-config.yaml"
+        if deal_cfg.exists():
+            import yaml
+            with open(deal_cfg) as f:
+                dc = yaml.safe_load(f) or {}
+            # Support both schemas: top-level `deals` (per docs) and `liveDeals`
+            for d in (dc.get("deals") or dc.get("liveDeals") or []):
+                name = (d.get("name") or d.get("slug") or "").strip()
+                if name:
+                    _add(name)
+                    for tok in _slug_tokens(name):
+                        _add(tok)
+    except Exception as e:
+        log.warning(f"Could not load deal-config.yaml for deal keywords: {e}")
+
+    # 3. Generic fallback last — gives universal verbs (loi, term sheet, …)
+    for k in generic_fallback or []:
+        _add(k)
+
+    _DEAL_KEYWORDS_CACHE = out
+    return out
 
 
 def _load_domain_bundle(ctx: dict) -> dict:
@@ -142,7 +228,10 @@ def load_config():
       1. firm_config.json (per-tenant, in COS_CONFIG_DIR or ~/cos-pipeline-config-<slug>/)
       2. firm_context.yaml :: firm.name as a fallback for firm_name only
       3. drive-docs.yaml as a fallback for `docs` (keys: followups, pipeline,
-         people_crm→people, recruiting, tomac_pipeline→pipeline)
+         people_crm→people, recruiting, plus a tenant-defined deal-pipeline
+         key resolved via firm_config.json :: drive_docs_keys.pipeline —
+         e.g. some tenants name their deal-pipeline doc with a firm-prefixed
+         key in drive-docs.yaml).
     """
     # Try to source firm_config.json from the team config repo first
     try:
@@ -169,13 +258,31 @@ def load_config():
     # Deep merge: user config overrides defaults
     config = {**DEFAULT_CONFIG, **user_config}
 
-    # docs: prefer firm_config.json :: docs, fall back to drive-docs.yaml entries
+    # docs: prefer firm_config.json :: docs, fall back to drive-docs.yaml entries.
+    # The deal-pipeline drive-docs key is tenant-configurable via
+    # firm_config.json :: drive_docs_keys.pipeline (some tenants prefix the
+    # key with their firm short-name in drive-docs.yaml). Fallback chain
+    # tries common keys: explicit override → "deal_pipeline" → "pipeline"
+    # → first key in drive-docs.yaml that ends in "_pipeline".
     cfg_docs = user_config.get("docs", {}) or {}
     if not cfg_docs and drive_docs:
-        # Map drive-docs.yaml canonical keys to gmail-mini's expected keys
+        ddkeys = (user_config.get("drive_docs_keys") or {})
+        pipeline_key = (ddkeys.get("pipeline") or "").strip()
+        pipeline_doc = ""
+        if pipeline_key and drive_docs.get(pipeline_key):
+            pipeline_doc = drive_docs[pipeline_key]
+        elif drive_docs.get("deal_pipeline"):
+            pipeline_doc = drive_docs["deal_pipeline"]
+        elif drive_docs.get("pipeline"):
+            pipeline_doc = drive_docs["pipeline"]
+        else:
+            for k, v in drive_docs.items():
+                if k.endswith("_pipeline") and v:
+                    pipeline_doc = v
+                    break
         cfg_docs = {
             "followups":  drive_docs.get("followups", ""),
-            "pipeline":   drive_docs.get("tomac_pipeline", ""),
+            "pipeline":   pipeline_doc,
             "people":     drive_docs.get("people_crm", ""),
             "recruiting": drive_docs.get("recruiting", ""),
         }
@@ -200,18 +307,28 @@ def load_config():
             "firm_context.yaml :: firm.name."
         )
 
-    # Keyword lists — precedence per C13 + session-4 robustness pass:
-    #   1. Per-tenant firm_config.json :: deal_keywords (highest — tenant override wins)
+    # Keyword lists — precedence (most specific wins):
+    #   1. Per-tenant firm_config.json :: deal_keywords  (explicit tenant override)
     #   2. Domain bundle ~/cos-pipeline/domains/<domain>/config.yaml :: deal_keywords
-    #   3. DEFAULT_CONFIG (lowest — hardcoded last-resort, originally tomac terms)
-    # Without #2, P (real-estate tenant) would fall through to tomac's hardcoded
-    # asset names (cholla, gideon, …) until they manually populated firm_config.
+    #   3. Runtime builder (deal_keywords ONLY) — flattens counterparty alias
+    #      needles + active deal slugs from deal-config.yaml on top of the
+    #      generic verb fallback. recruit_keywords stays at DEFAULT_CONFIG
+    #      (generic vocabulary; tenants add their headhunter/firm names via
+    #      firm_config.json override).
+    #   4. DEFAULT_CONFIG (universal generic-vocabulary fallback).
+    # The runtime builder removes the prior failure mode where a brand-new
+    # tenant inherited the previous tenant's hardcoded asset names until
+    # they manually populated firm_config.json.
     domain_cfg = _load_domain_bundle(ctx)
     for keyword_field in ("deal_keywords", "recruit_keywords"):
         if keyword_field in user_config:
             config[keyword_field] = user_config[keyword_field]
         elif keyword_field in domain_cfg:
             config[keyword_field] = domain_cfg[keyword_field]
+        elif keyword_field == "deal_keywords":
+            config[keyword_field] = _build_deal_keywords(
+                ctx, DEFAULT_CONFIG["deal_keywords"]
+            )
         else:
             config[keyword_field] = DEFAULT_CONFIG[keyword_field]
 
@@ -631,21 +748,43 @@ def haiku_triage(email: dict) -> dict:
 # PASS 2: SONNET ENRICHMENT (DEAL / RECRUIT only, confidence >= 0.7)
 # ────────────────────────────────────────────────────────────────────
 
-DEAL_ENRICHMENT_SYSTEM = """You are a chief of staff for a senior infrastructure PE investor at Tomac Cove Infrastructure Partners.
-An email has been classified as DEAL-related. Extract structured information for the deal pipeline.
-Reply with JSON only — no markdown.
+def _firm_name_for_prompts() -> str:
+    """Return the firm name to interpolate into Sonnet enrichment prompts.
 
-JSON format:
-{
-  "deal_name": "asset or deal name, or 'Unknown'",
-  "counterparty": "firm or person name",
-  "stage": "Awareness|IOI|LOI|Diligence|IC|Closed|Unknown",
-  "sector": "Power|Midstream|Digital|LNG|Other",
-  "action_required": true|false,
-  "action_summary": "verb-first one sentence, or null",
-  "priority": "High|Medium|Low",
-  "summary": "2-3 sentences max for a senior investor"
-}"""
+    Sourced from firm_context.yaml :: firm.name (with firm.short_name as a
+    backstop). Falls back to a generic phrase so the prompt stays sensible
+    on a fresh install before firm_context is provisioned.
+    """
+    try:
+        sys.path.insert(0, str(_HERE))
+        import _firm_context as _fc  # noqa: PLC0415
+        ctx = _fc.load_firm_context() or {}
+        firm = (ctx.get("firm") or {})
+        return (firm.get("name") or firm.get("short_name") or "").strip() \
+            or "the firm"
+    except Exception:
+        return "the firm"
+
+
+_FIRM_FOR_PROMPTS = _firm_name_for_prompts()
+
+DEAL_ENRICHMENT_SYSTEM = (
+    "You are a chief of staff for a senior infrastructure PE investor at "
+    + _FIRM_FOR_PROMPTS + ".\n"
+    "An email has been classified as DEAL-related. Extract structured information for the deal pipeline.\n"
+    "Reply with JSON only — no markdown.\n\n"
+    "JSON format:\n"
+    "{\n"
+    '  "deal_name": "asset or deal name, or \'Unknown\'",\n'
+    '  "counterparty": "firm or person name",\n'
+    '  "stage": "Awareness|IOI|LOI|Diligence|IC|Closed|Unknown",\n'
+    '  "sector": "Power|Midstream|Digital|LNG|Other",\n'
+    '  "action_required": true|false,\n'
+    '  "action_summary": "verb-first one sentence, or null",\n'
+    '  "priority": "High|Medium|Low",\n'
+    '  "summary": "2-3 sentences max for a senior investor"\n'
+    "}"
+)
 
 RECRUIT_ENRICHMENT_SYSTEM = """You are a chief of staff for a senior infrastructure PE professional actively job searching.
 An email has been classified as RECRUIT-related. Extract structured information.
@@ -968,7 +1107,7 @@ def write_action_item(email: dict, triage: dict, enriched: dict, config: dict, d
 
 
 # ── Cross-user doc dedup ──────────────────────────────────────────────────────
-# Problem: if Yoni and Mark are both CC'd on an email, both pipelines will
+# Problem: if two team members are both CC'd on an email, both pipelines will
 # process it and try to write to the shared Follow-ups / Pipeline / Recruiting
 # doc. Fix: cache each shared doc's full text once per run; before any write,
 # check if the email subject is already present. Since pipelines run on a
@@ -1014,9 +1153,9 @@ def subject_already_in_doc(doc_id: str, subject: str) -> bool:
     """Return True if this email subject was already written to doc (dedup guard).
 
     Searches the cached full doc text for the subject as a substring — catches
-    both 'Subject: Re: Cholla update' and bare title lines. Works across team
-    members: if machine A wrote an entry 2h ago, machine B's cache loads fresh
-    and finds the subject before writing a duplicate.
+    both 'Subject: Re: <deal-name> update' and bare title lines. Works across
+    team members: if machine A wrote an entry 2h ago, machine B's cache loads
+    fresh and finds the subject before writing a duplicate.
     """
     needle = subject.strip().lower()
     if not needle:
