@@ -1493,6 +1493,8 @@ When a recruiting/deal target has a calendared in-person meeting and the date pa
 
 `/briefing/intel.json` returns `synopsis.captureSummary` with a `date` field. If `captureSummary.date < today - 1`, the capture pipeline didn't run today. Surface a warning chip on the briefing tab + log to stderr. With the routines catch-up agent live, the underlying capture should run at every wake — a stale captureSummary is now an actionable signal of pipeline failure, not an ambient background condition.
 
+**Implementation (2026-05-04 EOD)**: `/briefing/intel.json` now returns a `captureStaleness` payload field — `{date, daysStale, severity, message}`. `severity = "warn"` for 2–3 days stale, `"stale"` for >3 days, `"unknown"` when no date is present. The frontend chip should render off this field rather than re-deriving the comparison client-side.
+
 ---
 
 ## TOPIC — PAST-DUE ITEM RESOLUTION
@@ -1746,6 +1748,15 @@ loudly when a plist exists on disk but is not loaded — silent missing
 = silent broken pipeline. Reload via
 `launchctl bootstrap gui/$UID <plist>`.
 
+**Implementation (2026-05-04 EOD)**: `_routines_data()` now calls
+`launchctl list` once per request and stamps `launchctl_loaded:
+true|false|null` on every routine record (null = launchctl
+unavailable). When `loaded == false`, the record carries a
+`warning` field with the bootstrap command. Frontend should render
+a chip off these two fields. Catch-up agent normally bootstraps
+missing plists on first run, so this surface mainly catches
+install-time and post-reboot drift before the next catch-up cycle.
+
 **Sub-finding (general)**: macOS launchd does not run missed
 `StartCalendarInterval` events on wake. If routines must catch up
 after sleep, switch to `StartInterval` or add a wake-time
@@ -1785,3 +1796,39 @@ hot-reload Python source files. After any commit that touches
 changes to take effect. If a feature "isn't working" after a git
 push, check whether the server is still running pre-push code before
 assuming the code is wrong.
+
+---
+
+## TOPIC — ACTION-DIRECTION INVERSION (Y2)
+
+### 2026-05-04 — Transmission verbs require explicit sender identification
+
+When extraction sees a transmission verb (`send`, `share`, `deliver`, `forward`, `provide`, `transmit`, `circulate`, `pass along`), the prompt MUST instruct the model to identify the sender BEFORE emitting an action item — not simply attribute the verb to the principal because their name appears in the row.
+
+**Three canonical patterns**:
+
+1. **Inbound pitch** (placement agents, banks, advisors pitching deal flow / capital to the principal): counterparty owns the action; emit `state: waiting`, `owner: external`, `counterparty: "Firm — Person"`. The principal RECEIVES — do NOT generate a `my_action` telling the principal to "send" what is being pitched IN.
+2. **Outbound sponsorship** (principal sponsoring a deal to LPs, lenders, co-investors): principal sends — `owner: <whitelist>`, `state: active`.
+3. **Mutual exchanges** (NDAs, term sheets, redlines): emit two items, one per direction.
+
+**Default if unclear**: emit as `state: waiting` with the counterparty as owner. Better to under-attribute to the principal than fabricate a send-verb on the wrong side.
+
+**Why this matters**: the failure mode (codified 2026-05-04) was a fundraising advisor pitching IN, written as the principal owing the send. The same wording — "send the materials" — has opposite ownership depending on which side is doing the sending. Role context (sender's firm role + email From/To headers + signature blocks) is the only reliable disambiguator. Ship this guidance in BOTH `BACKFILL_PREAMBLE` (transcripts) and `EMAIL_PREAMBLE` (email) so it can't be solved on one side and left broken on the other.
+
+---
+
+## TOPIC — DEAL-LOG PRECISION TAGGING (V1+)
+
+### 2026-05-04 — Prefer LLM-emitted explicit deal tags over fuzzy token-match
+
+Per-deal activity logs (rule V1) are populated by scanning extracted intel for items that "touch" a given deal. The original implementation used a fuzzy token-match against the canonical name, slug, and alias needles (high recall, false-positive prone — "MISO" matches both unrelated PJM/MISO chatter and the actual deal-specific signal).
+
+**Two-pass strategy** (codified 2026-05-04):
+
+- **Pass A — explicit `parent_id` match** (high precision): if the extracted item carries `parent_id` equal to the deal's id, it is a guaranteed-tag — skip text matching. Available today on `awaitingExternal`, `dealIntel`, `originationInbox`. Available on `followUps` via `linkedTo`.
+- **Pass B — token match** (high recall): for items WITHOUT an explicit parent_id, fall back to the legacy alias-needle scan.
+
+Each emitted log entry carries a `match` field (`explicit` | `token`) so analysts can audit precision-vs-recall mix. New entries added going forward will carry this field; legacy entries (written before this rule) remain `unset`.
+
+**Forward signal**: extraction prompts now also emit `deal_log_entries[]` — an explicit array of `{deal_id, summary, evidence}` per call/email — for full LLM-driven tagging once the doc-routing plumbing carries the field through to `dashboard-data.json`. Until then, `parent_id` on envelope items is the precision input.
+
