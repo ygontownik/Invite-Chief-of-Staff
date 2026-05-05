@@ -306,8 +306,6 @@
   }
   .footer a { color: var(--muted); }
 
-
-  /* ── Fix: inner icon elements should not catch clicks ── */
   .radio-dot, .chip-order, .podcast-toggle { pointer-events: none; }
 
   @media (max-width: 600px) {
@@ -553,6 +551,7 @@
         </div>
       </div>
     </div>
+
   </div>
 
   <!-- Section 2: Firm -->
@@ -825,6 +824,7 @@
       </div>
     </div>
 
+
     <div class="field">
       <label>Key people — always flag in action items</label>
       <div class="hint">Any call or email mentioning these people triggers a flagged action item. Format: Name | Context</div>
@@ -923,43 +923,26 @@
   </div>
 
 
-  <!-- ── Submit section ── -->
-  <div class="section" style="background: var(--blue-bg); border-color: var(--blue-border); margin-top: 32px;">
+  <!-- ── Submit to admin ── -->
+  <div class="section" style="background:var(--blue-bg);border-color:#bfdbfe;margin-top:32px;">
     <div class="section-header">
-      <div class="section-num" style="background: var(--blue);">✓</div>
+      <div class="section-num" style="background:var(--blue);">&#10003;</div>
       <div>
         <div class="section-title">Send your setup to the admin</div>
-        <div class="section-sub">Submit your info and your generated config will be emailed to Yoni for review. He'll add you to the repo and confirm you're ready to install.</div>
-      </div>
-    </div>
-
-    <div class="field-row">
-      <div class="field">
-        <label>Your name</label>
-        <input type="text" id="submit-name" placeholder="Sarah Mitchell">
-      </div>
-      <div class="field">
-        <label>Your email</label>
-        <input type="text" id="submit-email" placeholder="sarah@cascadecapital.com">
+        <div class="section-sub">Submit your info and Yoni will add you to the repo and confirm you're ready to install.</div>
       </div>
     </div>
     <div class="field-row">
-      <div class="field">
-        <label>GitHub username</label>
-        <input type="text" id="submit-github" placeholder="smitchell-cascade">
-      </div>
-      <div class="field">
-        <label>Firm name</label>
-        <input type="text" id="submit-firm" placeholder="Cascade Capital Partners">
-      </div>
+      <div class="field"><label>Your name</label><input type="text" id="submit-name" placeholder="Sarah Mitchell"></div>
+      <div class="field"><label>Your email</label><input type="text" id="submit-email" placeholder="sarah@cascadecapital.com"></div>
     </div>
-
-    <div id="submit-error" style="display:none; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 10px 14px; font-size: 13px; color: #991b1b; margin-bottom: 12px;"></div>
-    <div id="submit-success" style="display:none; background: var(--green-bg); border: 1px solid var(--green-border); border-radius: 8px; padding: 14px 18px; font-size: 14px; color: var(--green); font-weight: 600;"></div>
-
-    <button id="submit-btn" onclick="submitSetup()" style="background: var(--blue); color: white; border: none; border-radius: 8px; padding: 12px 28px; font-size: 15px; font-weight: 700; cursor: pointer; transition: background .15s; margin-top: 4px;">
-      Send to admin →
-    </button>
+    <div class="field-row">
+      <div class="field"><label>GitHub username</label><input type="text" id="submit-github" placeholder="smitchell-cascade"></div>
+      <div class="field"><label>Firm name</label><input type="text" id="submit-firm" placeholder="Cascade Capital Partners"></div>
+    </div>
+    <div id="submit-error" style="display:none;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;font-size:13px;color:#991b1b;margin-bottom:12px;"></div>
+    <div id="submit-success" style="display:none;background:var(--green-bg);border:1px solid var(--green-border);border-radius:8px;padding:14px 18px;font-size:14px;color:var(--green);font-weight:600;"></div>
+    <button onclick="submitSetup()" id="submit-btn" style="background:var(--blue);color:white;border:none;border-radius:8px;padding:12px 28px;font-size:15px;font-weight:700;cursor:pointer;margin-top:4px;">Send to admin &#8594;</button>
   </div>
 
   <div class="footer">
@@ -1119,29 +1102,19 @@ function genIntelligenceSourcesYaml() {
     }
   });
 
-  const newsLines = state.newsletterTags.map(u => `  - url: "${u}"`).join('
-');
-  const siteLines = state.websiteTags.map(u => `  - url: "${u}"
-    cadence: weekly`).join('
-');
+  const newsLines = state.newsletterTags.map(u => `  - url: "${u}"`).join('\n');
+  const siteLines = state.websiteTags.map(u => '  - url: "' + u + '"\n    cadence: weekly').join('\n');
 
   let yaml = `intelligence_sources:
   podcasts:
 `;
-  yaml += podLines.length ? podLines.join('
-') + '
-' : '    # No podcasts selected
-';
+  yaml += podLines.length ? podLines.join('\n') + '\n' : '    # No podcasts selected\n';
   yaml += `  newsletters:
 `;
-  yaml += newsLines ? newsLines + '
-' : '    # No newsletters added
-';
+  yaml += newsLines ? newsLines + '\n' : '    # No newsletters added\n';
   yaml += `  websites:
 `;
-  yaml += siteLines ? siteLines + '
-' : '    # No websites added
-';
+  yaml += siteLines ? siteLines + '\n' : '    # No websites added\n';
   return yaml;
 }
 
@@ -1299,16 +1272,13 @@ LinkedIn: ${linkedinUrl}` : '';
   const supp    = v('focus-supplement');
   const signoff = v('email-signoff') || 'Best,';
   const greeting= v('email-greeting') || 'Hi [first_name],';
-  const focus   = state.focusItems.map((f, i) => `${i+1}. ${f.value}`).join('
-');
+  const focus   = state.focusItems.map((f, i) => `${i+1}. ${f.value}`).join('\n');
   const peers   = state.peerTags.join(', ');
-  const never   = neverItems().map(n => `    - "${n}"`).join('
-');
+  const never   = neverItems().map(n => `    - "${n}"`).join('\n');
   const kp      = state.keypeopleEntries.map(e => {
     const [nm, ctx] = e.split('|').map(s => s.trim());
     return `- ${nm}${ctx ? ': ' + ctx : ''}`;
-  }).join('
-');
+  }).join('\n');
   const priorLine = prior ? `
 Prior firm(s): ${prior}.` : '';
 
@@ -1330,8 +1300,7 @@ Prior firm(s): ${prior}.` : '';
 
   const teamLines = state.teamMembers.map(m =>
     m.name ? `- ${m.name} (${m.role || 'team member'})` : ''
-  ).filter(Boolean).join('
-');
+  ).filter(Boolean).join('\n');
 
   const suppSection = supp
     ? `
@@ -1360,8 +1329,7 @@ ${kp}
 
   const neverSection = neverItems().length
     ? `  never_include:
-${neverItems().map(n => `    - "${n}"`).join('
-')}`
+${neverItems().map(n => `    - "${n}"`).join('\n')}`
     : '';
 
   return `# ${name} — Personal Context
@@ -1406,10 +1374,7 @@ ${focus || '1. [Fill in your sectors in priority order]'}
 
 ## YOUR FIRM
 
-${firm} (${short || 'SHORT'}) — infrastructure-focused investment platform.${teamLines ? '
-
-Team:
-' + teamLines : ''}
+${firm} (${short || 'SHORT'}) — infrastructure-focused investment platform.${teamLines ? '\n\nTeam:\n' + teamLines : ''}
 
 ---
 
@@ -1420,8 +1385,7 @@ Team:
 - Greeting: ${greeting}
 - Signoff: ${signoff}
 ${name.split(' ')[0] || '[First name]'}
-${neverSection ? '
-' + neverSection : ''}
+${neverSection ? '\n' + neverSection : ''}
   always_include:
     - "If sender asked a specific question, answer it directly in the first sentence"
     - "If declining or pushing out a meeting, propose at least one alternative"
@@ -1447,32 +1411,26 @@ function genFirmContextYaml() {
   const supp    = v('focus-supplement');
   const signoff = v('email-signoff') || 'Best,';
   const greeting= v('email-greeting') || 'Hi [first_name],';
-  const focus   = state.focusItems.map(f => `    - "${f.value}"`).join('
-');
-  const peers   = state.peerTags.map(p => `  - "${p}"`).join('
-');
+  const focus   = state.focusItems.map(f => `    - "${f.value}"`).join('\n');
+  const peers   = state.peerTags.map(p => `  - "${p}"`).join('\n');
 
   const teamYaml = state.teamMembers.filter(m => m.name).map(m => `  - name: "${m.name}"
     role: "${m.role || ''}"
     background: "${prior || ''}"
     internal_call_role: >
-      ${m.behavior}`).join('
-');
+      ${m.behavior}`).join('\n');
 
   const kpYaml = state.keypeopleEntries.map(e => {
     const [nm, ctx] = e.split('|').map(s => s.trim());
     return `  - name: "${nm}"
     context: "${ctx || ''}"
     flag_in_actions: true`;
-  }).join('
-');
+  }).join('\n');
 
-  const neverYaml = neverItems().map(n => `    - "${n}"`).join('
-');
+  const neverYaml = neverItems().map(n => `    - "${n}"`).join('\n');
 
   const owners = [name.split(' ')[0], ...state.teamMembers.filter(m=>m.name).map(m=>m.name.split(' ')[0])]
-    .filter(Boolean).map(n => `  - "${n}"`).join('
-');
+    .filter(Boolean).map(n => `  - "${n}"`).join('\n');
 
   return `# ── INTELLIGENCE SOURCES ─────────────────────────────────────────
 ${genIntelligenceSourcesYaml()}
@@ -1542,8 +1500,7 @@ ${neverYaml || '    # Add from configuration wizard'}
 
 # ── ANALYTICAL DEFAULTS ────────────────────────────────────────────
 prompt_overrides:
-  memo_focus_supplement: "${supp.replace(/
-/g, ' ')}"`;
+  memo_focus_supplement: "${supp.replace(/\n/g, ' ')}"`;
 }
 
 function genFirmConfigJson() {
@@ -1551,8 +1508,7 @@ function genFirmConfigJson() {
   const dealLine = deals
     .map(d => `"${d.toLowerCase()}"`)
     .concat(['"term sheet"','"loi"','"nda"','"diligence"','"ic memo"','"bid"','"proposal"'])
-    .join(',
-    ');
+    .join(',\n    ');
 
   return `{
   "deal_keywords": [
@@ -1576,8 +1532,7 @@ function heuristicParse(text) {
   const result = {};
 
   // Name: first line that looks like a name (2-4 words, no special chars)
-  const lines = text.split('
-').map(l => l.trim()).filter(Boolean);
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   for (const line of lines.slice(0, 10)) {
     if (/^[A-Z][a-z]+ [A-Z][a-z]+( [A-Z][a-z]+)?$/.test(line)) {
       result.name = line; break;
@@ -1604,8 +1559,7 @@ function heuristicParse(text) {
   }
 
   // Current firm: look for headline-style "Title at Firm" or first "at X" near top
-  const atFirm = text.match(/(?:at|@)\s+([A-Z][A-Za-z &,\.]+?)(?:
-|$|·|\|)/m);
+  const atFirm = text.match(/(?:at|@)\s+([A-Z][A-Za-z &,\.]+?)(?:\n|$|·|\|)/m);
   if (atFirm) result.currentFirm = atFirm[1].trim();
 
   // Prior firms: look for company names in experience section
@@ -1792,9 +1746,7 @@ ${text.slice(0, 4000)}`
       const data = await resp.json();
       const raw = data.content[0].text.trim();
       // Strip markdown code fences if present
-      const cleaned = raw.replace(/^```(?:json)?
-?/, '').replace(/
-?```$/, '').trim();
+      const cleaned = raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
       const parsed = JSON.parse(cleaned);
 
       // Apply AI results (override heuristics where AI is more confident)
@@ -1838,58 +1790,6 @@ ${text.slice(0, 4000)}`
   btn.disabled = false;
 }
 
-
-// ── Submit setup ───────────────────────────────────────────────────────────
-async function submitSetup() {
-  const name   = document.getElementById('submit-name').value.trim();
-  const email  = document.getElementById('submit-email').value.trim();
-  const github = document.getElementById('submit-github').value.trim();
-  const firm   = document.getElementById('submit-firm').value.trim();
-  const errEl  = document.getElementById('submit-error');
-  const succEl = document.getElementById('submit-success');
-  const btn    = document.getElementById('submit-btn');
-
-  errEl.style.display = 'none';
-  succEl.style.display = 'none';
-
-  if (!name || !email || !github) {
-    errEl.textContent = 'Please fill in your name, email, and GitHub username before submitting.';
-    errEl.style.display = 'block';
-    return;
-  }
-
-  btn.disabled = true;
-  btn.textContent = 'Sending…';
-
-  const claudeMd = document.getElementById('claude-md-output').textContent;
-
-  try {
-    const resp = await fetch('https://formspree.io/f/xykojkzd', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-      body: JSON.stringify({
-        name, email, github, firm,
-        subject: `COS Pipeline setup request — ${firm || name}`,
-        claude_md_preview: claudeMd.slice(0, 2000)
-      })
-    });
-
-    if (resp.ok) {
-      succEl.textContent = '✓ Sent! Yoni will add you to the repo and follow up within 24 hours.';
-      succEl.style.display = 'block';
-      btn.textContent = 'Sent ✓';
-      btn.style.background = 'var(--green)';
-    } else {
-      throw new Error('Server error ' + resp.status);
-    }
-  } catch (err) {
-    errEl.textContent = 'Submission failed — please email ygontownik@gmail.com directly with your name, GitHub username, and firm.';
-    errEl.style.display = 'block';
-    btn.disabled = false;
-    btn.textContent = 'Send to admin →';
-  }
-}
-
 // ── Main update ────────────────────────────────────────────────────────────
 function update() {
   document.getElementById('claude-md-output').textContent     = genClaudeMd();
@@ -1901,6 +1801,28 @@ function update() {
 renderPodcastGrid();
 renderCustomFeeds();
 update();
+// ── Submit setup ──────────────────────────────────────────────────────────
+async function submitSetup() {
+  const name=document.getElementById('submit-name').value.trim();
+  const email=document.getElementById('submit-email').value.trim();
+  const github=document.getElementById('submit-github').value.trim();
+  const firm=document.getElementById('submit-firm').value.trim();
+  const errEl=document.getElementById('submit-error');
+  const succEl=document.getElementById('submit-success');
+  const btn=document.getElementById('submit-btn');
+  errEl.style.display='none'; succEl.style.display='none';
+  if (!name||!email||!github) { errEl.textContent='Please fill in name, email, and GitHub username.'; errEl.style.display='block'; return; }
+  btn.disabled=true; btn.textContent='Sending\u2026';
+  try {
+    const resp=await fetch('https://formspree.io/f/xykojkzd',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({name,email,github,firm,subject:'COS Pipeline setup \u2014 '+(firm||name),claude_md:document.getElementById('claude-md-output').textContent.slice(0,2000)})});
+    if (resp.ok) { succEl.textContent='\u2713 Sent! Yoni will add you to the repo within 24 hours.'; succEl.style.display='block'; btn.textContent='Sent \u2713'; btn.style.background='var(--green)'; }
+    else throw new Error('Server error '+resp.status);
+  } catch(err) {
+    errEl.textContent='Submission failed \u2014 email ygontownik@gmail.com with your name, GitHub username, and firm.';
+    errEl.style.display='block'; btn.disabled=false; btn.textContent='Send to admin \u2192';
+  }
+}
+
 </script>
 </body>
 </html>
