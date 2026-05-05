@@ -2471,6 +2471,11 @@ class Handler(BaseHTTPRequestHandler):
             if user != 'owner':
                 self._send_403(); return
             self.send_json(200, {'jobs': _batch_jobs_data()})
+        elif self.path.split('?')[0] == '/system-health/latest.json':
+            # owner-only: aggregated system_health.py output
+            if user != 'owner':
+                self._send_403(); return
+            self._handle_system_health_latest()
         elif self.path.split('?')[0] == '/routines':
             # owner-only: routine inventory + per-task status
             if user != 'owner':
@@ -3853,6 +3858,19 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(200, {'ok': True, 'removed': before - len(data['deletions']), 'count': len(data['deletions'])})
 
     # ── Routines (Claude scheduled-task health) ───────────
+    def _handle_system_health_latest(self):
+        # Read aggregated system-health JSON written by tools/system_health.py.
+        path = Path.home() / 'dashboards' / 'data' / 'system-health' / 'latest.json'
+        if not path.exists():
+            self.send_json(404, {'error': 'system-health/latest.json not found'})
+            return
+        try:
+            payload = json.loads(path.read_text(encoding='utf-8'))
+        except (OSError, json.JSONDecodeError) as exc:
+            self.send_json(500, {'error': f'unreadable: {exc}'})
+            return
+        self.send_json(200, payload)
+
     def _handle_routines_list(self):
         self.send_json(200, {'routines': _routines_data()})
 
