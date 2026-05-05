@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>COS Pipeline — After Install</title>
+<style>
+  :root {
+    --cream:    #faf8f4;
+    --paper:    #f4f1ea;
+    --border:   #ddd8cc;
+    --ink:      #1a1714;
+    --muted:    #6b6460;
+    --blue:     #2563eb;
+    --blue-bg:  #eff6ff;
+    --green:    #15803d;
+    --green-bg: #f0fdf4;
+    --amber:    #92400e;
+    --amber-bg: #fffbeb;
+    --code-bg:  #1e1b18;
+    --code-fg:  #e8e3da;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 15px; line-height: 1.6;
+    background: var(--cream); color: var(--ink);
+  }
+
+  .site-nav {
+    background: var(--ink); display: flex; align-items: center;
+    padding: 0 28px; height: 48px;
+    position: sticky; top: 0; z-index: 200; gap: 4px;
+  }
+  .nav-brand { color: white; font-weight: 700; font-size: 14px; text-decoration: none; margin-right: 20px; letter-spacing: .01em; flex-shrink: 0; }
+  .nav-link {
+    color: rgba(255,255,255,.55); text-decoration: none; font-size: 13px; font-weight: 500;
+    padding: 0 14px; height: 48px; display: flex; align-items: center;
+    border-bottom: 2px solid transparent; transition: all .15s; white-space: nowrap;
+  }
+  .nav-link:hover { color: white; }
+  .nav-link.active { color: white; border-bottom-color: white; }
+
+  .header { border-bottom: 1px solid var(--border); background: var(--paper); padding: 32px 0; text-align: center; }
+  .header .firm { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+  .header h1 { font-size: 26px; font-weight: 700; color: var(--ink); }
+  .header p  { margin-top: 8px; color: var(--muted); font-size: 14px; }
+
+  .container { max-width: 720px; margin: 0 auto; padding: 48px 24px 80px; }
+
+  /* Steps */
+  .steps { display: flex; flex-direction: column; gap: 28px; }
+
+  .step { background: white; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+
+  .step-header { padding: 20px 24px 16px; display: flex; align-items: flex-start; gap: 16px; }
+  .step-num {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: var(--ink); color: white;
+    font-size: 13px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; margin-top: 1px;
+  }
+  .step-title { font-size: 17px; font-weight: 700; color: var(--ink); margin-bottom: 4px; }
+  .step-sub   { font-size: 12px; color: var(--muted); }
+  .step-body  { padding: 0 24px 24px 72px; }
+  .step-body p { color: var(--muted); font-size: 14px; margin-bottom: 16px; }
+  .step-body p:last-child { margin-bottom: 0; }
+
+  /* Code blocks */
+  .code-block { background: var(--code-bg); border-radius: 8px; margin: 14px 0; overflow: hidden; }
+  .code-label {
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em;
+    color: #6b7280; padding: 8px 14px 6px;
+    border-bottom: 1px solid #2a2520;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .copy-btn {
+    font-size: 11px; font-weight: 600; color: #9ca3af;
+    background: none; border: 1px solid #374151; border-radius: 4px;
+    padding: 2px 8px; cursor: pointer; transition: all .15s;
+  }
+  .copy-btn:hover { color: white; border-color: #6b7280; }
+  .copy-btn.copied { color: #34d399; border-color: #34d399; }
+  .code-block code {
+    display: block; padding: 14px;
+    font-family: "SFMono-Regular","Menlo","Consolas",monospace;
+    font-size: 12.5px; line-height: 1.7; color: var(--code-fg);
+    white-space: pre; overflow-x: auto;
+  }
+
+  /* URL block */
+  .url-block {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    background: var(--blue-bg); border: 1px solid #bfdbfe;
+    border-radius: 8px; padding: 10px 14px; margin: 12px 0;
+  }
+  .url-block a { font-family: "SFMono-Regular",monospace; font-size: 13px; color: var(--blue); text-decoration: none; word-break: break-all; }
+  .url-block a:hover { text-decoration: underline; }
+  .url-copy-btn {
+    font-size: 11px; font-weight: 600; color: var(--blue);
+    background: none; border: 1px solid #93c5fd; border-radius: 4px;
+    padding: 2px 8px; cursor: pointer; white-space: nowrap; transition: all .15s; flex-shrink: 0;
+  }
+  .url-copy-btn:hover { background: var(--blue); color: white; border-color: var(--blue); }
+  .url-copy-btn.copied { color: var(--green); border-color: var(--green); }
+
+  /* Tip / Note */
+  .tip {
+    background: var(--green-bg); border: 1px solid #86efac;
+    border-radius: 8px; padding: 12px 16px; font-size: 13px; color: #166534; margin: 14px 0;
+  }
+  .note {
+    background: var(--amber-bg); border: 1px solid #fcd34d;
+    border-radius: 8px; padding: 12px 16px; font-size: 13px; color: var(--amber); margin: 14px 0;
+  }
+  .note strong { display: block; margin-bottom: 2px; }
+
+  /* Doc list */
+  .doc-list { display: flex; flex-direction: column; gap: 8px; margin: 14px 0; }
+  .doc-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    background: var(--green-bg); border: 1px solid #86efac;
+    border-radius: 8px; padding: 10px 14px;
+  }
+  .doc-row-label { font-size: 13px; font-weight: 600; color: var(--ink); }
+  .doc-row-desc  { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .doc-badge { font-size: 11px; font-weight: 600; color: var(--green); background: white; border: 1px solid #86efac; border-radius: 4px; padding: 2px 8px; white-space: nowrap; flex-shrink: 0; }
+
+  /* Service table */
+  .service-list { display: flex; flex-direction: column; gap: 10px; margin: 14px 0; }
+  .service-card { background: var(--paper); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .service-header {
+    padding: 10px 16px; display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid var(--border); background: white;
+  }
+  .service-name { font-size: 14px; font-weight: 700; color: var(--ink); }
+  .service-badge { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px; }
+  .badge-zapier  { background: #fff3e0; color: #e65100; }
+  .badge-native  { background: var(--green-bg); color: var(--green); }
+  .badge-manual  { background: var(--blue-bg); color: var(--blue); }
+  .service-body { padding: 12px 16px; }
+  .service-body ol { padding-left: 18px; font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 5px; }
+  .service-body ol li { line-height: 1.5; }
+
+  code.inline {
+    font-family: "SFMono-Regular","Menlo",monospace;
+    font-size: 12px; background: #f0ece4; padding: 1px 5px; border-radius: 3px; color: var(--ink);
+  }
+
+  /* Schedule summary */
+  .schedule-bar {
+    display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0;
+  }
+  .sched-pill {
+    background: white; border: 1px solid var(--border); border-radius: 20px;
+    padding: 5px 12px; font-size: 12px; font-weight: 600; color: var(--ink);
+  }
+
+  .footer { text-align: center; color: var(--muted); font-size: 12px; padding: 32px 0 0; }
+  .footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+
+<nav class="site-nav">
+  <a href="index.html" class="nav-brand">COS Pipeline</a>
+  <a href="index.html" class="nav-link">Home</a>
+  <a href="HOW_IT_ALL_WORKS.html" class="nav-link">How It Works</a>
+  <a href="what_gets_captured.html" class="nav-link">What Gets Captured</a>
+  <a href="onboard-new-firm.html" class="nav-link">Get Started</a>
+  <a href="after_install.html" class="nav-link active">After Install</a>
+  <a href="configure.html" class="nav-link">Configure</a>
+</nav>
+
+<div class="header">
+  <div class="firm">COS Pipeline</div>
+  <h1>After Install</h1>
+  <p>Setup is done. Here's where your documents live and how to connect your recording service.</p>
+</div>
+
+<div class="container">
+<div class="steps">
+
+  <!-- Step 1: Open your dashboard -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">1</div>
+      <div>
+        <div class="step-title">Open your dashboard</div>
+        <div class="step-sub">The URL was printed at the end of the installer</div>
+      </div>
+    </div>
+    <div class="step-body">
+      <p>Your dashboard is running locally. Open it in your browser:</p>
+      <div class="url-block">
+        <a href="http://localhost:7777" target="_blank">http://localhost:7777</a>
+        <button class="url-copy-btn" onclick="copyUrl(this)">Copy</button>
+      </div>
+      <p>Log in with the username and password you set during the installer. If your port is different, the installer printed it — look for the line that says <code class="inline">Dashboard : http://localhost:XXXX</code>.</p>
+      <div class="tip">On iPhone or another device: use the Tailscale URL printed at the end of Step 3 during install (<code class="inline">http://100.x.x.x:7777</code>).</div>
+    </div>
+  </div>
+
+  <!-- Step 2: Find your folder IDs -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">2</div>
+      <div>
+        <div class="step-title">Find your Drive folder IDs</div>
+        <div class="step-sub">You'll need these to connect your recording service</div>
+      </div>
+    </div>
+    <div class="step-body">
+      <p>Run this command in Terminal. It reads your config and prints every folder ID the pipeline is watching:</p>
+      <div class="code-block">
+        <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <code>python3 -c "
+import yaml, os
+cfg = os.environ.get('COS_CONFIG_DIR', os.path.expanduser('~/cos-pipeline-config'))
+ctx = yaml.safe_load(open(f'{cfg}/firm_context.yaml'))
+for src in ctx.get('transcript_sources', []):
+    print(f\"\n{src['name']}\")
+    for fid in src.get('folder_ids', []):
+        print(f\"  https://drive.google.com/drive/folders/{fid}\")
+"</code>
+      </div>
+      <p>This prints one clickable Drive URL per folder. Open each one to confirm it exists in your Google Drive, then copy the folder ID (the long string at the end of the URL) to paste into your recording service in the next step.</p>
+      <div class="note">
+        <strong>Can't find the folder?</strong> The installer creates these folders automatically. If one is missing, re-run <code class="inline">./setup.sh --instance=&lt;your-slug&gt; --validate</code> to diagnose.
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 3: Your Google Docs dataroom -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">3</div>
+      <div>
+        <div class="step-title">Your Google Docs — where everything gets written</div>
+        <div class="step-sub">Created automatically during install — start empty, fill up over time</div>
+      </div>
+    </div>
+    <div class="step-body">
+      <p>Run this to print direct links to all three of your shared docs:</p>
+      <div class="code-block">
+        <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
+        <code>python3 -c "
+import yaml, os
+cfg = os.environ.get('COS_CONFIG_DIR', os.path.expanduser('~/cos-pipeline-config'))
+docs = yaml.safe_load(open(f'{cfg}/config/drive-docs.yaml'))
+for k, v in docs.get('docs', {}).items():
+    print(f\"{k}: https://docs.google.com/document/d/{v}\")
+"</code>
+      </div>
+      <div class="doc-list">
+        <div class="doc-row">
+          <div><div class="doc-row-label">Follow-ups</div><div class="doc-row-desc">Action items from every email and call, tagged by owner</div></div>
+          <span class="doc-badge">Written by pipeline</span>
+        </div>
+        <div class="doc-row">
+          <div><div class="doc-row-label">Pipeline / Deal Intel</div><div class="doc-row-desc">Full investor memos from every processed call</div></div>
+          <span class="doc-badge">Written by pipeline</span>
+        </div>
+        <div class="doc-row">
+          <div><div class="doc-row-label">People / CRM</div><div class="doc-row-desc">Contacts extracted from calls and emails</div></div>
+          <span class="doc-badge">Written by pipeline</span>
+        </div>
+      </div>
+      <div class="tip">Bookmark all three. The pipeline writes to them automatically — you read, it writes.</div>
+    </div>
+  </div>
+
+  <!-- Step 4: Connect your recording service -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">4</div>
+      <div>
+        <div class="step-title">Connect your recording service to Drive</div>
+        <div class="step-sub">One-time setup — after this, every call is processed automatically</div>
+      </div>
+    </div>
+    <div class="step-body">
+      <p>Paste the folder ID from Step 2 into whichever service you use. Only need to do this once.</p>
+
+      <div class="service-list">
+
+        <div class="service-card">
+          <div class="service-header">
+            <div class="service-name">Otter AI</div>
+            <span class="service-badge badge-zapier">Requires Zapier</span>
+          </div>
+          <div class="service-body">
+            <ol>
+              <li>Go to <strong>zapier.com</strong> → Create a new Zap</li>
+              <li>Trigger: <em>Otter AI — New Recording</em></li>
+              <li>Action: <em>Google Drive — Upload File</em></li>
+              <li>Set the destination folder to your Otter AI folder ID from Step 2</li>
+              <li>Turn the Zap on — every new Otter recording deposits automatically</li>
+            </ol>
+          </div>
+        </div>
+
+        <div class="service-card">
+          <div class="service-header">
+            <div class="service-name">Beside AI</div>
+            <span class="service-badge badge-native">Native Drive sync</span>
+          </div>
+          <div class="service-body">
+            <ol>
+              <li>In Beside AI, open <strong>Settings → Integrations → Google Drive</strong></li>
+              <li>Connect your Google account</li>
+              <li>Set the export folder to the folder ID from Step 2</li>
+              <li>Enable <em>Auto-sync after each meeting</em></li>
+            </ol>
+          </div>
+        </div>
+
+        <div class="service-card">
+          <div class="service-header">
+            <div class="service-name">Fireflies</div>
+            <span class="service-badge badge-native">Native Drive sync</span>
+          </div>
+          <div class="service-body">
+            <ol>
+              <li>In Fireflies, go to <strong>Integrations → Google Drive</strong></li>
+              <li>Connect your Google account</li>
+              <li>Select the transcript folder from Step 2 as the export destination</li>
+            </ol>
+          </div>
+        </div>
+
+        <div class="service-card">
+          <div class="service-header">
+            <div class="service-name">Grain</div>
+            <span class="service-badge badge-native">Native Drive sync</span>
+          </div>
+          <div class="service-body">
+            <ol>
+              <li>In Grain, go to <strong>Workspace Settings → Integrations → Google Drive</strong></li>
+              <li>Enable Drive export and select your folder from Step 2</li>
+            </ol>
+          </div>
+        </div>
+
+        <div class="service-card">
+          <div class="service-header">
+            <div class="service-name">Read AI</div>
+            <span class="service-badge badge-native">Native Drive sync</span>
+          </div>
+          <div class="service-body">
+            <ol>
+              <li>In Read AI, go to <strong>Settings → Integrations → Google Drive</strong></li>
+              <li>Enable sync and point at your folder ID from Step 2</li>
+            </ol>
+          </div>
+        </div>
+
+        <div class="service-card">
+          <div class="service-header">
+            <div class="service-name">Fathom</div>
+            <span class="service-badge badge-native">Native Drive sync</span>
+          </div>
+          <div class="service-body">
+            <ol>
+              <li>In Fathom, go to <strong>Settings → Integrations</strong></li>
+              <li>Enable Google Drive sync and select your folder from Step 2</li>
+            </ol>
+          </div>
+        </div>
+
+        <div class="service-card">
+          <div class="service-header">
+            <div class="service-name">Manual transcript</div>
+            <span class="service-badge badge-manual">No setup needed</span>
+          </div>
+          <div class="service-body">
+            <ol>
+              <li>Paste your transcript text into a new file and save it as <code class="inline">Call Title.txt</code></li>
+              <li>Upload it to any of your configured Drive folders from Step 2</li>
+              <li>The pipeline picks it up at 7:22am or immediately via the real-time webhook</li>
+            </ol>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 5: What runs and when -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">5</div>
+      <div>
+        <div class="step-title">What runs and when</div>
+        <div class="step-sub">All automatic — nothing to trigger manually</div>
+      </div>
+    </div>
+    <div class="step-body">
+      <div class="schedule-bar">
+        <span class="sched-pill">6:45am — Market intelligence fetch</span>
+        <span class="sched-pill">7:22am — Transcript backfill</span>
+        <span class="sched-pill">7:51am — Personal briefing</span>
+        <span class="sched-pill">Every 2h — Email triage</span>
+        <span class="sched-pill">Always on — Dashboard server</span>
+        <span class="sched-pill">Real-time — New transcript in Drive</span>
+      </div>
+      <p>To trigger any pipeline manually or check when it last ran, go to your dashboard admin panel:</p>
+      <div class="url-block">
+        <a href="http://localhost:7777/admin/routines" target="_blank">http://localhost:7777/admin/routines</a>
+        <button class="url-copy-btn" onclick="copyUrl(this)">Copy</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="footer" style="margin-top: 48px;">
+  <a href="what_gets_captured.html">What gets captured →</a>
+  &nbsp;·&nbsp;
+  <a href="HOW_IT_ALL_WORKS.html">Full architecture →</a>
+  &nbsp;·&nbsp;
+  TCIP internal — not indexed by search engines
+</div>
+
+</div>
+
+<script>
+function copyCode(btn) {
+  const code = btn.closest('.code-block').querySelector('code').textContent;
+  navigator.clipboard.writeText(code).then(() => {
+    btn.textContent = 'Copied!'; btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+function copyUrl(btn) {
+  const url = btn.closest('.url-block').querySelector('a').href;
+  navigator.clipboard.writeText(url).then(() => {
+    btn.textContent = 'Copied!'; btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+</script>
+
+</body>
+</html>
