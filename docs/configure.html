@@ -434,6 +434,7 @@
   <a href="index.html" class="nav-brand">COS Pipeline</a>
   <a href="index.html" class="nav-link">Home</a>
   <a href="HOW_IT_ALL_WORKS.html" class="nav-link">How It Works</a>
+  <a href="what_gets_captured.html" class="nav-link">What Gets Captured</a>
   <a href="onboard.html" class="nav-link">Get Started</a>
   <a href="configure.html" class="nav-link active">Configure</a>
 </nav>
@@ -1097,7 +1098,7 @@ function renderUrlTags(type) {
   if (!el) return;
   const arr = type === 'newsletter' ? state.newsletterTags : state.websiteTags;
   el.innerHTML = arr.map(v =>
-    `<span class="tag">${v}<span class="tag-remove" onclick="removeUrlTag('${type}','${v.replace(/'/g,"\\'")}')">×</span></span>`
+    `<span class="tag">${v}<span class="tag-remove" onclick="removeUrlTag('${type}','${v.replace(/'/g,"\'")}')">×</span></span>`
   ).join('');
 }
 
@@ -1106,24 +1107,42 @@ function genIntelligenceSourcesYaml() {
 
   ALL_PODCASTS.forEach(pod => {
     if (selectedPodcasts.has(pod.name)) {
-      podLines.push(`  - show: "${pod.name}"\n    rss: "${pod.rss}"\n    enabled: true`);
+      podLines.push(`  - show: "${pod.name}"
+    rss: "${pod.rss}"
+    enabled: true`);
     }
   });
   state.customFeeds.forEach(feed => {
     if (feed.name && feed.rss) {
-      podLines.push(`  - show: "${feed.name}"\n    rss: "${feed.rss}"\n    enabled: true`);
+      podLines.push(`  - show: "${feed.name}"
+    rss: "${feed.rss}"
+    enabled: true`);
     }
   });
 
-  const newsLines = state.newsletterTags.map(u => `  - url: "${u}"`).join('\n');
-  const siteLines = state.websiteTags.map(u => `  - url: "${u}"\n    cadence: weekly`).join('\n');
+  const newsLines = state.newsletterTags.map(u => `  - url: "${u}"`).join('
+');
+  const siteLines = state.websiteTags.map(u => `  - url: "${u}"
+    cadence: weekly`).join('
+');
 
-  let yaml = `intelligence_sources:\n  podcasts:\n`;
-  yaml += podLines.length ? podLines.join('\n') + '\n' : '    # No podcasts selected\n';
-  yaml += `  newsletters:\n`;
-  yaml += newsLines ? newsLines + '\n' : '    # No newsletters added\n';
-  yaml += `  websites:\n`;
-  yaml += siteLines ? siteLines + '\n' : '    # No websites added\n';
+  let yaml = `intelligence_sources:
+  podcasts:
+`;
+  yaml += podLines.length ? podLines.join('
+') + '
+' : '    # No podcasts selected
+';
+  yaml += `  newsletters:
+`;
+  yaml += newsLines ? newsLines + '
+' : '    # No newsletters added
+';
+  yaml += `  websites:
+`;
+  yaml += siteLines ? siteLines + '
+' : '    # No websites added
+';
   return yaml;
 }
 
@@ -1201,7 +1220,7 @@ function renderTags(type) {
             : state.keypeopleEntries;
   const el = document.getElementById(containerId);
   el.innerHTML = arr.map(v =>
-    `<span class="tag">${v}<span class="tag-remove" onclick="removeTag('${type}', '${v.replace(/'/g,"\\'")}')">×</span></span>`
+    `<span class="tag">${v}<span class="tag-remove" onclick="removeTag('${type}', '${v.replace(/'/g,"\'")}')">×</span></span>`
   ).join('');
 }
 
@@ -1279,19 +1298,24 @@ function genClaudeMd() {
   const firm    = v('firm-name')  || 'YOUR FIRM';
   const short   = v('firm-short') || 'FIRM';
   const linkedinUrl = v('linkedin-url');
-  const linkedinLine = linkedinUrl ? `\nLinkedIn: ${linkedinUrl}` : '';
+  const linkedinLine = linkedinUrl ? `
+LinkedIn: ${linkedinUrl}` : '';
   const frame   = state.investorFrame;
   const supp    = v('focus-supplement');
   const signoff = v('email-signoff') || 'Best,';
   const greeting= v('email-greeting') || 'Hi [first_name],';
-  const focus   = state.focusItems.map((f, i) => `${i+1}. ${f.value}`).join('\n');
+  const focus   = state.focusItems.map((f, i) => `${i+1}. ${f.value}`).join('
+');
   const peers   = state.peerTags.join(', ');
-  const never   = neverItems().map(n => `    - "${n}"`).join('\n');
+  const never   = neverItems().map(n => `    - "${n}"`).join('
+');
   const kp      = state.keypeopleEntries.map(e => {
     const [nm, ctx] = e.split('|').map(s => s.trim());
     return `- ${nm}${ctx ? ': ' + ctx : ''}`;
-  }).join('\n');
-  const priorLine = prior ? `\nPrior firm(s): ${prior}.` : '';
+  }).join('
+');
+  const priorLine = prior ? `
+Prior firm(s): ${prior}.` : '';
 
   const memoFmt = state.memoFormat === 'brief'
     ? 'Brief summary: 3–4 paragraph narrative. Core argument, key issues, next step.'
@@ -1311,22 +1335,38 @@ function genClaudeMd() {
 
   const teamLines = state.teamMembers.map(m =>
     m.name ? `- ${m.name} (${m.role || 'team member'})` : ''
-  ).filter(Boolean).join('\n');
+  ).filter(Boolean).join('
+');
 
   const suppSection = supp
-    ? `\n### Sector watch items\n\nAlways flag in memos and action items:\n${supp}\n`
+    ? `
+### Sector watch items
+
+Always flag in memos and action items:
+${supp}
+`
     : '';
 
   const peersSection = peers
-    ? `\n### Peer / competitor firms\n\nFlag any mention of these in intelligence output: ${peers}.\n`
+    ? `
+### Peer / competitor firms
+
+Flag any mention of these in intelligence output: ${peers}.
+`
     : '';
 
   const kpSection = kp
-    ? `\n### Key people — always flag\n\n${kp}\n`
+    ? `
+### Key people — always flag
+
+${kp}
+`
     : '';
 
   const neverSection = neverItems().length
-    ? `  never_include:\n${neverItems().map(n => `    - "${n}"`).join('\n')}`
+    ? `  never_include:
+${neverItems().map(n => `    - "${n}"`).join('
+')}`
     : '';
 
   return `# ${name} — Personal Context
@@ -1371,7 +1411,10 @@ ${focus || '1. [Fill in your sectors in priority order]'}
 
 ## YOUR FIRM
 
-${firm} (${short || 'SHORT'}) — infrastructure-focused investment platform.${teamLines ? '\n\nTeam:\n' + teamLines : ''}
+${firm} (${short || 'SHORT'}) — infrastructure-focused investment platform.${teamLines ? '
+
+Team:
+' + teamLines : ''}
 
 ---
 
@@ -1380,8 +1423,10 @@ ${firm} (${short || 'SHORT'}) — infrastructure-focused investment platform.${t
 - Tone: ${state.emailTone}
 - Length: ${state.emailBrevity}
 - Greeting: ${greeting}
-- Signoff: ${signoff}\\n${name.split(' ')[0] || '[First name]'}
-${neverSection ? '\n' + neverSection : ''}
+- Signoff: ${signoff}
+${name.split(' ')[0] || '[First name]'}
+${neverSection ? '
+' + neverSection : ''}
   always_include:
     - "If sender asked a specific question, answer it directly in the first sentence"
     - "If declining or pushing out a meeting, propose at least one alternative"
@@ -1407,24 +1452,32 @@ function genFirmContextYaml() {
   const supp    = v('focus-supplement');
   const signoff = v('email-signoff') || 'Best,';
   const greeting= v('email-greeting') || 'Hi [first_name],';
-  const focus   = state.focusItems.map(f => `    - "${f.value}"`).join('\n');
-  const peers   = state.peerTags.map(p => `  - "${p}"`).join('\n');
+  const focus   = state.focusItems.map(f => `    - "${f.value}"`).join('
+');
+  const peers   = state.peerTags.map(p => `  - "${p}"`).join('
+');
 
   const teamYaml = state.teamMembers.filter(m => m.name).map(m => `  - name: "${m.name}"
     role: "${m.role || ''}"
     background: "${prior || ''}"
     internal_call_role: >
-      ${m.behavior}`).join('\n');
+      ${m.behavior}`).join('
+');
 
   const kpYaml = state.keypeopleEntries.map(e => {
     const [nm, ctx] = e.split('|').map(s => s.trim());
-    return `  - name: "${nm}"\n    context: "${ctx || ''}"\n    flag_in_actions: true`;
-  }).join('\n');
+    return `  - name: "${nm}"
+    context: "${ctx || ''}"
+    flag_in_actions: true`;
+  }).join('
+');
 
-  const neverYaml = neverItems().map(n => `    - "${n}"`).join('\n');
+  const neverYaml = neverItems().map(n => `    - "${n}"`).join('
+');
 
   const owners = [name.split(' ')[0], ...state.teamMembers.filter(m=>m.name).map(m=>m.name.split(' ')[0])]
-    .filter(Boolean).map(n => `  - "${n}"`).join('\n');
+    .filter(Boolean).map(n => `  - "${n}"`).join('
+');
 
   return `# ── INTELLIGENCE SOURCES ─────────────────────────────────────────
 ${genIntelligenceSourcesYaml()}
@@ -1483,7 +1536,8 @@ ${peers || '  # Add peer firms in the configuration wizard'}
 # ── DRAFT VOICE ───────────────────────────────────────────────────
 draft_voice:
   tone: "${state.emailTone}"
-  preferred_signoff: "${signoff}\\n${name.split(' ')[0] || '[Name]'}"
+  preferred_signoff: "${signoff}
+${name.split(' ')[0] || '[Name]'}"
   default_greeting: "${greeting}"
   brevity: "${state.emailBrevity}"
   always_include:
@@ -1495,7 +1549,8 @@ ${neverYaml || '    # Add from configuration wizard'}
 
 # ── ANALYTICAL DEFAULTS ────────────────────────────────────────────
 prompt_overrides:
-  memo_focus_supplement: "${supp.replace(/\n/g, ' ')}"`;
+  memo_focus_supplement: "${supp.replace(/
+/g, ' ')}"`;
 }
 
 function genFirmConfigJson() {
@@ -1504,7 +1559,8 @@ function genFirmConfigJson() {
   const dealLine = deals
     .map(d => `"${d.toLowerCase()}"`)
     .concat(['"term sheet"','"loi"','"nda"','"diligence"','"ic memo"','"bid"','"proposal"'])
-    .join(',\n    ');
+    .join(',
+    ');
 
   // Recruit keywords only emitted when job_search is on (scope A: recruiting
   // is opt-in; off by default produces a cleaner config and skips RECRUIT
@@ -1521,7 +1577,8 @@ function genFirmConfigJson() {
   const recLine = recruits
     .map(r => `"${r.toLowerCase()}"`)
     .concat(['"interview"','"role"','"opportunity"','"resume"','"cv"','"offer"','"comp"','"compensation"','"headhunter"','"recruiter"'])
-    .join(',\n    ');
+    .join(',
+    ');
 
   return `{
   "deal_keywords": [
@@ -1549,7 +1606,8 @@ function heuristicParse(text) {
   const result = {};
 
   // Name: first line that looks like a name (2-4 words, no special chars)
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const lines = text.split('
+').map(l => l.trim()).filter(Boolean);
   for (const line of lines.slice(0, 10)) {
     if (/^[A-Z][a-z]+ [A-Z][a-z]+( [A-Z][a-z]+)?$/.test(line)) {
       result.name = line; break;
@@ -1576,7 +1634,8 @@ function heuristicParse(text) {
   }
 
   // Current firm: look for headline-style "Title at Firm" or first "at X" near top
-  const atFirm = text.match(/(?:at|@)\s+([A-Z][A-Za-z &,\.]+?)(?:\n|$|·|\|)/m);
+  const atFirm = text.match(/(?:at|@)\s+([A-Z][A-Za-z &,\.]+?)(?:
+|$|·|\|)/m);
   if (atFirm) result.currentFirm = atFirm[1].trim();
 
   // Prior firms: look for company names in experience section
@@ -1596,13 +1655,13 @@ function heuristicParse(text) {
 
   // Investor frame
   const lower = text.toLowerCase();
-  if (/\b(managing director|managing partner|gp|general partner|co-founder|partner)\b/.test(lower)) {
+  if (/(managing director|managing partner|gp|general partner|co-founder|partner)/.test(lower)) {
     result.investorFrame = 'principal investor';
-  } else if (/\b(lp|limited partner|pension|endowment|sovereign|allocat)\b/.test(lower)) {
+  } else if (/(lp|limited partner|pension|endowment|sovereign|allocat)/.test(lower)) {
     result.investorFrame = 'LP / allocator';
-  } else if (/\b(analyst|associate|vp|vice president)\b/.test(lower)) {
+  } else if (/(analyst|associate|vp|vice president)/.test(lower)) {
     result.investorFrame = 'analyst';
-  } else if (/\b(corporate dev|corp dev|m&a|business development)\b/.test(lower)) {
+  } else if (/(corporate dev|corp dev|m&a|business development)/.test(lower)) {
     result.investorFrame = 'corporate development';
   }
 
@@ -1763,7 +1822,9 @@ ${text.slice(0, 4000)}`
       const data = await resp.json();
       const raw = data.content[0].text.trim();
       // Strip markdown code fences if present
-      const cleaned = raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
+      const cleaned = raw.replace(/^```(?:json)?
+?/, '').replace(/
+?```$/, '').trim();
       const parsed = JSON.parse(cleaned);
 
       // Apply AI results (override heuristics where AI is more confident)
