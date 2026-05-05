@@ -255,9 +255,270 @@ def apply_deal_overrides() -> int:
     return set_count
 
 
+def _assert_no_orphan_deal_dirs() -> None:
+    """G4 silent assertion (codified 2026-05-04): every data/deals/<TICKER>/
+    directory MUST contain deal.md, actions.md, LPs.md, TERMS.md. Missing
+    files signal a half-created deal which would render incompletely on the
+    dashboard. Logs a single line per orphan to stderr and continues — does
+    NOT block compile, since compile may itself be the recovery path."""
+    if not DEAL_SYSTEM.exists():
+        return
+    required = {'deal.md', 'actions.md', 'LPs.md', 'TERMS.md'}
+    for d in sorted(DEAL_SYSTEM.iterdir()):
+        if not d.is_dir() or d.name.startswith('_'):
+            continue
+        present = {f.name for f in d.iterdir() if f.is_file()}
+        missing = required - present
+        if missing:
+            print(
+                f'  G4 ORPHAN data/deals/{d.name}/ — missing: {sorted(missing)}',
+                file=sys.stderr,
+            )
+
+
+def _gc_stale_tombstones() -> None:
+    """R2 silent garbage-collect (codified 2026-05-04): tombstoned items in
+    data/user-state/deletions.json that no longer match any current
+    awaitingExternal[]/followUps[]/personal-items[] for ≥90 days are moved
+    to an archive. Keeps deletions.json from growing unboundedly. Silent."""
+    import datetime as _dt
+    deletions_path = _ROOT / 'data' / 'user-state' / 'deletions.json'
+    archive_path   = _ROOT / 'data' / 'user-state' / 'deletions-archive.json'
+    dash_path      = COMPILED_DIR / 'dashboard-data.json'
+    personal_path  = _ROOT / 'data' / 'user-state' / 'personal-items.json'
+    if not deletions_path.exists():
+        return
+    try:
+        dels = json.loads(deletions_path.read_text())
+    except Exception:
+        return
+    items = dels.get('deletions') or []
+    if not items:
+        return
+    # Build a Set of all currently-live IDs across consumers of the tombstone.
+    live_ids = set()
+    try:
+        if dash_path.exists():
+            d = json.loads(dash_path.read_text())
+            for arr in ('awaitingExternal', 'followUps', 'dealIntel', 'originationInbox'):
+                for it in (d.get(arr) or []):
+                    iid = it.get('id')
+                    if iid: live_ids.add(iid)
+    except Exception:
+        pass
+    try:
+        if personal_path.exists():
+            p = json.loads(personal_path.read_text())
+            for it in (p.get('items') or []):
+                # personal-items may compute id client-side; attempt _djb2 if present
+                iid = it.get('id')
+                if iid: live_ids.add(iid)
+    except Exception:
+        pass
+
+    now = _dt.datetime.now(_dt.UTC)
+    keep = []
+    archive = []
+    try:
+        existing_archive = json.loads(archive_path.read_text()) if archive_path.exists() else {'deletions': []}
+    except Exception:
+        existing_archive = {'deletions': []}
+    for entry in items:
+        iid = entry.get('id')
+        if not iid: continue
+        if iid in live_ids:
+            keep.append(entry)
+            continue
+        # No live match — check age. Format: 2026-05-04T16:30:00Z
+        try:
+            ts_str = (entry.get('deleted_at') or '').rstrip('Z')
+            ts = _dt.datetime.fromisoformat(ts_str).replace(tzinfo=_dt.UTC)
+            age_days = (now - ts).days
+        except Exception:
+            keep.append(entry)
+            continue
+        if age_days >= 90:
+            archive.append(entry)
+        else:
+            keep.append(entry)
+    if archive:
+        existing_archive['deletions'].extend(archive)
+        archive_path.write_text(json.dumps(existing_archive, indent=2))
+        dels['deletions'] = keep
+        deletions_path.write_text(json.dumps(dels, indent=2))
+        print(f'  R2 GC: {len(archive)} stale tombstone(s) archived', file=sys.stderr)
+
+
+def _emit_g5_candidates_sidecar() -> None:
+    """G5 silent inverse audit (codified 2026-05-04): firms surfacing in
+    dashboard-data.json (followUps[]/awaitingExternal[]) ≥3 times in the last
+    14 days that don't appear in any curated config land in a
+    `candidatesAwaitingTriage:` sidecar at data/compiled/g5-candidates.json.
+    Inspected by analyst passes. Silent — no user-facing surface."""
+    import datetime as _dt, re as _re
+    dash_path = COMPILED_DIR / 'dashboard-data.json'
+    deal_cfg  = _ROOT / 'config' / 'deal-config.yaml'
+    recr_cfg  = _ROOT / 'config' / 'recruit-config.yaml'
+    out_path  = COMPILED_DIR / 'g5-candidates.json'
+    if not dash_path.exists():
+        return
+    try:
+        d = json.loads(dash_path.read_text())
+    except Exception:
+        return
+
+    # Build the "known firms" set from configs + deal directories.
+    # Plus alias needles (so "gideon powell" → Cholla resolves), team members
+    # (so "Mark Saxe" doesn't surface as a candidate firm), and peer-firm
+    # denylist (so "LS Power" / "Stonepeak" don't either).
+    known = set()
+    fc_path = Path.home() / 'cos-pipeline-config' / 'firm_context.yaml'
+    try:
+        import yaml as _yaml
+        if deal_cfg.exists():
+            cfg = _yaml.safe_load(deal_cfg.read_text()) or {}
+            for sec in ('liveDeals','dealOrigination','capitalRaisingAdvisors','prospectiveInvestors','dormantInvestors'):
+                for r in (cfg.get(sec) or []):
+                    n = (r.get('name') or '').strip().lower()
+                    if n: known.add(n)
+        if recr_cfg.exists():
+            rcfg = _yaml.safe_load(recr_cfg.read_text()) or {}
+            for bucket in ('inDiscussion','waitingToHear','doIChase','dormant'):
+                for r in (rcfg.get('priorityTargets', {}).get(bucket) or []):
+                    n = (r.get('name') or '').strip().lower()
+                    if n: known.add(n)
+            for r in (rcfg.get('recruiters') or []):
+                n = (r.get('firm') or '').strip().lower()
+                if n: known.add(n)
+        # Alias needles + peer firms + team members from firm_context.yaml
+        if fc_path.exists():
+            fc = _yaml.safe_load(fc_path.read_text()) or {}
+            for entry in (fc.get('counterparty_aliases') or []):
+                for needle in (entry.get('needles') or []):
+                    if needle: known.add(needle.lower())
+                if entry.get('canonical'):
+                    known.add(entry['canonical'].lower())
+            for peer in (fc.get('peer_firms') or []):
+                if peer: known.add(peer.lower())
+            # Team members — full names + first names
+            for tm in (fc.get('team') or []):
+                nm = (tm.get('name') or '').lower().strip()
+                if nm:
+                    known.add(nm)
+                    first = nm.split()[0] if nm else ''
+                    if first: known.add(first)
+            principal = (fc.get('principal') or {}).get('name') or ''
+            if principal:
+                known.add(principal.lower())
+                p_first = principal.lower().split()[0] if principal else ''
+                if p_first: known.add(p_first)
+    except Exception:
+        pass
+    if DEAL_SYSTEM.exists():
+        for ddir in DEAL_SYSTEM.iterdir():
+            if ddir.is_dir() and not ddir.name.startswith('_'):
+                known.add(ddir.name.lower())
+    # Pull the broader peer/GP denylist from cos-dashboard-fetch.py (it's
+    # the most maintained list of peer firms; firm_context.yaml peer_firms
+    # is a curated subset).
+    try:
+        import sys as _sys
+        _fetch_dir = str(Path(__file__).parent.parent if (Path(__file__).parent.name == 'compile') else Path(__file__).parent)
+        # cos-dashboard-fetch.py lives at ~/cos-pipeline/
+        _cp_root = Path.home() / 'cos-pipeline'
+        if _cp_root.exists() and str(_cp_root) not in _sys.path:
+            _sys.path.insert(0, str(_cp_root))
+        # Module name has a hyphen — load by file path.
+        import importlib.util as _ilu
+        _spec = _ilu.spec_from_file_location('_cdf', _cp_root / 'cos-dashboard-fetch.py')
+        if _spec and _spec.loader:
+            try:
+                _cdf = _ilu.module_from_spec(_spec)
+                _spec.loader.exec_module(_cdf)
+                for p in (getattr(_cdf, '_PEER_GP_DENYLIST', set()) or []):
+                    known.add(p.lower())
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # Count firm mentions in followUps[] + awaitingExternal[] within last 14 days.
+    today = _dt.date.today()
+    cutoff = (today - _dt.timedelta(days=14)).isoformat()
+    counts = {}
+    for fu in (d.get('followUps') or []):
+        if (fu.get('addedDate') or '') < cutoff: continue
+        who = (fu.get('who') or '').strip()
+        if not who: continue
+        # Take the firm part — first part before "/" or "—"
+        firm = _re.split(r'\s*[—–\/|,]\s*', who)[0].strip()
+        if firm:
+            counts[firm.lower()] = counts.get(firm.lower(), 0) + 1
+    for ae in (d.get('awaitingExternal') or []):
+        if (ae.get('addedDate') or '') < cutoff: continue
+        cp = (ae.get('counterparty') or '').strip()
+        if not cp: continue
+        firm = _re.split(r'\s*[—–\/|,]\s*', cp)[0].strip()
+        if firm:
+            counts[firm.lower()] = counts.get(firm.lower(), 0) + 1
+
+    # Service-provider denylist — counsel/accounting firms etc. that appear in
+    # transcripts but aren't deals/LPs. Extend as new ones surface.
+    SERVICE_DENY_SUBSTRINGS = (
+        'legal group', 'law group', 'pllc', 'attorneys', 'counsel',
+        'accountants', 'tax services',
+    )
+
+    def _looks_like_person(s: str) -> bool:
+        """Heuristic: 2-word string with no firm keyword and both words start
+        with a capital letter (in the original) → probably a person name."""
+        parts = s.split()
+        if len(parts) != 2: return False
+        firm_kws = ('capital', 'partners', 'management', 'investments', 'group',
+                    'corp', 'inc', 'llc', 'holdings', 'ventures', 'fund',
+                    'equity', 'bank', 'sandler', 'sachs', 'finance', 'energy',
+                    'industries', 'infrastructure')
+        if any(k in s for k in firm_kws): return False
+        return True
+
+    # Candidates: firms with ≥3 mentions, NOT in known set, NOT obviously a person.
+    candidates = []
+    for firm, n in counts.items():
+        if n < 3: continue
+        # Substring-match against the known set (alias needles are substrings)
+        if any(k in firm or firm in k for k in known if k):
+            continue
+        # Service providers (legal, accounting) are not dashboard candidates.
+        if any(s in firm for s in SERVICE_DENY_SUBSTRINGS):
+            continue
+        # Skip single-word names that look like a person (heuristic).
+        if len(firm.split()) == 1 and len(firm) < 12:
+            continue
+        if _looks_like_person(firm):
+            continue
+        candidates.append({'firm': firm, 'mentions_14d': n})
+    candidates.sort(key=lambda x: -x['mentions_14d'])
+    payload = {
+        'updated_at': _dt.datetime.now(_dt.UTC).isoformat(timespec='seconds').replace('+00:00','Z'),
+        'window_days': 14,
+        'rule': 'G5 inverse audit — firms mentioned >= 3x but not in any curated config',
+        'candidates': candidates,
+    }
+    out_path.write_text(json.dumps(payload, indent=2))
+    if candidates:
+        print(f'  G5 candidates: {len(candidates)} firm(s) need triage → {out_path.name}', file=sys.stderr)
+
+
 def main():
     t0 = time.time()
     COMPILED_DIR.mkdir(parents=True, exist_ok=True)
+
+    # ── Step 0: silent invariants (G4 orphan dirs, R2 stale-tombstone GC,
+    # G5 inverse-audit candidates sidecar). Codified 2026-05-04. Each runs
+    # silently — no user-facing alerts. Findings land in stderr or sidecar
+    # files for analyst-pass review.
+    _assert_no_orphan_deal_dirs()
+    _gc_stale_tombstones()
 
     # ── Step 1: compile deal data ────────────────────────────────
     ok = run_step(
@@ -266,6 +527,9 @@ def main():
     )
     if not ok:
         sys.exit(1)
+
+    # G5 runs after Step 1 so dashboard-data.json is fresh.
+    _emit_g5_candidates_sidecar()
 
     # ── Step 2: generate CoS briefing ───────────────────────────
     run_step(

@@ -946,6 +946,151 @@ Log each supersession to stderr so prompt drift can be audited.
 
 ---
 
+## TOPIC — ITEM LIFECYCLE STANDARD (Genesis / Maturation / Resolution)
+
+Codified 2026-05-04 after a holistic pass on what makes items appear on/off the dashboard correctly. The 22 rules below extend the earlier topic-specific rules with a unified lifecycle model.
+
+**Applied via** (one of three modes per rule):
+- **Silent auto-correct** — compile/render code enforces; no user-facing alert.
+- **Extraction-prompt enrichment** — `BACKFILL_PREAMBLE`/`EMAIL_PREAMBLE` emit richer fields so compile doesn't have to infer.
+- **Documentation-only** — analyst-pass discipline; no live enforcement.
+
+The user has explicitly chosen NO warn-only validators — the dashboard auto-corrects or stays silent; rules are the standard for analyst passes.
+
+---
+
+### GENESIS — how items appear on the dashboard
+
+#### G1 — Confidence threshold for promotion *(extraction-prompt enrichment)*
+
+A firm mentioned once in passing is not a new entry. Auto-promotion to `deal-config.yaml > capitalRaisingAdvisors[]` / `prospectiveInvestors[]` requires either ≥3 mentions across ≥2 source types within 14 days OR co-occurrence with an action verb (commit, send, schedule, intro, decided) on a single mention.
+
+Extraction prompts emit `confidence: high|medium|low` on `new_contacts[]`. `low` mentions stay in a triage queue; only `high` (or repeated `medium`) candidates surface for promotion.
+
+#### G2 — Schema validation at config load *(silent auto-correct)*
+
+Every row in `deal-config.yaml` and `recruit-config.yaml` requires: `name`, `lastAction`, `nextTouchBase` (or `movedToDormant`), `owner`, AND either non-empty `myAction` OR explicit dormant flag. Rows violating the schema are silently dropped from render with a single line to `/tmp/cos-dashboard.log` — no admin-tab alert.
+
+#### G3 — Owner whitelist on curated config *(silent auto-correct)*
+
+Curated config `owner:` field accepts only values in `firm_context.yaml > team[]` (case-insensitive normalization for nicknames). Out-of-whitelist owners are treated as `owner: ""` at render and logged. Same enforcement that already applies to extraction-emitted owner field, now extended to curated configs.
+
+#### G4 — No orphan deal directories *(silent auto-correct)*
+
+Every `data/deals/<TICKER>/` MUST contain `deal.md`, `actions.md`, `LPs.md`, `TERMS.md`. Missing files signal a half-created deal. `deal-system-compile.py > _assert_no_orphan_deal_dirs()` runs at every compile, logs the violation to stderr, and continues — no block, since compile may itself be the recovery path.
+
+#### G5 — "What's missing?" inverse audit *(silent auto-correct + sidecar)*
+
+Firms surfaced in `dashboard-data.json > followUps[]/awaitingExternal[]` ≥3 times in the last 14 days that do NOT appear in any curated config OR `data/deals/<TICKER>/` directory land in `data/compiled/g5-candidates.json` for analyst-pass triage. Catches the "ATT FTTH was in the briefing for weeks before anyone added it to config" failure mode.
+
+---
+
+### MATURATION — how items change while live
+
+#### M1 — Single source of truth per fact *(documentation-only)*
+
+Each discrete fact (commitment amount, owner, last meeting date, gating decision, milestone date) lives in exactly ONE field on the dashboard. Avoid duplicating between `takeaway` and `standingCommitments`, between `nextStep` and `myAction`. When the same fact appears in two fields, decide which field owns it and remove from the other. Auditor discipline; no validator.
+
+#### M2 — `last_reviewed` distinct from `last_activity` *(documentation-only schema add)*
+
+`last_activity` = something happened to the deal externally (call, email, transcript, action closure). `last_reviewed` = a human last opened the curated config row and confirmed the prose still reads true. A deal can have very recent activity AND a stale curated row simultaneously. Schema add (optional field); compile picks max of either for "freshness" surfaces. Adopt when the curated config edit volume justifies the distinction.
+
+#### M3 — Fact-reconciliation hierarchy *(documentation-only)*
+
+When sources disagree on a fact (e.g., `deal.md` says `stage: Sourcing`, briefing fullText calls it "Active Bid"), the canonical hierarchy is:
+
+1. **Calendar-confirmed event** (call took place, doc was signed) — overrides everything
+2. **Curated config** (manually-edited `deal-config.yaml`)
+3. **Compiled artifacts** (`deal-system-data.json`)
+4. **Briefing prose** (LLM-summarized)
+5. **Extracted intel** (raw `awaitingExternal`/`followUps`)
+
+When (1) and (2) disagree, the curated config MUST update to reflect (1). Auditor discipline — no live lint.
+
+#### M4 — Recency × relevance, not just recency *(documentation-only)*
+
+Action sort prefers most-recent `addedDate` today. Add a `criticality` weight (high = bid/term sheet/IC; medium = diligence/intro/structure; low = scheduling/admin) so a 7-day-old "counterparty proposal received" doesn't get buried under a 1-hour-old "confirm Tuesday meeting." Implementation: `_overlay_freshest_signal()` already supports keyword weighting; extend with a `criticality` token table when needed.
+
+#### M5 — Owner-change requires explicit confirmation *(documentation-only)*
+
+When `owner:` field changes on an active config row, the change deserves a moment of human review (typo? extraction error? real reassignment?). Today changes are silent. Captured as discipline: when editing a config, double-check owner changes are intentional. Future enhancement: an owner-change diff lint at commit time.
+
+#### M6 — Health-score-drop alert *(documentation-only)*
+
+When a deal's `health` drops ≥10 points compile-to-compile, the change is meaningful. Future enhancement: a small chip on the deal card; not a banner. Today: rely on analyst-pass review of the deal-system-compile output line that prints scores.
+
+---
+
+### RESOLUTION — how items leave the dashboard
+
+#### R1 — `Result` field required at close *(documentation-only)*
+
+Every action moved to `## Closed items` in `actions.md` must have a `Result` field — what happened, what was the outcome, was it superseded. Today's closures already follow this; codify so future analyst passes don't lose the discipline.
+
+#### R2 — Stale-tombstone garbage collection *(silent auto-correct)*
+
+`data/user-state/deletions.json` grows monotonically as items get tombstoned. `deal-system-compile.py > _gc_stale_tombstones()` archives entries whose `id` no longer matches any current `awaitingExternal[]/followUps[]/personal-items[]` AND whose `deleted_at` is ≥90 days old. Archive lands in `data/user-state/deletions-archive.json` (restorable). Keeps the live tombstones file lean.
+
+#### R3 — Auto-archive long-dormant *(documentation-only)*
+
+Entries in `dormantInvestors:` / `priorityTargets.dormant:` / dormant recruiters with `movedToDormant` ≥6 months old should move to `archive/<year>/` directory. Preserves history; keeps active surfaces clean. Adopt when first 6-month dormancy threshold is hit.
+
+#### R4 — Closure traceability — evidence reference *(extraction-prompt enrichment)*
+
+When marking an action closed, the `Result` field SHOULD reference specific evidence: a transcript date, a follow-up `[RESOLVED]` tag, an executed document, a calendar event with attendees. Extraction prompts emit `resolution_source` on action_items where `state: closed`. Compile uses to populate Result automatically when closing actions inferred from extracted intel.
+
+---
+
+### HOLISTIC — cross-cutting standards
+
+#### H1 — Explicit `state` field on every action item *(extraction-prompt enrichment)*
+
+The dashboard infers item state today by parsing `myAction`/`nextStep` prose. That's brittle and produces the empty-myAction-wait-state acrobatics. Extraction prompts now emit `state: active|waiting|watching|blocked|dormant|closed` on every action item. Curated configs get the same field as a documented schema add — apply at the next batch edit, not as forced migration.
+
+#### H2 — Action surface vs. intel surface separation *(documentation-only)*
+
+The dashboard is for things the user **acts on**. Industry research, peer firm intel, market commentary — those are intel and belong in the briefing tab, NOT on HQ. Today's `peer_firms` denylist enforces this for one type. The general rule: items without `myAction` AND not blocking another action belong in a "context" surface, not on action surfaces.
+
+#### H3 — Briefing cannot contradict the dashboard *(documentation-only)*
+
+Briefing fullText and curated `deal-config.yaml > takeaway` for the same deal must agree on stage, owner, capital amount, named counterparty, deadlines. When they diverge, that's a bug in either the curated config (stale) or the briefing source (wrong). Future enhancement: a daily lint that diffs briefing prose against config takeaway and flags substantive divergence.
+
+#### H4 — Empty-state rendering *(documentation-only — UI rule)*
+
+When all items in a section are dormant or empty, the section should collapse to a tasteful "Nothing live here" rather than render an empty card. UI discipline; for the parallel UI session.
+
+#### H5 — Past-due staleness escalation visibility *(documentation-only — UI rule)*
+
+Past-due items without resolution should escalate visibility (red border, top of list, "URGENT — classify or resolve" prompt). Don't blend with future-dated items. UI discipline.
+
+#### H6 — Promotion / demotion as explicit transitions *(documentation-only)*
+
+Movement of an item between buckets (awaiting → curated → dormant → archive) deserves an audit-logged transition. Future enhancement: `data/user-state/transitions.json` recording each transition with timestamp + reason. Today these are ad-hoc edits.
+
+#### H7 — Rules-log itself needs maintenance *(documentation-only)*
+
+`dash_corrections.md` is now substantial. Quarterly: audit each rule — still valid? still applied? Mark obsolete with `[SUPERSEDED-YYYY-MM-DD]` tag inline. Don't let the rules library become its own form of dashboard rot.
+
+#### H8 — Cross-tab redundancy check *(silent auto-correct)*
+
+Already implemented as `_assert_cross_config_dedup()` for deal-config × recruit-config. Extend to all visible surfaces if more bucket-types are added. Documented exception: name containing `(CURRENT ROLE)` in recruit-config — the principal's career anchor.
+
+---
+
+### Inverse audit summary
+
+The genesis-to-resolution lifecycle plus 8 holistic rules — 22 in total — define the standard the dashboard must hold itself to. **Implementation summary**:
+
+| Mode | Rules | Effort |
+|---|---|---|
+| Silent auto-correct | G2, G3, G4, G5, R2, H8 | Implemented in this session |
+| Extraction-prompt enrichment | G1, H1, R4 | Layered into `BACKFILL_PREAMBLE` + `EMAIL_PREAMBLE` |
+| Documentation only (analyst-pass discipline) | M1, M2, M3, M4, M5, M6, R1, R3, H2, H3, H4, H5, H6, H7 | No live enforcement; checked during analyst passes |
+
+No warn-only validators. No admin-tab alerts. No real-time nags. The dashboard either auto-corrects, or quietly captures findings in stderr / sidecar files for the next analyst pass to review.
+
+---
+
 ## TOPIC — DEAL STAGE & FRESHNESS
 
 ### 2026-05-04 — Canonical deal-stage ladder (ordered)

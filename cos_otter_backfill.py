@@ -1010,12 +1010,29 @@ EXTRACTION TASKS:
      "owner": "{_OWNERS}|[named speaker]",
      "workstream": "Job Search|{_DEAL_WS}",
      "action_type": "new_action|status_update",
+     "state": "active|waiting|watching|blocked|dormant|closed",
+     "resolution_source": "(only when state=closed) cite the evidence: doc title + date, follow-up [RESOLVED] tag, etc.",
      "context": "specific context. Use one of these patterns: 'fundraising/LP discussion — [LP firm name]', 'deal diligence — [deal/asset name]', 'deal origination — [target name]', 'competitive intel — [peer firm]', 'recruiting — [firm name]'. Always name the specific entity.",
      "dashboard_path": "REQUIRED — exact path from DASHBOARD PATH REFERENCE above. NEVER leave empty. Format: 'COS › {_DEAL_WS} Deals › [deal name]', 'COS › {_DEAL_WS} Fundraising › [LP name]', 'Deal Pipeline › [theme] › [target name]'. Use 'COS › Follow-ups' only when no specific deal/LP/recruiting path applies."
    }}
 
+   STATE FIELD GUIDE (codified 2026-05-04 — eliminates compile-time inference of state from prose):
+     • "active"   → I'm doing something soon. The principal/team owns the next move.
+     • "waiting"  → They owe me something. Counterparty owns the next move.
+     • "watching" → Passive intel; no action expected near-term.
+     • "blocked"  → Gated on a known dependency (decision, prior commitment, doc receipt). Name the gate in `what`.
+     • "dormant"  → Relationship/item paused; reactivate only on fresh signal.
+     • "closed"   → Done. Populate `resolution_source` with evidence.
+   Pick the strongest applicable state. Default if unclear: "active" for principal-side actions, "waiting" for counterparty-side.
+
 3. new_contacts: Every person named who should be tracked — including people mentioned but not on the call.
-   Each: {{"name": "...", "firm": "...", "title": "...", "context": "one line — how they came up and why relevant"}}
+   Each: {{"name": "...", "firm": "...", "title": "...", "context": "one line — how they came up and why relevant", "confidence": "high|medium|low"}}
+
+   CONFIDENCE GUIDE:
+     • "high"   → Named with role/firm AND co-occurs with action verb (commit, send, schedule, intro, decided) OR principal explicitly engages with them on the call.
+     • "medium" → Named clearly but only context, no action commitment.
+     • "low"    → Passing mention; could be a peer/competitor reference rather than an actionable contact.
+   Default: "medium". Compile uses confidence to gate auto-promotion of new firms to fundraising/deal config — `low` mentions are kept in a triage queue, not auto-added.
 
 4. recruiting_intel: Populate whenever there is job search, firm evaluation, or role discussion — regardless of call category.
    {{"firm":"","role":"","stage":"Screening|Longlist|Shortlist|Live Process|Networking","key_dates":"","comp_intel":"","notes":""}}
@@ -1034,7 +1051,10 @@ EXTRACTION TASKS:
 
 7. call_date: Best estimate of when the call occurred. Format YYYY-MM-DD. Use document date, title clues, or content. Default to TODAY if unknown.
 
-8. envelope_items: Routing-v2 items for the dashboard. Emit IN ADDITION to (not instead of) fields 2-5 above.
+8. mentioned_firms: Array of every firm/organization name surfaced in the transcript — actionable AND passing references. Powers the inverse-audit ("what's mentioned but not on the dashboard?") sweep. NEVER omit firms just because they didn't generate an action_item.
+   Each: {{"name": "...", "context": "one-phrase: what role did they play in the conversation?"}}
+
+9. envelope_items: Routing-v2 items for the dashboard. Emit IN ADDITION to (not instead of) fields 2-5 above.
 
    STALENESS FILTER — do not emit awaiting_external items for past one-time events:
    If the item is about a conference, summit, forum, registration, RSVP, or attendance at a specific event AND the event date has already passed as of TODAY, omit the awaiting_external item entirely. The opportunity is gone. Same applies to scheduling proposals (propose times, send calendar invite) where the proposed date has clearly passed. Follow the ENVELOPE ROUTING RULES section injected below (loaded from config/routing-rules.md — the single source of truth shared with all other pipelines). For direct-interaction calls like this one, all seven content_types are permitted; apply the "{_DEAL_WS} / LP / recruiting calls" or "Intel calls" ruleset as appropriate based on whether the principal is a participant or listener.
@@ -1050,7 +1070,7 @@ EXTRACTION TASKS:
    • content_type="awaiting_external" with owner="external" REQUIRES counterparty in "Firm — Person" format.
 
 RESPOND WITH THIS JSON ONLY (no markdown, no explanation):
-{{"category":"...","one_line_summary":"...","call_date":"...","action_items":[{{"who":"...","what":"...","due":"...","owner":"...","workstream":"...","action_type":"new_action|status_update","context":"...","dashboard_path":"..."}}],"new_contacts":[...],"recruiting_intel":{{}},"tomac_intel":[{{"investor_or_firm":"...","status":"...","key_feedback":"...","next_action":"...","intel_type":"...","dashboard_path":"..."}}],"envelope_items":[{{"content_type":"...","owner":"...","counterparty":"","parent_id":"","due":"","context":"...","dashboard_path":"...","content":"..."}}]}}
+{{"category":"...","one_line_summary":"...","call_date":"...","action_items":[{{"who":"...","what":"...","due":"...","owner":"...","workstream":"...","action_type":"new_action|status_update","state":"active|waiting|watching|blocked|dormant|closed","resolution_source":"","context":"...","dashboard_path":"..."}}],"new_contacts":[{{"name":"...","firm":"...","title":"...","context":"...","confidence":"high|medium|low"}}],"recruiting_intel":{{}},"tomac_intel":[{{"investor_or_firm":"...","status":"...","key_feedback":"...","next_action":"...","intel_type":"...","dashboard_path":"..."}}],"mentioned_firms":[{{"name":"...","context":"..."}}],"envelope_items":[{{"content_type":"...","owner":"...","counterparty":"","parent_id":"","due":"","context":"...","dashboard_path":"...","content":"..."}}]}}
 """
 
 BACKFILL_PREAMBLE = _fc.build_backfill_header(_CTX) + _BACKFILL_BODY
