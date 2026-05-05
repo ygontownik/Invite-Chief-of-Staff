@@ -371,6 +371,66 @@ def principal_first_name(ctx: dict) -> str:
     return _principal(ctx).get("name", "Principal").split()[0]
 
 
+def principal_full_name(ctx: dict) -> str:
+    return _principal(ctx).get("name", "Principal")
+
+
+def principal_email(ctx: dict) -> str:
+    return _principal(ctx).get("email", "")
+
+
+def principal_role(ctx: dict) -> str:
+    return _principal(ctx).get("role", "senior investor")
+
+
+def principal_background(ctx: dict) -> str:
+    return _principal(ctx).get("background", "")
+
+
+def firm_name(ctx: dict) -> str:
+    return _firm(ctx).get("name", "the firm")
+
+
+def deal_lead_name(ctx: dict) -> str:
+    return _deal_lead(ctx).get("name", "your co-founder")
+
+
+def deal_lead_background(ctx: dict) -> str:
+    return _deal_lead(ctx).get("background", "")
+
+
+def build_email_header(ctx: dict) -> str:
+    """Identity / framing header for the email-extraction preamble.
+
+    Mirrors build_backfill_header() but tuned for email threads —
+    the principal is on every message (sender or recipient), so the
+    speaker-attribution scaffolding is simpler. Caller appends the
+    static extraction-task instructions below this block."""
+    p = _principal(ctx)
+    f = _firm(ctx)
+    dl = _deal_lead(ctx)
+    p_name = p.get("name", "Principal")
+    p_first = p_name.split()[0]
+    p_email = p.get("email", "")
+    p_role = p.get("role", "senior investor")
+    p_bg = p.get("background", "")
+    dl_name = dl.get("name", "your co-founder")
+    dl_bg = dl.get("background", "")
+    firm = f.get("name", "the firm")
+    return (
+        f"You are the Chief of Staff AI for {p_name} — {p_role}, {p_bg}, "
+        f"co-founding {firm} with {dl_name} ({dl_bg}).\n\n"
+        f"You are extracting ACTION-READY INTELLIGENCE from an email thread "
+        f"that {p_first} has tagged for dashboard capture. This thread is a "
+        f"DIRECT-INTERACTION source — {p_first} is a sender or recipient on "
+        f"every message — so all seven envelope content_types are permitted "
+        f"(my_action, awaiting_external, status_update, deal_takeaway, "
+        f"origination_idea, lp_intel, theme_note).\n\n"
+        f"OWNER ATTRIBUTION:\n"
+        f'- "{p_first}@" / "{p_email}" is always {p_first}.\n'
+    )
+
+
 # ── Analytical defaults ───────────────────────────────────────────────────────
 # The memo section headers and optional focus supplement are the shipped defaults.
 # They live here (not hardcoded in pipeline scripts) so new users get them for
