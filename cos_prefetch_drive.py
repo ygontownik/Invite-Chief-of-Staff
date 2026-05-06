@@ -13,8 +13,8 @@ Collected concurrently (ThreadPoolExecutor, max_workers=11):
   4-12. All 9 Drive priority folders — files modified since yesterday 7am
 
 Usage:
-    python3 ~/tomac-cove-pipeline/cos_prefetch_drive.py
-    python3 ~/tomac-cove-pipeline/cos_prefetch_drive.py --since 2026-04-14T07:00:00
+    python3 ~/cos-pipeline/cos_prefetch_drive.py
+    python3 ~/cos-pipeline/cos_prefetch_drive.py --since 2026-04-14T07:00:00
 
 Outputs JSON to stdout. On error, outputs {"error": "..."}.
 """

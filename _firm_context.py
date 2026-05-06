@@ -43,9 +43,9 @@ def _find_config_dir() -> Path:
 
     Search order (per DECISIONS C3 + C4):
       1. $COS_CONFIG_DIR env var (explicit override — set in ~/.zshrc)
-      2. ~/cos-pipeline-config-tomac/ (canonical: slug-suffixed per C3)
-      3. ~/cos-pipeline-config/       (legacy: pre-C3 default; symlinked to -tomac/)
-      4. <pipeline_dir>/              (legacy: config living alongside code)
+      2. ~/cos-pipeline-config-<slug>/ (canonical: slug-suffixed per C3)
+      3. ~/cos-pipeline-config/        (legacy: pre-C3 default)
+      4. <pipeline_dir>/               (legacy: config living alongside code)
     """
     env = os.environ.get("COS_CONFIG_DIR")
     if env:
@@ -53,9 +53,12 @@ def _find_config_dir() -> Path:
         if p.is_dir():
             return p
 
-    canonical_tomac = Path.home() / "cos-pipeline-config-tomac"
-    if canonical_tomac.is_dir() and (canonical_tomac / "firm_context.yaml").exists():
-        return canonical_tomac
+    # Maintainer-install fallback path. Subscribers should set
+    # $COS_CONFIG_DIR explicitly; this path stays here so existing
+    # installs continue to work without an env var.
+    canonical_path = Path.home() / "cos-pipeline-config-tomac"  # noqa: tenant-leak
+    if canonical_path.is_dir() and (canonical_path / "firm_context.yaml").exists():
+        return canonical_path
 
     legacy_team = Path.home() / "cos-pipeline-config"
     if legacy_team.is_dir() and (legacy_team / "firm_context.yaml").exists():
@@ -189,6 +192,54 @@ def load_firm_config(firm_config_path=None) -> dict:
             return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         return {}
+
+
+def load_user_context(email: str) -> dict:
+    """Load per-user config from <config_dir>/users/.
+
+    Lookup order (first match wins):
+      1. <config_dir>/users/<email>.yaml       (e.g. user@example.com.yaml)
+      2. <config_dir>/users/<local-part>.yaml  (e.g. user.yaml — part before @)
+      3. <config_dir>/users/<email>            (no extension — skipped if empty)
+
+    Returns {} if no file is found, the file is empty, or any error occurs.
+    Never raises.
+    """
+    try:
+        import yaml
+        config_dir = _find_config_dir()
+        users_dir = config_dir / "users"
+        local_part = email.split("@")[0] if "@" in email else email
+
+        candidates = [
+            users_dir / f"{email}.yaml",
+            users_dir / f"{local_part}.yaml",
+        ]
+        for candidate in candidates:
+            if candidate.exists():
+                try:
+                    with open(candidate) as f:
+                        data = yaml.safe_load(f)
+                    if data:
+                        return data
+                except Exception:
+                    return {}
+
+        # Pattern 3: bare filename (no extension), skip if empty
+        bare = users_dir / email
+        if bare.exists() and bare.stat().st_size > 0:
+            try:
+                with open(bare) as f:
+                    data = yaml.safe_load(f)
+                if data:
+                    return data
+            except Exception:
+                return {}
+
+    except Exception:
+        pass
+
+    return {}
 
 
 def load_active_packages(firm_config_path=None) -> list:

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -296,8 +297,9 @@ def main():
     p.add_argument("--json", action="store_true", help="JSON output for dashboard")
     p.add_argument("--by-script", action="store_true", help="Show per-script breakdown")
     p.add_argument("--by-model",  action="store_true", help="Show per-model breakdown")
-    p.add_argument("--tenant",    default="tomac",
-                   help="Tenant slug for subscription dispatch panel (default tomac)")
+    p.add_argument("--tenant",    default=os.environ.get("COS_TENANT_SLUG", "default"),
+                   help="Tenant slug for subscription dispatch panel "
+                        "(default $COS_TENANT_SLUG or 'default')")
     p.add_argument("--no-subscription", action="store_true",
                    help="Suppress the subscription-dispatch panel")
     args = p.parse_args()

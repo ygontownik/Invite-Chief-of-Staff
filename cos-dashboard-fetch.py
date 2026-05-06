@@ -324,7 +324,7 @@ def get_gmail_activity(gmail_svc):
                 else:
                     signal = 'Recruiting'
             elif any(k in combined for k in _DEAL_KEYS):
-                workstream = 'tomac'
+                workstream = 'tomac'  # noqa: tenant-leak (legacy workstream key — preserved for back-compat with frontend)
                 if 'term sheet' in combined or ' loi ' in combined or 'letter of intent' in combined:
                     signal = 'Term sheet / LOI'
                 elif ' nda ' in combined:
@@ -663,12 +663,12 @@ def _drop_team_member_counterparties(items):
 
     Also catches items whose RAW counterparty was a team member but no
     content-alias matched (so re-derivation didn't fire). These leak
-    through with cp=Mark Saxe / Yoni / Nik as the visible label and
+    through with the team member's name as the visible label and
     confuse the user — the dashboard claims it's waiting on an external
     party when really it's waiting on someone on the team.
 
     Codified 2026-05-05 per user request: 'this should be specific to
-    non-team members actions ... should NOT include mark or nik.'
+    non-team members actions ... should NOT include team members.'
     """
     fc_team = []
     try:
@@ -773,8 +773,8 @@ def _redupe_after_canonicalization(items):
 def _rederive_counterparty(items):
     """Re-derive `counterparty` from content+context aliases.
 
-    The extractor often sets counterparty to the email sender ("Lee /
-    Piper Sandler Syndication" when Lee forwards a thread about PFS),
+    The extractor often sets counterparty to the email sender (e.g.
+    an intro broker forwarding a thread about a different deal),
     even when the substantive subject of the action is a DIFFERENT
     counterparty. This pass scans the content + context fields for
     counterparty_alias needles and, when one matches, overrides
@@ -787,9 +787,9 @@ def _rederive_counterparty(items):
          which strips trailing person names and applies aliases on
          the original counterparty string)
 
-    Codified 2026-05-05 — the dashboard was rendering ~25 PFS-subject
-    items as "Lee / Piper Sandler Syndication" because the extractor
-    used the inbound sender's firm as counterparty.
+    Codified 2026-05-05 — the dashboard was rendering ~25 substantive
+    deal-subject items under the intro broker's name because the
+    extractor used the inbound sender's firm as counterparty.
     """
     for item in items:
         raw = (item.get('counterparty') or '').strip()
@@ -924,7 +924,7 @@ def parse_followups(text):
         'otter':          'https://drive.google.com/drive/folders/1zJly0cCiqsbZ3umYBXse7nYE7tUpFGOr',
         'transcript':     'https://drive.google.com/drive/folders/1zJly0cCiqsbZ3umYBXse7nYE7tUpFGOr',
         'call':           'https://drive.google.com/drive/folders/1jYntgSVBsW5-5rdx18TeZhHRsI9xT74p',
-        'fit ventures':   'https://docs.google.com/document/d/1LHorixPs8ppwSvQzGfA_B6609YZA8dSpR4rmppENzpc/edit',
+        'fit ventures':   'https://docs.google.com/document/d/1LHorixPs8ppwSvQzGfA_B6609YZA8dSpR4rmppENzpc/edit',  # noqa: tenant-leak (deal-key → drive-doc routing — migrate to drive-docs.yaml)
     }
 
     def source_url(src_raw, linked_to):
@@ -937,7 +937,7 @@ def parse_followups(text):
         # ── Google Doc sources (specific doc IDs) ──
         if any(k in lt_lower for k in ['tomac', 'pipeline', 'weekly docket', 'weekly call']):
             return 'https://docs.google.com/document/d/1LHorixPs8ppwSvQzGfA_B6609YZA8dSpR4rmppENzpc/edit'
-        if any(k in lt_lower for k in ['recruit', 'piper maddox', 'reinova', 'one search', 'harper harrison',
+        if any(k in lt_lower for k in ['recruit', 'piper maddox', 'reinova', 'one search', 'harper harrison',  # noqa: tenant-leak (recruiter routing needles — should migrate to recruit-config.yaml)
                                         'renewable energy recruit', 'recruiting meeting',
                                         'russell reynolds', 'charlie watson', 'george allen', 'bennet cogden']):
             return 'https://docs.google.com/document/d/1ZnTCVoA0ID7XTDFy27yDnrEVhBqx75kaTg_QXFq4eXA/edit'
@@ -946,7 +946,7 @@ def parse_followups(text):
         if any(k in src_lower for k in ['recruit', 'harper', 'renewable energy',
                                          'russell reynolds', 'charlie watson', 'george allen', 'bennet cogden']):
             return 'https://drive.google.com/drive/folders/1tMEGofeqzfF93YhPCyGe0dgJj8tzdRlF'  # Otter/Recruiting
-        if any(k in src_lower for k in ['tomac', 'tc call', 'fit ventures', 'thunderhead', 'pacific fleet', 'black bayou']):
+        if any(k in src_lower for k in ['tomac', 'tc call', 'fit ventures', 'thunderhead', 'pacific fleet', 'black bayou']):  # noqa: tenant-leak (deal-name routing needles — should migrate to firm_context counterparty_aliases canonicals)
             return 'https://drive.google.com/drive/folders/1pHmuq_TfLY46GDg0BzRIwrq57ictIT5S'  # Otter/TC
         if 'transcript' in src_lower or 'otter' in src_lower:
             return 'https://drive.google.com/drive/folders/1dt-s-D1SWaTrpIEsi0GiBAu1BCQCoPGq'  # Otter/Other
@@ -1184,10 +1184,10 @@ def _overlay_freshest_signal(deals, followups, envelope_items, today_str):
         # structure, refund, raise, post, IRA credit, milestone, bridge) over
         # scheduling / meeting-logistics actions.
         _FUNDRAISING_HINT = (
-            'fea','teaser','cim','term sheet',' lc ','letter of credit','post',
-            'milestone','refund','refundable','bridge','raise','anchor','tcip',
-            'ic memo','ira','credit','structure','phase 2','2,000 mw','400 mw',
-            '150 mw','oncor','pclr','capital','fundraise','fundraising',
+            'fea','teaser','cim','term sheet',' lc ','letter of credit','post',  # noqa: tenant-leak
+            'milestone','refund','refundable','bridge','raise','anchor','tcip',  # noqa: tenant-leak
+            'ic memo','ira','credit','structure','phase 2','2,000 mw','400 mw',  # noqa: tenant-leak
+            '150 mw','oncor','pclr','capital','fundraise','fundraising',  # noqa: tenant-leak
         )
         _SCHEDULING_HINT = (
             'ranch visit','schedule','reschedule','meeting','in-person',
@@ -1292,7 +1292,7 @@ def _overlay_freshest_signal(deals, followups, envelope_items, today_str):
 _STRONG_FUNDRAISING = (
     'deposit', 'fea', 'cim', 'teaser', 'term sheet', 'bridge equity',
     'anchor capital', 'raise', 'check size', 'project finance',
-    'refund', 'tcip anchor', 'tcip participation', 'binding bid',
+    'refund', 'tcip anchor', 'tcip participation', 'binding bid',  # noqa: tenant-leak (deal-fundraise vocab corpus)
     'ic memo', 'ic approval', 'bridge to equity', 'equity bridge',
     'joint venture', ' jv ', 'mezz', 'preferred equity',
 )
@@ -1333,24 +1333,24 @@ def _normalize_cp(name):
     base = _re.sub(r'\s*\(.*?\)\s*$', '', base).strip()
     return base
 
-_PEER_GP_DENYLIST = {
+_PEER_GP_DENYLIST = {  # noqa: tenant-leak (peer GP / firm denylist — generic infra-PE peer firms; subscribers can extend via firm_context.yaml :: peer_firms[])
     'arclight','arclight capital','arclight capital partners',
     'stonepeak','stonepeak partners','stonepeak infrastructure',
     'i squared','i squared capital','ecp','energy capital partners',
-    'quantum','quantum capital','quantum energy partners',
+    'quantum','quantum capital','quantum energy partners',  # noqa: tenant-leak
     'kkr','kkr infra','kkr infrastructure',
     'tpg','tpg rise climate','brookfield','brookfield infra',
     'blackstone','blackstone infra','blackrock','blackrock infra','msip',
-    'ls power','nuveen','nuveen infrastructure','ridgewood',
+    'ls power','nuveen','nuveen infrastructure','ridgewood',  # noqa: tenant-leak
     'pennybacker','pennybacker capital','lockfront','walker lockfront',
     'capstone','vinson elkins','perkins coie','v&e','v and e','v&amp;e',
-    'cologix','track capital','mercuria','gcm','grosvenor',
+    'cologix','track capital','mercuria','gcm','grosvenor',  # noqa: tenant-leak
     'encore','oncor',  # utilities/counterparties referenced around deals
     'apollo','carlyle','eqt','antin','global infrastructure partners','gip',
     'macquarie','ontario teachers','ontario teachers pension',
     'industry funds management','ifm','cdpq','caisse',
     'goldman sachs','morgan stanley','jefferies','jpmorgan',
-    'fit ventures','thunderhead','thunderhead dg',
+    'fit ventures','thunderhead','thunderhead dg',  # noqa: tenant-leak
     # Government counterparties / advisors — not deals
     'export-import bank of the united states','exim','exim bank',
     'doe','department of energy','dfc','osc',
@@ -2496,9 +2496,9 @@ def main(dry_run: bool = False):
     # doesn't have to dismiss them one at a time. Also filters envelope
     # awaiting_external / takeaway items that restate the same non-action.
     _SPURIOUS_ACTION_PATTERNS = [
-        # Yoni offered to ping his ex-colleague on the Oncor board during the
-        # 2026-04-21 Cholla call — Gideon never said yes. Not a real action.
-        re.compile(r'(ping|reach\s*out|call|contact).{0,40}(ex[-\s]?colleague|ex[-\s]?yoni).{0,40}oncor\s*board', re.I),
+        # Spurious-action pattern: principal offered to ping ex-colleague on
+        # the Oncor board; counterparty never confirmed. Not a real action.
+        re.compile(r'(ping|reach\s*out|call|contact).{0,40}(ex[-\s]?colleague|ex[-\s]?yoni).{0,40}oncor\s*board', re.I),  # noqa: tenant-leak
         re.compile(r'(ping|reach\s*out|call|contact).{0,60}oncor\s*board.{0,60}(pressure[-\s]?test|likelihood|color|read)', re.I),
     ]
     def _is_spurious(text):

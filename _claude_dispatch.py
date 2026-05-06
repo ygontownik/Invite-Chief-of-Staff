@@ -154,7 +154,7 @@ def _subscription_call(*, task_type: str, system: Any, messages: list,
         mode="subscription",
         max_tokens=max_tokens,
         cache=cache,
-        tenant=tenant or "tomac",
+        tenant=tenant or os.environ.get("COS_TENANT_SLUG", "default"),
     )
     return (result.get("text") or "").strip()
 

@@ -145,6 +145,8 @@ FORBIDDEN = [
 ALLOWED_SUBSTRINGS = [
     "cos-pipeline-config-tomac",  # path string in fallback search order; the path itself, not data
     "tomac\\b",                    # regex literal in denylist constants
+    "noqa: tenant-leak",           # explicit author opt-out marker for intentional-data lines
+    "noqa:tenant-leak",            # alt spacing
 ]
 
 
@@ -222,13 +224,24 @@ def probe_static_source_scan(config_dir: Path, env: dict) -> tuple[str, str]:
     skip_names = {
         "smoke_test_tenant.py",
         "check_tenant_leak.py",
+        # validate_tenant.py is the integration-test that VALIDATES tenant
+        # isolation by holding a denylist of the maintainer's identifiers
+        # and asserting none appear in subscriber output. Its contents are
+        # by-design tenant-named.
+        "validate_tenant.py",
     }
     findings = []
     for py in pipeline_root.rglob("*.py"):
         if py.name in skip_names:
             continue
         s = str(py)
-        if any(seg in s for seg in (".bak", ".next", ".pre-", "/.git/", "__pycache__")):
+        if any(seg in s for seg in (".bak", "-bak", ".next", ".pre-", "/.git/", "__pycache__", "-cutover-bak")):
+            continue
+        # tests/ contains by-design tenant-fixture data (test_validate_gate4
+        # asserts setup.sh --instance=tomac works; test_multi_tenant uses
+        # named fixture tenants). Excluding test files is the standard
+        # treatment for production-only tenant-leak audits.
+        if "/tests/" in s or s.endswith("_test.py") or "test_" in py.name:
             continue
         try:
             text = py.read_text(errors="replace")

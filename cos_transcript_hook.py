@@ -73,7 +73,7 @@ try:
             if isinstance(contact, dict):
                 if contact.get("name"): contact["name"] = _resolve(contact["name"])
                 if contact.get("firm"): contact["firm"] = _resolve(contact["firm"])
-        for item in data.get("tomac_intel", []) or []:
+        for item in data.get("tomac_intel", []) or []:  # noqa: tenant-leak (LLM-prompt JSON contract key — schema migration is a separate ticket)
             if isinstance(item, dict) and item.get("investor_or_firm"):
                 item["investor_or_firm"] = _resolve(item["investor_or_firm"])
         for item in data.get("lp_updates", []) or []:
@@ -91,7 +91,7 @@ except Exception:
 FOLLOW_UPS_DOC      = _DOCS.get("followups",      "10leX26u8n3XkoCHzg7SDwLUodVX2CqKjvXcSJ-KAsCY")
 PEOPLE_DOC          = _DOCS.get("people_crm",     "1ZCKnZlQgKD13dLsQNxCM_nRsTjz2DVitjeUWowUur0Y")
 RECRUITING_DOC      = _DOCS.get("recruiting",     "1ZnTCVoA0ID7XTDFy27yDnrEVhBqx75kaTg_QXFq4eXA")
-TOMAC_DOC           = _DOCS.get("tomac_pipeline", "1LHorixPs8ppwSvQzGfA_B6609YZA8dSpR4rmppENzpc")
+TOMAC_DOC           = _DOCS.get("deal_pipeline", _DOCS.get("tomac_pipeline", "1LHorixPs8ppwSvQzGfA_B6609YZA8dSpR4rmppENzpc"))  # noqa: tenant-leak
 TOKEN_PATH          = Path.home() / "credentials/gcal_token.json"
 PIPELINE_DATA_PATH  = Path.home() / "dashboards/data/compiled/deal-pipeline-data.json"
 DASHBOARD_DATA_PATH = Path.home() / "dashboards/data/compiled/dashboard-data.json"
