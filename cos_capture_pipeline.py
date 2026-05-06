@@ -228,7 +228,20 @@ def build_system_prompt(ctx: dict) -> str:
         f"    → emit two follow-ups, one per direction, each with the correct owner.\n"
         f"  - Default if unclear: attribute the send to the counterparty (owner=\n"
         f"    'external'). Better to under-attribute to {p_first} than fabricate\n"
-        f"    a send-verb on the wrong side.",
+        f"    a send-verb on the wrong side.\n"
+        f"\nMEETING-SETUP RULE (rule Y3) — coordination verbs (`set up meeting`,\n"
+        f"`arrange intro`, `connect X with Y`, `coordinate`, `organize`, `broker\n"
+        f"intro`, `schedule working session`, `facilitate`, `make introduction`)\n"
+        f"are {p_first}'s actions UNLESS the source explicitly says someone else\n"
+        f"will organize it.\n"
+        f"  - If {p_first} was told to set up / arrange a meeting → emit\n"
+        f"    who='{p_first}', naming ALL parties {p_first} needs to connect.\n"
+        f"    Example: 'set up working session between Takanock and Gideon' →\n"
+        f"    who='{p_first}', what='Set up working session: Takanock technical team\n"
+        f"    + Gideon Powell (Cholla) to review ERCOT sites'.\n"
+        f"  - The external parties go in the `what` and `context` fields, NOT in `who`.\n"
+        f"  - Do NOT emit who='Takanock' or who='counterparty name' for a meeting\n"
+        f"    {p_first} was asked to organize.",
 
         f"\nABSOLUTE-DATE RULE (rule AB1) — every reference to a date or week in\n"
         f"the `what` / `context` / `linked_to` text MUST be an absolute form.\n"

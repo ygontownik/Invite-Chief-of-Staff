@@ -1037,6 +1037,7 @@ TC_BUILD            = _HERE / _TC_BUILD_DIRNAME
 SHARED_STATIC       = _HERE / 'static'               # shared design-system.css + assets
 TOPNAV_PARTIAL      = _HERE / 'templates' / '_topnav.html'
 DEAL_SYSTEM_DATA    = _ROOT / 'data' / 'compiled' / 'deal-system-data.json'
+GRID_SIGNALS_DATA   = _ROOT / 'data' / 'compiled' / 'grid-signals.json'
 ADMIN_DASHBOARD     = _HERE / 'templates' / 'admin-dashboard.html'
 USERS_CONFIG        = _ROOT / 'config' / 'users.json'
 USER_STATE_DIR      = _ROOT / 'data' / 'user-state'
@@ -2495,6 +2496,11 @@ class Handler(BaseHTTPRequestHandler):
                 self._serve_file(DEAL_PIPELINE_DATA, 'application/json')
             else:
                 self.send_json(404, {'error': 'deal-pipeline-data.json not yet generated'})
+        elif self.path == '/deals/grid-signals.json':
+            if GRID_SIGNALS_DATA.exists():
+                self._serve_file(GRID_SIGNALS_DATA, 'application/json')
+            else:
+                self.send_json(404, {'error': 'grid-signals.json not yet generated — run grid_signal_scanner.py'})
         elif self.path.startswith('/deals/'):
             deals_dir = DEALS_DASHBOARD.parent
             rel = self.path[len('/deals/'):].split('?')[0]

@@ -8,6 +8,8 @@ call to `cache_telemetry.jsonl` so we can measure cache_read economics.
 This file is sandbox-only: no imports from the live cos-pipeline tree, no
 wiring into any daemon. Reads `ANTHROPIC_API_KEY` via `_secrets.load_secret`.
 """
+from __future__ import annotations
+
 import hashlib
 import json
 import os
