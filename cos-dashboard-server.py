@@ -2690,6 +2690,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(data)
             else:
                 self.send_json(404, {'error': 'deal-system-data.json not yet generated'})
+        elif self.path == '/morning-brief':
+            self._handle_morning_brief()
+        elif self.path == '/project-sync/status':
+            self._handle_project_sync_status()
+        elif self.path == '/project-sync/update':
+            self._handle_project_sync_update()
         else:
             self.send_response(404); self.end_headers()
 
@@ -3944,6 +3950,8 @@ class Handler(BaseHTTPRequestHandler):
                 if user != 'owner':
                     self._send_403(); return
             self._handle_admin_schedule_dial_in()
+        elif self.path == '/project-sync/update':
+            self._handle_project_sync_update()
         else:
             self.send_json(404, {'ok': False, 'error': 'not found'})
 
@@ -4609,6 +4617,352 @@ class Handler(BaseHTTPRequestHandler):
                 'lastCompletedAt':  _pipeline_completed_at,
                 'claudeAvailable':  CLAUDE_BIN is not None,
             })
+
+    # ================================================================
+    # PROJECT SYNC HANDLERS
+    # ================================================================
+
+    def _handle_morning_brief(self):
+        """
+        GET /morning-brief
+
+        Two-path architecture:
+        Path A (Claude Code, no API charges): Serve pre-generated
+          data/compiled/morning-brief-latest.html if fresh (< 20 hours old).
+        Path B (dynamic, API): If file is missing or stale, generate live
+          via Anthropic API and cache the result before serving.
+        """
+        import urllib.request as _ur
+        from datetime import date, datetime as _dt
+
+        user = self._authenticate() if not self._is_localhost() else 'owner'
+        if user != 'owner':
+            self._send_403()
+            return
+
+        brief_path = _ROOT / 'data' / 'compiled' / 'morning-brief-latest.html'
+        FRESH_HOURS = 20  # serve cached file if younger than this
+
+        # Path A: serve pre-generated file if fresh
+        if brief_path.exists():
+            age_hours = (_dt.now().timestamp() - brief_path.stat().st_mtime) / 3600
+            if age_hours < FRESH_HOURS:
+                self._serve_file(brief_path, 'text/html; charset=utf-8')
+                return
+
+        # Path B: generate live via API, cache, then serve
+        data_path  = _ROOT / 'data' / 'compiled' / 'deal-system-data.json'
+        sync_path  = _ROOT / 'data' / 'project-sync' / 'metadata' / 'sync-state.json'
+        today_str  = date.today().isoformat()
+
+        try:
+            deals_raw  = json.loads(data_path.read_text()).get('deals', [])
+        except Exception:
+            deals_raw  = []
+
+        try:
+            deals_sync = json.loads(sync_path.read_text()).get('deals', {})
+        except Exception:
+            deals_sync = {}
+
+        # Build terse deal summaries
+        summaries = []
+        for d in deals_raw:
+            did = d.get('id', '')
+            sm  = deals_sync.get(did, {})
+            next_due = d.get('next_milestone_due')
+            days_out = None
+            if next_due:
+                try:
+                    days_out = (date.fromisoformat(str(next_due)) - date.today()).days
+                except Exception:
+                    pass
+            summaries.append({
+                'id': did, 'name': d.get('name', did),
+                'stage': d.get('stage'), 'stage_index': d.get('stage_index'),
+                'next_milestone': d.get('next_milestone'),
+                'next_milestone_due': str(next_due) if next_due else None,
+                'days_to_deadline': days_out,
+                'health': d.get('health'),
+                'key_risk': str(d.get('key_risk', ''))[:200],
+                'edge': str(d.get('tcip_edge') or d.get('edge', ''))[:200],
+                'open_workstreams': [w.get('title') for w in d.get('workstreams', [])
+                                     if w.get('status') not in ('done', 'closed')][:3],
+                'last_session_date': sm.get('last_session_date'),
+                'last_session_summary': sm.get('last_session_summary', ''),
+                'open_items': sm.get('open_items', []),
+                'sync_status': sm.get('status', 'no-project'),
+                'project_url': sm.get('project_url') or '',
+            })
+
+        _fc_principal = ((_FC_CTX or {}).get('principal') or {})
+        _fc_firm      = ((_FC_CTX or {}).get('firm') or {})
+        _briefee      = _fc_principal.get('name') or 'the principal'
+        _firm_name    = _fc_firm.get('name') or 'the firm'
+        _firm_focus   = _fc_principal.get('background') or 'infrastructure investing'
+        prompt = f"""You are a morning briefing assistant for {_briefee}, a principal at {_firm_name} ({_firm_focus}). Today is {today_str}.
+
+Active deals:
+{json.dumps(summaries, indent=2)}
+
+Generate a complete standalone HTML morning briefing page. Requirements:
+- Self-contained HTML (no external dependencies)
+- Dark theme: background #0a0a0a, surface #111, border #222, text #d0d0d0,
+  accent #6bcbff, green #6bffb0, warn #ffd93d, danger #ff6b6b
+- Monospace font stack: 'SF Mono', ui-monospace, monospace
+- Nav links to: / | /briefing/ | /project-sync/status | /project-sync/update
+- Today's date and a one-sentence headline (most urgent situation)
+- One deal card per active deal, ranked by urgency, each containing:
+    deal name, why-today (one sentence), action required, days-to-deadline
+    (colored by urgency), project link if project_url is set,
+    suggested project prompt (click-to-copy via onclick clipboard API)
+- Alert banner listing any deals with sync_status stale or no-project
+- Cross-deal flags section if any timing conflicts or capital tensions exist
+- Prioritize by: deadline urgency → deal value → stage progression
+
+Return ONLY the complete HTML. Start with <!DOCTYPE html>."""
+
+        html = None
+        api_key = os.environ.get('ANTHROPIC_API_KEY', '')
+
+        if api_key:
+            try:
+                payload = json.dumps({
+                    "model": "claude-sonnet-4-6",
+                    "max_tokens": 4000,
+                    "messages": [{"role": "user", "content": prompt}]
+                }).encode('utf-8')
+
+                req = _ur.Request(
+                    'https://api.anthropic.com/v1/messages',
+                    data=payload,
+                    headers={
+                        'Content-Type': 'application/json',
+                        'x-api-key': api_key,
+                        'anthropic-version': '2023-06-01'
+                    }
+                )
+                with _ur.urlopen(req, timeout=25) as resp:
+                    result = json.loads(resp.read())
+                html = result['content'][0]['text'].strip()
+                if html.startswith('```'):
+                    html = html.split('\n', 1)[1].rsplit('```', 1)[0].strip()
+            except Exception:
+                html = None
+
+        # If API unavailable, generate minimal rule-based HTML
+        if not html:
+            sorted_deals = sorted(summaries, key=lambda d: (d.get('days_to_deadline') or 9999))
+            cards = ''
+            for i, d in enumerate(sorted_deals, 1):
+                days = d.get('days_to_deadline')
+                dc = '#ff6b6b' if days is not None and days <= 14 else '#ffd93d' if days is not None and days <= 30 else '#6bcbff'
+                proj = f'<a href="{d["project_url"]}" target="_blank" style="color:#6bcbff">Open Project →</a>' if (d.get('project_url') or '').startswith('http') else ''
+                prompt_text = f"Continuing {d['name']}. Stage: {d.get('stage')}. What needs attention today?"
+                days_block = f'<div style="color:{dc};font-size:12px;margin-top:6px">⏱ {days} days</div>' if days is not None else ''
+                cards += (
+                    f'<div style="background:#111;border:1px solid #222;padding:16px;margin-bottom:10px;display:flex;gap:14px">'
+                    f'<div style="color:#333;font-size:26px;font-weight:700;min-width:30px">#{i}</div>'
+                    f'<div><div style="color:#eee;font-weight:700;margin-bottom:6px">{d["name"]}</div>'
+                    f'<div style="color:#aaa;font-size:13px">{d.get("key_risk","")[:120]}</div>'
+                    f'{days_block}'
+                    f'<div style="margin-top:8px">{proj}</div>'
+                    f'<div style="color:#555;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-top:10px">Opening prompt</div>'
+                    f'<div style="color:#888;font-size:12px;background:#0a0a0a;padding:8px;border-left:2px solid #333;cursor:pointer" onclick="navigator.clipboard.writeText(this.innerText)">{prompt_text}</div>'
+                    f'</div></div>'
+                )
+
+            html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>TCIP Morning Brief — {today_str}</title></head>
+<body style="font-family:'SF Mono',monospace;background:#0a0a0a;color:#d0d0d0;max-width:860px;margin:0 auto;padding:40px 20px">
+<nav style="margin-bottom:28px"><a href="/" style="color:#555;text-decoration:none;font-size:12px;margin-right:20px">Dashboard</a><a href="/briefing/" style="color:#555;text-decoration:none;font-size:12px;margin-right:20px">Briefing</a><a href="/project-sync/status" style="color:#555;text-decoration:none;font-size:12px;margin-right:20px">Sync Status</a><a href="/project-sync/update" style="color:#555;text-decoration:none;font-size:12px">Session Close</a></nav>
+<div style="color:#555;font-size:11px;letter-spacing:3px;text-transform:uppercase">TCIP Morning Brief</div>
+<div style="color:#6bcbff;font-size:13px;margin-bottom:24px">{today_str} (rule-based — ANTHROPIC_API_KEY not set)</div>
+{cards}
+</body></html>"""
+
+        # Cache the result (both API and rule-based)
+        try:
+            brief_path.write_text(html, encoding='utf-8')
+        except Exception:
+            pass
+
+        self._serve_html(html, inject_chrome=False)
+
+
+    def _handle_project_sync_status(self):
+        """GET /project-sync/status — sync status table. Owner-only."""
+        from datetime import date
+
+        user = self._authenticate() if not self._is_localhost() else 'owner'
+        if user != 'owner':
+            self._send_403()
+            return
+
+        sync_path = _ROOT / 'data' / 'project-sync' / 'metadata' / 'sync-state.json'
+        data_path = _ROOT / 'data' / 'compiled' / 'deal-system-data.json'
+
+        try:
+            deals_sync = json.loads(sync_path.read_text()).get('deals', {})
+        except Exception:
+            deals_sync = {}
+
+        try:
+            name_map = {d.get('id',''): d.get('name', d.get('id',''))
+                        for d in json.loads(data_path.read_text()).get('deals', [])}
+        except Exception:
+            name_map = {}
+
+        rows = ''
+        for did, meta in sorted(deals_sync.items()):
+            status = meta.get('status', 'unknown')
+            sc = {'current':'#6bffb0','stale':'#ffd93d','no-project':'#ff6b6b',
+                  'no-session':'#ff6b6b'}.get(status, '#555')
+            last_s = meta.get('last_session_date') or '—'
+            age = '—'
+            if meta.get('last_session_date'):
+                try:
+                    age = f"{(date.today()-date.fromisoformat(meta['last_session_date'])).days}d ago"
+                except Exception:
+                    pass
+            proj = f'<a href="{meta["project_url"]}" target="_blank" style="color:#6bcbff">Open →</a>' if (meta.get('project_url') or '').startswith('http') else '—'
+            snippet = str(meta.get('last_session_summary','') or '')[:80]
+            rows += f'<tr><td>{name_map.get(did,did)}</td><td style="color:{sc};font-weight:600">{status}</td><td>{last_s} <span style="color:#444;font-size:11px">{age}</span></td><td style="color:#555;font-size:11px">{snippet}</td><td>{proj}</td></tr>'
+
+        html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>Sync Status</title>
+<style>body{{font-family:'SF Mono',monospace;background:#0a0a0a;color:#d0d0d0;max-width:960px;margin:0 auto;padding:40px 20px}}
+nav a{{color:#555;text-decoration:none;font-size:12px;margin-right:20px}}nav a:hover{{color:#6bcbff}}
+h1{{color:#6bcbff;font-size:13px;letter-spacing:3px;text-transform:uppercase;margin-bottom:20px}}
+table{{width:100%;border-collapse:collapse;font-size:13px}}th{{color:#555;font-weight:400;text-align:left;padding:8px 12px;border-bottom:1px solid #222;font-size:11px;letter-spacing:1.5px;text-transform:uppercase}}
+td{{padding:10px 12px;border-bottom:1px solid #161616}}</style></head>
+<body>
+<nav><a href="/">Dashboard</a><a href="/morning-brief">Morning Brief</a><a href="/project-sync/update">Session Close</a></nav>
+<h1>Project Sync Status</h1>
+<table><thead><tr><th>Deal</th><th>Status</th><th>Last Session</th><th>Summary</th><th>Project</th></tr></thead>
+<tbody>{rows}</tbody></table>
+</body></html>"""
+
+        self._serve_html(html, inject_chrome=False)
+
+
+    def _handle_project_sync_update(self):
+        """
+        GET  /project-sync/update — paste form
+        POST /project-sync/update — write session close to sync-state.json
+        Owner-only. Does NOT write to deal.md — sync state only.
+        """
+        import subprocess as _sp
+        from datetime import date
+        from urllib.parse import parse_qs, unquote_plus
+        import yaml as _yaml
+
+        user = self._authenticate() if not self._is_localhost() else 'owner'
+        if user != 'owner':
+            self._send_403()
+            return
+
+        if self.command == 'GET':
+            data_path = _ROOT / 'data' / 'compiled' / 'deal-system-data.json'
+            try:
+                deal_ids = [d.get('id','') for d in json.loads(data_path.read_text()).get('deals',[]) if d.get('id')]
+            except Exception:
+                deal_ids = []
+
+            opts = '\n'.join(f'<option value="{d}">{d}</option>' for d in deal_ids)
+            prompt_path = _ROOT / 'session-close-prompt.md'
+            try:
+                prompt_ref = prompt_path.read_text()[:2000]
+            except Exception:
+                prompt_ref = ''
+
+            html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>Session Close</title>
+<style>body{{font-family:'SF Mono',monospace;background:#0a0a0a;color:#d0d0d0;max-width:780px;margin:0 auto;padding:40px 20px}}
+nav a{{color:#555;text-decoration:none;font-size:12px;margin-right:20px}}nav a:hover{{color:#6bcbff}}
+h1{{color:#6bcbff;font-size:13px;letter-spacing:3px;text-transform:uppercase;margin-bottom:6px}}
+.hint{{color:#555;font-size:12px;margin-bottom:24px;line-height:1.7}}
+label{{color:#555;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;display:block;margin-bottom:6px}}
+select,textarea{{width:100%;background:#111;color:#d0d0d0;border:1px solid #222;padding:10px 12px;font-family:inherit;font-size:13px;margin-bottom:16px}}
+textarea{{height:260px;resize:vertical}}
+button{{background:#6bcbff;color:#0a0a0a;border:none;padding:10px 28px;cursor:pointer;font-weight:700;font-size:13px;letter-spacing:1px}}
+details{{margin-top:28px}}summary{{color:#555;font-size:12px;cursor:pointer}}
+pre{{background:#111;border:1px solid #222;padding:12px;font-size:11px;color:#666;white-space:pre-wrap;margin-top:8px}}</style>
+</head><body>
+<nav><a href="/">Dashboard</a><a href="/morning-brief">Morning Brief</a><a href="/project-sync/status">Sync Status</a></nav>
+<h1>Session Close</h1>
+<p class="hint">Run the session close prompt in your Claude Project. Paste the output below.<br>Updates sync-state.json only — no deal.md files are modified.</p>
+<form method="POST" action="/project-sync/update">
+<label>Deal</label><select name="deal_id">{opts}</select>
+<label>Session Close Output</label>
+<textarea name="session_block" placeholder="Paste output from session close prompt..."></textarea>
+<button type="submit">WRITE TO DASHBOARD</button>
+</form>
+<details><summary>Session close prompt reference</summary><pre>{prompt_ref}</pre></details>
+</body></html>"""
+            self._serve_html(html, inject_chrome=False)
+            return
+
+        # POST
+        length = int(self.headers.get('Content-Length', 0))
+        body = self.rfile.read(length).decode('utf-8') if length else ''
+        params = {k: unquote_plus(v[0]) for k, v in parse_qs(body).items()}
+
+        deal_id = params.get('deal_id','').strip()
+        session_block = params.get('session_block','').strip()
+
+        if not deal_id or not session_block:
+            self._serve_html('<p style="font-family:monospace;padding:20px">Error: missing fields. <a href="/project-sync/update" style="color:#6bcbff">Back</a></p>', inject_chrome=False)
+            return
+
+        try:
+            updates = _yaml.safe_load(session_block)
+            if not isinstance(updates, dict):
+                raise ValueError("Must be a YAML mapping")
+        except Exception as e:
+            self._serve_html(f'<p style="font-family:monospace;padding:20px;color:#ff6b6b">Parse error: {e}<br><a href="/project-sync/update" style="color:#6bcbff">Back</a></p>', inject_chrome=False)
+            return
+
+        sync_path = _ROOT / 'data' / 'project-sync' / 'metadata' / 'sync-state.json'
+        try:
+            sync_state = json.loads(sync_path.read_text())
+        except Exception:
+            sync_state = {'deals': {}}
+
+        sm = sync_state.setdefault('deals', {}).setdefault(deal_id, {})
+        ALLOWED = {'last_session_date','last_session_summary','open_items',
+                   'project_url','stage_update','next_milestone_update','next_milestone_due_update'}
+        for f in ALLOWED:
+            v = updates.get(f)
+            if v and str(v).strip() not in ('', 'null'):
+                sm[f] = v
+
+        sm['last_session_date'] = date.today().isoformat()
+        sm['status'] = 'current'
+        sync_state['last_updated'] = date.today().isoformat()
+
+        try:
+            sync_path.write_text(json.dumps(sync_state, indent=2, default=str))
+        except Exception as e:
+            self._serve_html(f'<p style="font-family:monospace;padding:20px;color:#ff6b6b">Write error: {e}</p>', inject_chrome=False)
+            return
+
+        # Regenerate project-sync exports
+        script = _ROOT / 'routines' / 'compile' / 'compile-project-sync.py'
+        result = _sp.run([sys.executable, str(script)], capture_output=True, text=True, timeout=30, check=False)
+        ok = result.returncode == 0
+        color = '#6bffb0' if ok else '#ff6b6b'
+        label = 'SUCCESS' if ok else 'COMPILE ERROR'
+
+        html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>Session Close — Result</title>
+<style>body{{font-family:'SF Mono',monospace;background:#0a0a0a;color:#d0d0d0;max-width:700px;margin:0 auto;padding:40px 20px}}
+.r{{padding:14px;border:1px solid {color};color:{color};margin-bottom:16px;white-space:pre-wrap;font-size:13px}}
+.d{{background:#111;border:1px solid #222;padding:12px;font-size:12px;color:#666;white-space:pre-wrap}}
+a{{color:#6bcbff;text-decoration:none}}</style></head><body>
+<div class="r">{label} — {deal_id} updated
+Last session: {sm.get('last_session_date')}
+{(result.stdout or '')[-400:]}</div>
+<div class="d">{json.dumps(sm, indent=2, default=str)}</div>
+<p style="margin-top:20px"><a href="/project-sync/update">← Submit another</a> &nbsp;|&nbsp; <a href="/project-sync/status">Sync Status</a> &nbsp;|&nbsp; <a href="/morning-brief">Morning Brief</a></p>
+</body></html>"""
+        self._serve_html(html, inject_chrome=False)
 
     def _handle_run_pipeline(self):
         """POST /run-pipeline — fire cos-capture-pipeline skill via claude CLI.

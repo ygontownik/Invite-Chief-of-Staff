@@ -912,19 +912,21 @@ def parse_followups(text):
     ws_map.setdefault('Tomac Cove', 'deals')
     today = datetime.now().strftime('%Y-%m-%d')
 
-    # Drive doc IDs for source hyperlinking — keyed by lowercase fragment
+    # Drive doc IDs for source hyperlinking — keyed by lowercase fragment.
+    # Doc IDs come from DOC_IDS (which reads firm_context.yaml :: google_docs)
+    # so they are tenant-specific and never hardcoded here.
+    _dp_url  = f'https://docs.google.com/document/d/{DOC_IDS["deal_pipeline"]}/edit'  if DOC_IDS.get("deal_pipeline")  else ''
+    _rec_url = f'https://docs.google.com/document/d/{DOC_IDS["recruiting"]}/edit'     if DOC_IDS.get("recruiting")     else ''
     SOURCE_LINKS = {
-        'gmail':          ('https://mail.google.com/mail/u/0/#search/from%3A' +
-                           (MY_EMAIL.replace('@', '%40') if MY_EMAIL else '')) if MY_EMAIL else 'https://mail.google.com/mail/u/0/',
-        'email':          'https://mail.google.com/mail/u/0/',
-        'tomac cove weekly': 'https://docs.google.com/document/d/1LHorixPs8ppwSvQzGfA_B6609YZA8dSpR4rmppENzpc/edit',
-        'pipeline':       'https://docs.google.com/document/d/1LHorixPs8ppwSvQzGfA_B6609YZA8dSpR4rmppENzpc/edit',
-        'recruiting':     'https://docs.google.com/document/d/1ZnTCVoA0ID7XTDFy27yDnrEVhBqx75kaTg_QXFq4eXA/edit',
-        'calendar':       'https://calendar.google.com/',
-        'otter':          'https://drive.google.com/drive/folders/1zJly0cCiqsbZ3umYBXse7nYE7tUpFGOr',
-        'transcript':     'https://drive.google.com/drive/folders/1zJly0cCiqsbZ3umYBXse7nYE7tUpFGOr',
-        'call':           'https://drive.google.com/drive/folders/1jYntgSVBsW5-5rdx18TeZhHRsI9xT74p',
-        'fit ventures':   'https://docs.google.com/document/d/1LHorixPs8ppwSvQzGfA_B6609YZA8dSpR4rmppENzpc/edit',  # noqa: tenant-leak (deal-key → drive-doc routing — migrate to drive-docs.yaml)
+        'gmail':      ('https://mail.google.com/mail/u/0/#search/from%3A' +
+                       (MY_EMAIL.replace('@', '%40') if MY_EMAIL else '')) if MY_EMAIL else 'https://mail.google.com/mail/u/0/',
+        'email':      'https://mail.google.com/mail/u/0/',
+        'pipeline':   _dp_url,
+        'recruiting': _rec_url,
+        'calendar':   'https://calendar.google.com/',
+        'otter':      'https://drive.google.com/drive/folders/1zJly0cCiqsbZ3umYBXse7nYE7tUpFGOr',
+        'transcript': 'https://drive.google.com/drive/folders/1zJly0cCiqsbZ3umYBXse7nYE7tUpFGOr',
+        'call':       'https://drive.google.com/drive/folders/1jYntgSVBsW5-5rdx18TeZhHRsI9xT74p',
     }
 
     def source_url(src_raw, linked_to):
@@ -935,18 +937,20 @@ def parse_followups(text):
         src_lower = src_raw.lower()
 
         # ── Google Doc sources (specific doc IDs) ──
-        if any(k in lt_lower for k in ['tomac', 'pipeline', 'weekly docket', 'weekly call']):
-            return 'https://docs.google.com/document/d/1LHorixPs8ppwSvQzGfA_B6609YZA8dSpR4rmppENzpc/edit'
-        if any(k in lt_lower for k in ['recruit', 'piper maddox', 'reinova', 'one search', 'harper harrison',  # noqa: tenant-leak (recruiter routing needles — should migrate to recruit-config.yaml)
-                                        'renewable energy recruit', 'recruiting meeting',
-                                        'russell reynolds', 'charlie watson', 'george allen', 'bennet cogden']):
-            return 'https://docs.google.com/document/d/1ZnTCVoA0ID7XTDFy27yDnrEVhBqx75kaTg_QXFq4eXA/edit'
+        # Route to deal-pipeline doc when the linked_to text mentions the
+        # pipeline or any deal keyword (loaded from firm_context via _DEAL_KEYS).
+        if _dp_url and (any(k in lt_lower for k in ['pipeline', 'weekly docket', 'weekly call'])
+                        or any(k in lt_lower for k in _DEAL_KEYS)):
+            return _dp_url
+        # Route to recruiting doc when linked_to matches any recruit keyword
+        # (loaded from firm_config.json via _RECRUIT_KEYS).
+        if _rec_url and any(k in lt_lower for k in _RECRUIT_KEYS):
+            return _rec_url
 
         # ── Otter/transcript — link to specific subfolder ──
-        if any(k in src_lower for k in ['recruit', 'harper', 'renewable energy',
-                                         'russell reynolds', 'charlie watson', 'george allen', 'bennet cogden']):
+        if any(k in src_lower for k in _RECRUIT_KEYS):
             return 'https://drive.google.com/drive/folders/1tMEGofeqzfF93YhPCyGe0dgJj8tzdRlF'  # Otter/Recruiting
-        if any(k in src_lower for k in ['tomac', 'tc call', 'fit ventures', 'thunderhead', 'pacific fleet', 'black bayou']):  # noqa: tenant-leak (deal-name routing needles — should migrate to firm_context counterparty_aliases canonicals)
+        if any(k in src_lower for k in _DEAL_KEYS):
             return 'https://drive.google.com/drive/folders/1pHmuq_TfLY46GDg0BzRIwrq57ictIT5S'  # Otter/TC
         if 'transcript' in src_lower or 'otter' in src_lower:
             return 'https://drive.google.com/drive/folders/1dt-s-D1SWaTrpIEsi0GiBAu1BCQCoPGq'  # Otter/Other
