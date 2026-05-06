@@ -40,7 +40,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _firm_context as _fc
 _CTX     = _fc.load_firm_context()
 _FCONFIG = _fc.load_firm_config()                          # firm_config.json
-MY_EMAIL = (_fc._principal(_CTX).get('email') or 'ygontownik@gmail.com')
+MY_EMAIL = (_fc._principal(_CTX).get('email') or '')
 
 # Drive doc IDs — prefer firm_context.yaml :: google_docs (canonical
 # per DECISIONS.md C8), fall back to firm_config.json :: docs (legacy).
@@ -64,15 +64,12 @@ def _doc_id(key, default=''):
 DOC_IDS = {
     'followups':     _doc_id('followups',     '10leX26u8n3XkoCHzg7SDwLUodVX2CqKjvXcSJ-KAsCY'),
     'recruiting':    _doc_id('recruiting',    '1ZnTCVoA0ID7XTDFy27yDnrEVhBqx75kaTg_QXFq4eXA'),
-    'deal_pipeline': _doc_id('pipeline',      _doc_id('tomac', '1LHorixPs8ppwSvQzGfA_B6609YZA8dSpR4rmppENzpc')),
+    'deal_pipeline': _doc_id('pipeline',      '1LHorixPs8ppwSvQzGfA_B6609YZA8dSpR4rmppENzpc'),
     'briefing_log':  _doc_id('briefing_log',  '14wE3L6ZRsjhhx2psRKbaHS5i0kgEoteWYZusqETiAZ0'),
     'daily_market':  _doc_id('daily_market',  '1UZ1t4bhgzll5VcAuP3Mj1CyYb-4xjgmbUK1xg6oUS_k'),
     'people':        _doc_id('people',        '1F3MjRAoAOWYLXiwXEYQYpu1tJjdx7-4iZtAHSyyL3Hg'),
 }
-# Backward-compat alias key — preserved for 1 release so any in-flight
-# caller referencing DOC_IDS['tomac'] still works. Will be removed in
-# the release after this one. SAFE to read; do NOT write.
-DOC_IDS['tomac'] = DOC_IDS['deal_pipeline']
+# (Legacy alias key removed — no callers remain that reference it.)
 
 # Owner whitelist — loaded from firm_context.yaml. Falls back to
 # owner_whitelist; if absent, derives from principal.name + team[].name.
@@ -135,8 +132,8 @@ def _firm_recruit_keywords(fcfg):
 
 def _is_deal_ws(ws):
     """True if a workstream code refers to deal/pipeline activity.
-    Accepts both legacy 'tomac' and canonical 'deals' for one release."""
-    return ws in ('deals', 'tomac')
+    Accepts the canonical 'deals' code plus a legacy alias for one release."""
+    return ws in ('deals', 'tomac')  # noqa: tenant-leak (legacy workstream alias)
 
 # ── Services ──────────────────────────────────────────────
 def get_services():
@@ -917,7 +914,8 @@ def parse_followups(text):
 
     # Drive doc IDs for source hyperlinking — keyed by lowercase fragment
     SOURCE_LINKS = {
-        'gmail':          'https://mail.google.com/mail/u/0/#search/from%3Aygontownik%40gmail.com',
+        'gmail':          ('https://mail.google.com/mail/u/0/#search/from%3A' +
+                           (MY_EMAIL.replace('@', '%40') if MY_EMAIL else '')) if MY_EMAIL else 'https://mail.google.com/mail/u/0/',
         'email':          'https://mail.google.com/mail/u/0/',
         'tomac cove weekly': 'https://docs.google.com/document/d/1LHorixPs8ppwSvQzGfA_B6609YZA8dSpR4rmppENzpc/edit',
         'pipeline':       'https://docs.google.com/document/d/1LHorixPs8ppwSvQzGfA_B6609YZA8dSpR4rmppENzpc/edit',
@@ -1347,7 +1345,7 @@ _PEER_GP_DENYLIST = {
     'pennybacker','pennybacker capital','lockfront','walker lockfront',
     'capstone','vinson elkins','perkins coie','v&e','v and e','v&amp;e',
     'cologix','track capital','mercuria','gcm','grosvenor',
-    'encore','oncor',  # utilities/counterparties referenced around Cholla
+    'encore','oncor',  # utilities/counterparties referenced around deals
     'apollo','carlyle','eqt','antin','global infrastructure partners','gip',
     'macquarie','ontario teachers','ontario teachers pension',
     'industry funds management','ifm','cdpq','caisse',
@@ -1373,8 +1371,8 @@ def _is_deal_shaped_cp(cp, raw_cp=None):
 
     Accept shapes:
       - Raw counterparty contains a separator (— – / ,) AND firm-half is
-        ≥3 chars: treats "Cholla — Gideon Powell" as deal-shaped (firm half
-        "Cholla"). This is the dominant pattern for origination items.
+        ≥3 chars: treats "<deal> — <principal>" as deal-shaped (firm half
+        "<deal>"). This is the dominant pattern for origination items.
       - Firm-suffix match (Capital, Partners, Energy, etc.)
       - Multi-word (≥2 tokens) AND ≥7 chars AND not a Title Case two-name.
     Reject common first-name stems AND known LP/peer GPs outright.
@@ -1387,7 +1385,7 @@ def _is_deal_shaped_cp(cp, raw_cp=None):
         # tenant-agnostic; they reject any "First-name only" raw cp.
         'kevin','tim','dan','david','brian','joey','andrew','mike','john','matt',
         'chris','tom','paul','bob','rob','steve','sam','pete','will','greg',
-        'gideon','powell','ian','ryan','max','joe','adam','alex','ben','ed',
+        'ian','ryan','max','joe','adam','alex','ben','ed',
         'frank','gary','henry','james','kate','laura','lisa','molly','nate',
         'oscar','peter','rick','scott','ted','victor','walter',
     }

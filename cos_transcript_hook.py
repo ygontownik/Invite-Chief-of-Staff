@@ -26,14 +26,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from _usage import log_usage  # noqa: E402
 
 # ── Firm context (no hardcoded principal/firm references below this line) ──────
-_PIPELINE_DIR = Path.home() / "tomac-cove-pipeline"
+# Sibling pipeline dir is prepended to sys.path for shared firm/context modules
+# when this hook runs from a different cwd. Path is derived, not tenant-coded.
+_PIPELINE_DIR = Path(__file__).resolve().parent
 if str(_PIPELINE_DIR) not in sys.path:
     sys.path.insert(0, str(_PIPELINE_DIR))
 import _firm_context as _fc  # noqa: E402
 import _secrets  # noqa: E402
 _CTX = _fc.load_firm_context()
-_OWNERS          = _fc.owner_whitelist_str(_CTX)   # e.g. "Yoni|Mark|Nik"
-_DEAL_WS         = _fc.workstream_deal(_CTX)        # e.g. "Tomac Cove"
+_OWNERS          = _fc.owner_whitelist_str(_CTX)   # e.g. "<owner1>|<owner2>"
+_DEAL_WS         = _fc.workstream_deal(_CTX)        # workstream label from firm_context
 _PEER_FIRMS      = _fc.peer_firms_str(_CTX)
 _PRINCIPAL_FIRST = _fc.principal_first_name(_CTX)
 _DOCS            = _fc.load_drive_docs()
@@ -209,7 +211,7 @@ def next_row_num(fu_text):
 def build_dashboard_path_reference():
     """Build a DASHBOARD PATH REFERENCE string from live dashboard data.
     All sections are loaded dynamically at call time — no hardcoded deal names."""
-    active_deals   = []  # TCIP active portfolio (deal-system-data.json)
+    active_deals   = []  # active portfolio (deal-system-data.json)
     lp_targets     = []
     pipeline_paths = []  # Deal Ideas scored targets (deal-pipeline-data.json)
 

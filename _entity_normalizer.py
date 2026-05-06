@@ -3,10 +3,11 @@
 _entity_normalizer.py — Reconcile extracted person/firm strings against canonical roster.
 
 Audio-transcription engines (Otter, Zoom AI, Teams) consistently mis-hear known
-names — "Wafra" → "Wafer", "Reinova" → "Raynova". Without reconciliation, errors
-propagate into the dashboard with full metadata (urgent flags, due dates, dashboard
-paths) that masks the underlying mistake. This module is the single normalization
-pass that every transcript / email / research extractor must run BEFORE writing.
+names — e.g. "<FirmA>" gets transcribed as "<homophone>". Without reconciliation,
+errors propagate into the dashboard with full metadata (urgent flags, due dates,
+dashboard paths) that masks the underlying mistake. This module is the single
+normalization pass that every transcript / email / research extractor must run
+BEFORE writing.
 
 Loaded once per pipeline run; canonical roster is cached. Pure functions — no
 side effects on dashboard state.
@@ -15,13 +16,13 @@ Usage (importable):
     from _entity_normalizer import EntityNormalizer
     norm = EntityNormalizer()
     fixed_text = norm.apply_phonetic(transcript_body)
-    match = norm.match("Cholla Petro")
-    # match → ResolvedEntity(canonical='Cholla / Gideon Powell', source='deals',
-    #                        confidence='substring', original='Cholla Petro')
+    match = norm.match("<deal-name> Petro")
+    # match → ResolvedEntity(canonical='<deal-name> / <principal>', source='deals',
+    #                        confidence='substring', original='<deal-name> Petro')
 
-Usage (CLI — for the cos-otter-transcripts SKILL flow):
-    python3 -m routines.process._entity_normalizer --check "Wafer"
-    python3 -m routines.process._entity_normalizer --check-all <<<'["Wafer","Cholla Petro"]'
+Usage (CLI — for the otter-transcripts SKILL flow):
+    python3 -m routines.process._entity_normalizer --check "<homophone>"
+    python3 -m routines.process._entity_normalizer --check-all <<<'["<homophone>","<deal-name> Petro"]'
     python3 -m routines.process._entity_normalizer --apply-text < transcript.txt
 """
 from __future__ import annotations

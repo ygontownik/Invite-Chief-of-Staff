@@ -19,8 +19,8 @@ Backend selection:
   - else: keychain on Mac (security CLI present), env elsewhere
 
 Keychain entry shape (matches setup_keychain.sh, the canonical writer):
-  service = "<prefix>/<KEY>"   e.g. "cos-pipeline-tomac/ANTHROPIC_API_KEY"
-  account = current $USER       e.g. "ygontownik"
+  service = "<prefix>/<KEY>"   e.g. "cos-pipeline-<slug>/ANTHROPIC_API_KEY"
+  account = current $USER       e.g. "<unix-user>"
 where <prefix> comes from firm_config.json :: keychain_service_prefix
 (falls back to "cos-pipeline"). This shape lets multi-tenant installs
 coexist in one login keychain without account collisions.
