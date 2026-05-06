@@ -126,7 +126,7 @@ ROUTING_RULES_PATH = Path.home() / "dashboards/config/routing-rules.md"
 FOLLOW_UPS_DOC  = _DOCS.get("followups",      "10leX26u8n3XkoCHzg7SDwLUodVX2CqKjvXcSJ-KAsCY")
 PEOPLE_DOC      = _DOCS.get("people_crm",     "1ZCKnZlQgKD13dLsQNxCM_nRsTjz2DVitjeUWowUur0Y")
 RECRUITING_DOC  = _DOCS.get("recruiting",     "1ZnTCVoA0ID7XTDFy27yDnrEVhBqx75kaTg_QXFq4eXA")
-TOMAC_DOC       = _DOCS.get("deal_pipeline", _DOCS.get("tomac_pipeline", "1LHorixPs8ppwSvQzGfA_B6609YZA8dSpR4rmppENzpc"))  # noqa: tenant-leak — backward-compat key
+DEAL_PIPELINE_DOC       = _DOCS.get("deal_pipeline", _DOCS.get("tomac_pipeline", "1LHorixPs8ppwSvQzGfA_B6609YZA8dSpR4rmppENzpc"))  # noqa: tenant-leak — backward-compat key
 DASHBOARD_URL   = "http://localhost:7777/warmup"
 CLAUDE_MODEL    = "claude-sonnet-4-6"
 MEMO_MODEL      = "claude-opus-4-7"
@@ -1407,7 +1407,7 @@ def write_deal_intel(token, deal_intel, title, today):
     if not deal_intel:
         return "No change"
     try:
-        tdoc = gdocs_get(token, TOMAC_DOC)  # noqa: tenant-leak — TOMAC_DOC is a backward-compat variable name
+        tdoc = gdocs_get(token, DEAL_PIPELINE_DOC)
         tcontent = tdoc.get("body", {}).get("content", [])
         tend = (tcontent[-1].get("endIndex", 2) - 1) if tcontent else 1
         ttext = (
@@ -1422,7 +1422,7 @@ def write_deal_intel(token, deal_intel, title, today):
                 f"| {item.get('key_feedback','?')} "
                 f"| {item.get('next_action','?')} |\n"
             )
-        gdocs_insert(token, TOMAC_DOC, tend, ttext)  # noqa: tenant-leak — TOMAC_DOC is a backward-compat variable name
+        gdocs_insert(token, DEAL_PIPELINE_DOC, tend, ttext)
         print(f"    ✅  {_DEAL_WS} doc: {len(deal_intel)} LP intel rows", flush=True)
         return "Updated"
     except Exception as e:

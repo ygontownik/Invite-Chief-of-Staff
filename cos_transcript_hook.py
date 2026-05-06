@@ -91,7 +91,7 @@ except Exception:
 FOLLOW_UPS_DOC      = _DOCS.get("followups",      "10leX26u8n3XkoCHzg7SDwLUodVX2CqKjvXcSJ-KAsCY")
 PEOPLE_DOC          = _DOCS.get("people_crm",     "1ZCKnZlQgKD13dLsQNxCM_nRsTjz2DVitjeUWowUur0Y")
 RECRUITING_DOC      = _DOCS.get("recruiting",     "1ZnTCVoA0ID7XTDFy27yDnrEVhBqx75kaTg_QXFq4eXA")
-TOMAC_DOC           = _DOCS.get("deal_pipeline", _DOCS.get("tomac_pipeline", "1LHorixPs8ppwSvQzGfA_B6609YZA8dSpR4rmppENzpc"))  # noqa: tenant-leak
+DEAL_PIPELINE_DOC           = _DOCS.get("deal_pipeline", _DOCS.get("tomac_pipeline", "1LHorixPs8ppwSvQzGfA_B6609YZA8dSpR4rmppENzpc"))  # noqa: tenant-leak
 TOKEN_PATH          = Path.home() / "credentials/gcal_token.json"
 PIPELINE_DATA_PATH  = Path.home() / "dashboards/data/compiled/deal-pipeline-data.json"
 DASHBOARD_DATA_PATH = Path.home() / "dashboards/data/compiled/dashboard-data.json"
@@ -625,7 +625,7 @@ def main():
     # ── Deal Pipeline doc ─────────────────────────────────────────────────────
     if category == _DEAL_WS and deal_intel:  # noqa: tenant-leak — deferred schema migration
         try:
-            tdoc2    = gdocs_get(token, TOMAC_DOC)  # noqa: tenant-leak — TOMAC_DOC is a backward-compat variable name
+            tdoc2    = gdocs_get(token, DEAL_PIPELINE_DOC)
             tcontent = tdoc2.get("body", {}).get("content", [])
             tend     = (tcontent[-1].get("endIndex", 2) - 1) if tcontent else 1
             ttext2   = (
@@ -640,7 +640,7 @@ def main():
                     f"| {item.get('key_feedback','?')} "
                     f"| {item.get('next_action','?')} |\n"
                 )
-            gdocs_insert(token, TOMAC_DOC, tend, ttext2)  # noqa: tenant-leak — TOMAC_DOC is backward-compat variable
+            gdocs_insert(token, DEAL_PIPELINE_DOC, tend, ttext2)
             print(f"[hook] ✅  {_DEAL_WS} doc: {len(deal_intel)} LP intel rows", flush=True)
         except Exception as e:
             print(f"[hook] {_DEAL_WS} doc write failed: {e}", file=sys.stderr)

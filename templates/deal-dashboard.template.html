@@ -601,7 +601,7 @@ function App(){
                 var lid=liveDealIdFor(t);
                 if(!lid) return null;
                 return createElement("a",{
-                  href:"/tomac-cove/?deal="+encodeURIComponent(lid),
+                  href:((window.__FIRM_CONTEXT__&&window.__FIRM_CONTEXT__.deal_path)||"/tomac-cove")+"/?deal="+encodeURIComponent(lid),
                   className:"live-deal-link",
                   onClick:function(e){e.stopPropagation();},
                   title:"Open live deal page"

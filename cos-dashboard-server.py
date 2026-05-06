@@ -1006,6 +1006,10 @@ def _firm_context_public(ctx: dict) -> dict:
         ],
         'workstream_categories': ctx.get('workstream_categories') or {},
         'tile_labels':           ctx.get('tile_labels') or {},
+        # Routing path for the deal detail drawer (e.g. /tomac-cove, /acme-cove).
+        # Computed from COS_TENANT_SLUG at module load so templates never carry
+        # a literal tenant string.
+        'deal_path':             _DRAWER_BACK_PATH,
     }
 REFRESH_SCRIPT      = str(_HERE / 'cos-dashboard-refresh.py')
 FETCH_SCRIPT        = str(_HERE / 'cos-dashboard-fetch.py')
