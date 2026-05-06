@@ -51,6 +51,7 @@ Every output with implicit or explicit follow-up gets a structured action block.
 ```
 [ACTION-001]
 Date/Deadline : YYYY-MM-DD or "ASAP" / "No deadline"
+Time          : HH:MM or "TBD"
 Action        : Verb-first single sentence. Specific.
 Owner         : Me / [Co-investor] / [Advisor name]
 Parties       : All people and firms involved
