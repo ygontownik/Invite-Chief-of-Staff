@@ -477,7 +477,7 @@ def _legacy_otter_sources(ctx: dict, docs: dict) -> list[TranscriptSource]:
     """
     # Try drive-docs.yaml keys first
     root       = docs.get("otter_ai")        or "1zJly0cCiqsbZ3umYBXse7nYE7tUpFGOr"
-    tomac      = docs.get("otter_tomac")     or "1pHmuq_TfLY46GDg0BzRIwrq57ictIT5S"
+    deal_fld   = docs.get("otter_deal")      or "1pHmuq_TfLY46GDg0BzRIwrq57ictIT5S"
     recruiting = docs.get("otter_recruiting") or "1tMEGofeqzfF93YhPCyGe0dgJj8tzdRlF"
     other      = docs.get("otter_other")     or "1dt-s-D1SWaTrpIEsi0GiBAu1BCQCoPGq"
     calls      = docs.get("call_transcripts") or "1jYntgSVBsW5-5rdx18TeZhHRsI9xT74p"
@@ -487,18 +487,18 @@ def _legacy_otter_sources(ctx: dict, docs: dict) -> list[TranscriptSource]:
 
     otter_source = GoogleDriveFolderSource({
         "name": "Otter AI",
-        "folder_ids": [root, tomac, recruiting, other],
+        "folder_ids": [root, deal_fld, recruiting, other],
         "root_folder_id": root,
         "category_hint": "auto",
         "folder_hints": {
             # Root gets auto-detect; subfolders have explicit category routing
-            tomac: deal_ws,
+            deal_fld: deal_ws,
             recruiting: recruit_ws,
             other: "Other",
         },
         "category_folders": {
             # After processing root-folder files, move them to the right subfolder
-            deal_ws: tomac,
+            deal_ws: deal_fld,
             recruit_ws: recruiting,
             "Other": other,
         },

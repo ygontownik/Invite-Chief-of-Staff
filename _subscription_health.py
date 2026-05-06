@@ -42,8 +42,10 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Optional
 
+import os as _os
+
 _PIPELINE_ROOT = Path.home() / "cos-pipeline"
-_DEFAULT_TENANT = "tomac"
+_DEFAULT_TENANT = _os.environ.get("COS_TENANT_SLUG", "default")
 _DEFAULT_HOURS = 24
 
 

@@ -50,8 +50,8 @@ def _config_target_dir() -> Path:
 
     Search order (per DECISIONS C3):
       1. $COS_CONFIG_DIR
-      2. ~/cos-pipeline-config-tomac/  (canonical: slug-suffixed)
-      3. ~/cos-pipeline-config/        (legacy; symlinked to -tomac/ as of session 4)
+      2. ~/cos-pipeline-config-<slug>/ (canonical: slug-suffixed)
+      3. ~/cos-pipeline-config/        (legacy; symlinked to slug-suffixed dir)
       4. <pipeline_dir>/               (legacy: config alongside code)
     """
     env = os.environ.get("COS_CONFIG_DIR")

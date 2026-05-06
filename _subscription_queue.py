@@ -13,14 +13,14 @@ those rows back up after the window resets and re-fires them via
 
 USAGE
 
-    # Drain a single tenant's queue (default tomac):
+    # Drain a single tenant's queue (uses $COS_TENANT_SLUG):
     python3 _subscription_queue.py
 
     # Specific tenant:
-    python3 _subscription_queue.py --tenant=re-dev
+    python3 _subscription_queue.py --tenant=<slug>
 
     # Dry-run (show what would fire; no calls):
-    python3 _subscription_queue.py --tenant=tomac --dry-run
+    python3 _subscription_queue.py --tenant=<slug> --dry-run
 
 SCHEDULE
 
@@ -73,7 +73,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 _PIPELINE_ROOT = Path.home() / "cos-pipeline"
-_DEFAULT_TENANT = "tomac"
+_DEFAULT_TENANT = os.environ.get("COS_TENANT_SLUG", "default")
 _BACKOFF_HOURS = 1
 _MAX_ATTEMPTS = 24
 

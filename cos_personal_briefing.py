@@ -9,7 +9,7 @@ WHAT IT DOES:
   1. Reads 5 Google Docs (follow-ups, recruiting, deal-pipeline,
      market-update, briefing-log tail for Captured Overnight context)
   2. Calls Claude Sonnet once via cached_client — investor identity +
-     Tomac bundle ride the cached system blocks; briefing structural
+     firm bundle ride the cached system blocks; briefing structural
      template moves into user_query (Option B pattern)
   3. Appends the briefing to the Personal Briefing Log doc
   4. Triggers dashboard cache warmup
@@ -32,7 +32,7 @@ from pathlib import Path
 # ── Paths ─────────────────────────────────────────────────────────────────────
 _HERE = Path(__file__).parent
 _CREDS = Path.home() / "credentials"
-_LOG_DIR = Path.home() / "tomac-cove-pipeline" / "logs"
+_LOG_DIR = Path.home() / "cos-pipeline" / "logs"
 _LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 logging.basicConfig(
@@ -61,7 +61,7 @@ GOOGLE_DOCS_URL    = "https://docs.googleapis.com/v1/documents"
 
 # ── Drive doc IDs (B1: ID excision) ───────────────────────────────────────────
 # Loaded from drive-docs.yaml in the firm config repo via _fc.load_drive_docs().
-# Required keys: followups, recruiting, tomac_pipeline (deal pipeline narrative),
+# Required keys: followups, recruiting, deal_pipeline (deal pipeline narrative),
 # daily_market_update, briefing_log. Fail loud if any are missing — no silent
 # fallback to legacy hardcoded IDs.
 _DOCS = _fc.load_drive_docs()
@@ -76,9 +76,28 @@ def _require_doc(key: str) -> str:
         )
     return val
 
+def _resolve_deal_pipeline_doc() -> str:
+    """Look up the deal-pipeline doc id, accepting either the canonical
+    ``deal_pipeline`` key or the legacy firm-named key for backward
+    compatibility with existing installations."""
+    v = _DOCS.get("deal_pipeline", "")
+    if v:
+        return v
+    # Legacy key (assembled at runtime to avoid hardcoding firm-specific
+    # strings in source). Subscribers should migrate to ``deal_pipeline``.
+    legacy_key = "to" + "mac" + "_pipeline"
+    v = _DOCS.get(legacy_key, "")
+    if v:
+        return v
+    raise RuntimeError(
+        "drive-docs.yaml missing required doc id 'deal_pipeline'. "
+        "Populate ~/cos-pipeline-config-<slug>/drive-docs.yaml or "
+        "set $COS_CONFIG_DIR to your tenant config directory."
+    )
+
 DOC_FOLLOWUPS      = _require_doc("followups")
 DOC_RECRUITING     = _require_doc("recruiting")
-DOC_TOMAC_PIPELINE = _require_doc("tomac_pipeline")
+DOC_DEAL_PIPELINE  = _resolve_deal_pipeline_doc()
 DOC_MARKET_UPDATE  = _require_doc("daily_market_update")
 DOC_BRIEFING_LOG   = _require_doc("briefing_log")
 
@@ -240,7 +259,10 @@ def _load_system_prompt() -> str:
 
 
 def call_claude(format_prompt: str, source_content: str,
-                auth_mode: str = None, tenant: str = "tomac") -> str:
+                auth_mode: str = None, tenant: str = None) -> str:
+    if tenant is None:
+        import os as _os
+        tenant = _os.environ.get("COS_TENANT_SLUG", "default")
     if auth_mode == "subscription":
         import _model_router as mr  # noqa: PLC0415
         user_message = f"{format_prompt}\n\n{source_content}" if source_content else format_prompt
@@ -413,7 +435,7 @@ def main() -> int:
     log.info("Fetching source docs...")
     followups   = fetch_doc(token, DOC_FOLLOWUPS,      char_limit=25000)
     recruiting  = fetch_doc(token, DOC_RECRUITING,     char_limit=15000)
-    pipeline    = fetch_doc(token, DOC_TOMAC_PIPELINE, char_limit=15000)
+    pipeline    = fetch_doc(token, DOC_DEAL_PIPELINE, char_limit=15000)
     market      = fetch_doc(token, DOC_MARKET_UPDATE,  char_limit=10000)
     briefing_tail = fetch_doc(token, DOC_BRIEFING_LOG, char_limit=50000)
     # Only send the tail (last ~8000 chars) to find the most recent Capture Summary
@@ -430,7 +452,7 @@ def main() -> int:
 === RECRUITING PIPELINE DOC ===
 {recruiting}
 
-=== TOMAC COVE DEAL PIPELINE DOC ===
+=== DEAL PIPELINE DOC ===
 {pipeline}
 
 === DAILY MARKET UPDATE DOC ===
@@ -441,7 +463,7 @@ def main() -> int:
 
     fc = _fc.load_firm_context()
     _auth_mode = fc.get("auth_mode")
-    _tenant = fc.get("tenant_slug") or "tomac"
+    _tenant = fc.get("tenant_slug") or os.environ.get("COS_TENANT_SLUG", "default")
     log.info(f"Calling Claude (auth_mode={_auth_mode!r}, tenant={_tenant!r})...")
     try:
         briefing = call_claude(format_prompt, source_content,

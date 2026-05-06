@@ -71,8 +71,9 @@ _CACHE_READ_FACTOR = 0.10
 _DEFAULT_MAX_DAILY_USD = 5.00
 _HARD_STOP_MULTIPLIER = 3.0
 
-# Default tenant (matches PATH_TOPOLOGY.md and PLAN §J).
-_DEFAULT_TENANT = "tomac"
+# Default tenant — read from environment with generic fallback so the
+# public codebase carries no firm-specific slug.
+_DEFAULT_TENANT = os.environ.get("COS_TENANT_SLUG", "default")
 
 _PIPELINE_ROOT = Path.home() / "cos-pipeline"
 _ROUTINES_YAML = _PIPELINE_ROOT / "routines.yaml"
@@ -95,8 +96,8 @@ TIME_INSENSITIVE_TASKS = {
     # Podcast transcription — overnight batch.
     "podcast-processing", "podcast-transcribe-daily", "podcasts-transcribe",
     # Deal pipeline — weekly cadence; queue safe.
-    "deal-pipeline-scan", "tomac-cove-weekly-pipeline", "deals-weekly-scan",
-    "deal-dashboard-compile", "tomac-deal-compile", "deals-compile",
+    "deal-pipeline-scan", "deals-weekly-scan",
+    "deal-dashboard-compile", "deals-compile",
     # Research feeds — daily / weekly batches.
     "gs-research-fetch", "gs-research-process",
     "gs-research-daily-download", "gs-research-pdf-processor",
@@ -1066,7 +1067,7 @@ _KNOWN_TASK_TYPES = [
     "capture", "briefing", "research", "deals", "server", "infra",
     # routine names / rename_to keys (from routines.yaml)
     "morning-briefing", "cos-personal-briefing", "briefing-morning",
-    "deal-dashboard-compile", "tomac-deal-compile", "deals-compile",
+    "deal-dashboard-compile", "deals-compile",
     "podcast-processing", "podcast-transcribe-daily", "podcasts-transcribe",
     "inbox-capture", "cos-capture-pipeline", "capture-inbox",
     # unknown — should fall back to overall default

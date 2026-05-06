@@ -40,7 +40,7 @@ USAGE:
   python3 cos_capture_pipeline.py --provider outlook # override email_provider
 
 SCHEDULED:
-  LaunchAgent com.tomaccove.cos-capture-pipeline → bash runner
+  LaunchAgent com.<your-firm>.cos-capture-pipeline → bash runner
   → calls this script at 7:22 AM M-F directly (no Claude Code SKILL wrapper).
 """
 from __future__ import annotations
@@ -75,9 +75,9 @@ def _resolve_log_dir() -> Path:
     slug = (
         ctx.get("tenant_slug")
         or (ctx.get("firm", {}) or {}).get("short_name", "")
-        or "tomac"
+        or os.environ.get("COS_TENANT_SLUG", "default")
     )
-    slug = str(slug).strip().lower().replace(" ", "-") or "tomac"
+    slug = str(slug).strip().lower().replace(" ", "-") or "default"
     return Path.home() / "cos-pipeline" / f"logs-{slug}"
 
 _LOG_DIR = _resolve_log_dir()
@@ -343,7 +343,7 @@ def call_claude(system_prompt: str, user_payload: str, ctx: dict = None) -> dict
         slug = (
             ctx.get("tenant_slug")
             or (ctx.get("firm", {}) or {}).get("short_name", "").lower().replace(" ", "-")
-            or "tomac"
+            or os.environ.get("COS_TENANT_SLUG", "default")
         )
         result = mr.call_claude(
             task_type="cos-capture-pipeline",
