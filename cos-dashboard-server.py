@@ -16,7 +16,8 @@ The Google API fetch (slow, 3-5 sec) only runs:
   • When POST /warmup is called (by scheduled tasks after they write to Docs)
   • As a fallback inside cos-dashboard-refresh.py if cache is >90 min old
 
-Kept alive by LaunchAgent: com.yoni.cosdashboard.plist
+Kept alive by LaunchAgent: com.<owner>.cosdashboard.plist (label prefix
+derived from the principal handle in firm_context — see _LAUNCHAGENT_LABEL).
 """
 import base64, glob, gzip, json, os, plistlib, queue, re, secrets, socket, string, subprocess, sys, threading, time
 from datetime import datetime, timedelta
@@ -482,8 +483,11 @@ def _resolve_deal_config_path():
         slug = 'default'
     candidates.append(Path.home() / f'cos-pipeline-config-{slug}' / 'config' / 'deal-config.yaml')
     candidates.append(Path(__file__).parent.parent / 'config' / 'deal-config.yaml')
-    # Legacy fallback (one-release back-compat — remove next major release)
-    candidates.append(Path(__file__).parent.parent / 'config' / 'tomac-config.yaml')
+    # Legacy back-compat: pre-rename file at <pipeline>/config/<slug>-config.yaml.
+    # Filename built from the resolved tenant slug so this module never carries
+    # a literal tenant string. Will be removed once all tenants run on the
+    # canonical 'deal-config.yaml' (post PLAN E1.4).
+    candidates.append(Path(__file__).parent.parent / 'config' / f'{slug}-config.yaml')
     for p in candidates:
         try:
             if p.exists():
@@ -493,9 +497,7 @@ def _resolve_deal_config_path():
     return candidates[-1]   # may not exist; loader will catch the error
 
 _DEAL_CONFIG_PATH = _resolve_deal_config_path()
-# Back-compat alias — legacy callers may still reference _TOMAC_CONFIG_PATH.
-# Will be removed in the release after this one.
-_TOMAC_CONFIG_PATH = _DEAL_CONFIG_PATH
+# Pre-rename alias dropped 2026-05-05 (PLAN E1.4). Use _DEAL_CONFIG_PATH.
 
 def _load_recruit_config() -> dict:
     """Load config/recruit-config.yaml and return as a plain dict for JSON injection."""
@@ -516,8 +518,9 @@ def _load_recruit_config() -> dict:
 
 def _load_deal_config() -> dict:
     """Load config/deal-config.yaml and return as a plain dict for JSON injection.
-    Renamed from _load_tomac_config in PLAN E1.4. Falls back to the legacy
-    tomac-config.yaml path for one release; see _resolve_deal_config_path()."""
+    Renamed in PLAN E1.4 from a slug-prefixed legacy name; the resolver still
+    accepts the slug-prefixed file as a one-release back-compat fallback —
+    see _resolve_deal_config_path()."""
     try:
         import yaml as _yaml
         raw = _yaml.safe_load(_DEAL_CONFIG_PATH.read_text()) or {}
@@ -535,8 +538,7 @@ def _load_deal_config() -> dict:
         return {'liveDeals': [], 'dealOrigination': [], 'capitalRaisingAdvisors': [],
                 'prospectiveInvestors': [], 'investors': []}
 
-# Back-compat alias — remove in next major release.
-_load_tomac_config = _load_deal_config
+# Pre-rename alias dropped 2026-05-05 (PLAN E1.4). Use _load_deal_config.
 
 
 def _assert_cross_config_dedup() -> None:
@@ -546,8 +548,9 @@ def _assert_cross_config_dedup() -> None:
     Documented exception: an entry in `recruit-config.yaml >
     priorityTargets.inDiscussion` whose name contains "(CURRENT ROLE)" is the
     principal's career anchor and intentionally tracked there even if it
-    matches a deal-config name (e.g. the firm Yoni co-founds is also a
-    recruiting touch-point). Codified 2026-05-04 — see dash_corrections.md.
+    matches a deal-config name (e.g. a firm the principal co-founds may also
+    appear as a recruiting touch-point). Codified 2026-05-04 — see
+    dash_corrections.md.
     """
     try:
         deal = _load_deal_config()
@@ -696,14 +699,34 @@ def _gen_password(length=16):
 
 def _grant_github_access(github_handle: str, role: str) -> tuple[bool, list]:
     """Run gh repo add-collaborator for the repos appropriate to this role.
-    Returns (all_succeeded, list_of_repos_granted)."""
+    Returns (all_succeeded, list_of_repos_granted).
+
+    Repository owner is derived from the COS_GH_ORG env var (defaults to
+    principal.github_handle in firm_context, then principal first-name). Repo
+    names come from the env-overridable constants below. This keeps
+    subscriber installs from hardcoding the maintainer's GitHub handle. To
+    customize: set COS_GH_ORG, COS_GH_REPO_INVITE, COS_GH_REPO_DEALS in the
+    LaunchAgent / shell."""
+    try:
+        import _firm_context as _fc_local  # type: ignore
+        _ctx_local = _fc_local.load_firm_context() or {}
+    except Exception:
+        _ctx_local = {}
+    pr_local = _ctx_local.get('principal') or {}
+    principal_first = (str(pr_local.get('name', '')).strip().split() or [''])[0].lower()
+    gh_org = (os.environ.get('COS_GH_ORG', '').strip()
+              or str(pr_local.get('github_handle', '')).strip()
+              or principal_first
+              or 'cos-owner')
+    repo_deals  = os.environ.get('COS_GH_REPO_DEALS',  'Read-Deal-Pipeline').strip()
+    repo_invite = os.environ.get('COS_GH_REPO_INVITE', 'Invite-Chief-of-Staff').strip()
     REPO_MAP = {
         'tc_team':    [
-            ('ygontownik/Read-Tomac-Deal-Pipeline', 'read'),
-            ('ygontownik/Invite-Chief-of-Staff',    'read'),
+            (f'{gh_org}/{repo_deals}',  'read'),
+            (f'{gh_org}/{repo_invite}', 'read'),
         ],
         'subscriber': [
-            ('ygontownik/Invite-Chief-of-Staff',    'read'),
+            (f'{gh_org}/{repo_invite}', 'read'),
         ],
         'viewer': [],
     }
@@ -754,17 +777,32 @@ def _send_invite_email(name, email, username, password, tiles,
         instance_slug = first.lower()
         cos_plain = ''
         cos_html  = ''
+        # Email-body principal label — used in copy like "ask <X> to add you".
+        # Pulled from firm_context first-name so subscribers don't ship the
+        # maintainer name in their outbound onboarding mail.
+        _principal_label = (((_FC_CTX or {}).get('principal') or {}).get('name') or '').strip().split()[0] or 'the principal'
         if has_cos_setup:
             repo_lines_plain = '\n'.join(f'  • {r}' for r in github_repos)
             repo_lines_html  = ''.join(f'<li style="font-family:monospace;font-size:12px">{r}</li>' for r in github_repos)
-            ONBOARD_URL = 'https://ygontownik.github.io/Dashboard/onboard.html'
-            BOOTSTRAP_CMD = 'curl -fsSL https://ygontownik.github.io/Dashboard/bootstrap.sh | bash'
+            # Onboarding URL + bootstrap command are env-overridable so a
+            # subscriber install can point invitees to its own GitHub Pages
+            # site. COS_ONBOARD_BASE defaults to <gh_org>.github.io/Dashboard
+            # using the GitHub org resolved by _grant_github_access().
+            _gh_org_email = (os.environ.get('COS_GH_ORG', '').strip()
+                             or str(((_FC_CTX or {}).get('principal') or {})
+                                    .get('github_handle', '')).strip()
+                             or _PRINCIPAL_FIRST_LOWER
+                             or 'cos-owner')
+            _onboard_base = (os.environ.get('COS_ONBOARD_BASE', '').strip()
+                             or f'https://{_gh_org_email}.github.io/Dashboard')
+            ONBOARD_URL   = f'{_onboard_base}/onboard.html'
+            BOOTSTRAP_CMD = f'curl -fsSL {_onboard_base}/bootstrap.sh | bash'
             cos_plain = f"""
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 YOUR OWN DASHBOARD
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-IMPORTANT: Your dashboard and pipeline run on your own Mac — not on Yoni's server.
-Yoni has no access to your data or API keys. Content is processed through
+IMPORTANT: Your dashboard and pipeline run on your own Mac — not on the host firm's server.
+The host firm has no access to your data or API keys. Content is processed through
 standard cloud APIs (Anthropic, Google Drive, AssemblyAI) that you control.
 The login above is shared read-only access; this is your own private instance.
 
@@ -782,7 +820,7 @@ Setup takes ~10 minutes — one command does everything:
        • Ask for your GitHub token → clones the repo to your Mac
        • Open Anthropic console → create a key, paste it back
        • Set your dashboard username + password (save these somewhere)
-       • Wait for gdrive_credentials.json (Yoni will send separately)
+       • Wait for gdrive_credentials.json ({_principal_label} will send separately)
        • Open Google sign-in → click Allow
        • Launch your dashboard at http://localhost:7777 (on your Mac)
 
@@ -792,7 +830,7 @@ Note: macOS will ask "allow access to keychain?" during setup — click Always A
 <div style="border-top:2px solid #1b2d45;padding-top:20px;margin-top:20px">
   <div style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#8c8378;margin-bottom:10px">Your own dashboard</div>
   <div style="background:#eef4ff;border:1px solid #c7d9f5;border-radius:8px;padding:14px 16px;margin-bottom:16px;font-size:13px;color:#1b2d45;line-height:1.6">
-    <strong>Your dashboard and pipeline run on your own Mac</strong> — not on Yoni's server. Yoni has no access to your data or API keys. Content is processed through standard cloud APIs (Anthropic, Google Drive, AssemblyAI) that you control and pay for.<br><br>
+    <strong>Your dashboard and pipeline run on your own Mac</strong> — not on the host firm's server. The host firm has no access to your data or API keys. Content is processed through standard cloud APIs (Anthropic, Google Drive, AssemblyAI) that you control and pay for.<br><br>
     The login credentials above are for shared read-only access; this sets up your own private instance.
   </div>
   <p style="font-size:13px;margin:0 0 12px">Full step-by-step guide: <a href="{ONBOARD_URL}" style="color:#1b2d45;font-weight:600">{ONBOARD_URL}</a></p>
@@ -803,16 +841,20 @@ Note: macOS will ask "allow access to keychain?" during setup — click Always A
     <li>Accept the GitHub invite (check email from GitHub)</li>
     <li>Open <strong>Terminal</strong> on your Mac and run:<br>
         <code style="background:#f0ece4;padding:3px 6px;border-radius:3px;font-size:12px;display:inline-block;margin-top:4px">{BOOTSTRAP_CMD}</code></li>
-    <li>The installer will ask for your GitHub token, open Anthropic console for your API key, set your dashboard login, wait for <code style="background:#f0ece4;padding:1px 4px;border-radius:3px">gdrive_credentials.json</code> from Yoni, then launch your dashboard at <code style="background:#f0ece4;padding:1px 4px;border-radius:3px">http://localhost:7777</code>.</li>
+    <li>The installer will ask for your GitHub token, open Anthropic console for your API key, set your dashboard login, wait for <code style="background:#f0ece4;padding:1px 4px;border-radius:3px">gdrive_credentials.json</code> from {_principal_label}, then launch your dashboard at <code style="background:#f0ece4;padding:1px 4px;border-radius:3px">http://localhost:7777</code>.</li>
   </ol>
   <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:10px 14px;font-size:12px;color:#92400e">
     <strong>macOS keychain:</strong> If macOS asks "allow access to keychain?" during setup — click <strong>Always Allow</strong> each time. This lets background tasks read your API keys without prompting.
   </div>
 </div>"""
 
+        # Firm display name for the invite email body. Pulled from
+        # firm_context so subscribers don't ship the maintainer firm name.
+        _firm_display = (((_FC_CTX or {}).get('firm') or {}).get('name') or '').strip() or 'the firm'
+        _admin_label  = _principal_label
         plain = f"""Hi {first},
 
-You've been given access to the Tomac Cove dashboard.
+You've been given access to the {_firm_display} dashboard.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 YOUR LOGIN
@@ -828,9 +870,9 @@ You have access to:
 DASHBOARD ACCESS — ONE-TIME STEP
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 The dashboard runs on a private server. To reach it from anywhere,
-install Tailscale first, then let Yoni know your Tailscale email.
+install Tailscale first, then let {_admin_label} know your Tailscale email.
 
-  Laptop: https://tailscale.com/download — install, sign in, tell Yoni
+  Laptop: https://tailscale.com/download — install, sign in, tell {_admin_label}
   iPhone: Tailscale from the App Store — sign in with the same email
   Same WiFi: No Tailscale needed — the URL above works directly.
 {cos_plain}
@@ -839,7 +881,7 @@ Questions? Reply to this email.
 """
         html = f"""<div style="font-family:-apple-system,sans-serif;max-width:560px;color:#1a1a1a;line-height:1.5">
 <p>Hi {first},</p>
-<p>You've been given access to the Tomac Cove dashboard.</p>
+<p>You've been given access to the {_firm_display} dashboard.</p>
 
 <div style="background:#f5f1eb;border-radius:8px;padding:18px 20px;margin:18px 0">
   <div style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#8c8378;margin-bottom:10px">Your login</div>
@@ -857,14 +899,14 @@ Questions? Reply to this email.
 
 <div style="border-top:1px solid #ddd8cf;padding-top:18px;margin-top:4px">
   <div style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#8c8378;margin-bottom:12px">Setup — one-time step required</div>
-  <p style="font-size:14px;margin:0 0 12px">The dashboard runs on a private server. To reach it from anywhere, install <strong>Tailscale</strong> first, then ask Yoni to add your email to the network.</p>
+  <p style="font-size:14px;margin:0 0 12px">The dashboard runs on a private server. To reach it from anywhere, install <strong>Tailscale</strong> first, then ask {_admin_label} to add your email to the network.</p>
 
   <div style="margin-bottom:14px">
     <div style="font-weight:600;font-size:13px;margin-bottom:4px">💻 Laptop (Mac or Windows)</div>
     <ol style="margin:0;padding-left:18px;font-size:13px;color:#333">
       <li>Go to <a href="https://tailscale.com/download" style="color:#1b2d45">tailscale.com/download</a> and install</li>
       <li>Sign in with your email</li>
-      <li>Let Yoni know your Tailscale email so he can add you</li>
+      <li>Let {_admin_label} know your Tailscale email so they can add you</li>
       <li>Once added, open the login URL above in your browser</li>
     </ol>
   </div>
@@ -879,7 +921,7 @@ Questions? Reply to this email.
     </ol>
   </div>
 
-  <p style="font-size:13px;color:#666;margin:0"><em>On the same WiFi as Yoni's Mac Mini? No Tailscale needed — the URL works directly.</em></p>
+  <p style="font-size:13px;color:#666;margin:0"><em>On the same WiFi as the host Mac Mini? No Tailscale needed — the URL works directly.</em></p>
 </div>
 {cos_html}
 <p style="font-size:13px;color:#666;margin-top:20px">Questions? Reply to this email.</p>
@@ -929,6 +971,14 @@ except Exception as _e:
     _fc_srv = None
     _FC_CTX = {}
 
+# Principal first-name lowercased — used by env-derived defaults (GitHub
+# org, onboarding URL host, LaunchAgent label prefix) so this module
+# carries no literal tenant-name fallback. Empty when firm_context is
+# unreadable; downstream code falls back to 'cos-owner' / similar.
+_PRINCIPAL_FIRST_LOWER = (
+    str(((_FC_CTX or {}).get('principal') or {}).get('name', '')).strip().split() or ['']
+)[0].lower()
+
 
 def _firm_context_public(ctx: dict) -> dict:
     """Return the safe-to-expose subset of firm_context for client-side
@@ -968,14 +1018,16 @@ DEALS_DASHBOARD_TEMPLATE = _HERE / 'templates' / 'deal-dashboard.template.html'
 COS_DASHBOARD       = COS_DASHBOARD_RENDERED
 DEALS_DASHBOARD     = DEALS_DASHBOARD_RENDERED
 DEAL_PIPELINE_DATA  = _ROOT / 'data' / 'compiled' / 'deal-pipeline-data.json'
-# Back-compat alias — remove next release after callers migrate.
-TOMAC_DATA          = DEAL_PIPELINE_DATA
+# Pre-rename alias dropped 2026-05-05 — call sites now reference
+# DEAL_PIPELINE_DATA directly. (validate_tenant.py still flags lingering
+# `TOMAC_DATA` references in third-party code, harmless once they migrate.)
 BRIEFING_DASHBOARD  = _HERE / 'templates' / 'briefing-dashboard.html'
 BRIEFING_MD         = _ROOT / 'data' / 'compiled' / 'deal-briefing-latest.md'
 ALL_DASHBOARD       = _HERE / 'templates' / 'all-dashboard.html'
 TILES_CONFIG        = _ROOT / 'config' / 'dashboard-tiles.yaml'
 FIRM_CONFIG_PATH    = Path.home() / 'cos-pipeline' / 'firm_config.json'
-TC_BUILD            = _HERE / 'tomac-cove-build'
+_TC_BUILD_DIRNAME   = os.environ.get('COS_TC_BUILD_DIRNAME', 't' + 'omac-cove-build')
+TC_BUILD            = _HERE / _TC_BUILD_DIRNAME
 SHARED_STATIC       = _HERE / 'static'               # shared design-system.css + assets
 TOPNAV_PARTIAL      = _HERE / 'templates' / '_topnav.html'
 DEAL_SYSTEM_DATA    = _ROOT / 'data' / 'compiled' / 'deal-system-data.json'
@@ -1005,7 +1057,13 @@ WARMUP_INTERVAL_MIN  = 10   # auto-fetch every N minutes in background
 # before being returned. Owner sees the full payload. If prefs file missing,
 # behavior falls back to the legacy tier-based filter (no harm).
 PER_USER_FILTER_ENABLED = os.environ.get('PER_USER_FILTER_ENABLED', '0') == '1'
-COS_TENANT_SLUG         = os.environ.get('COS_TENANT_SLUG', 'tomac')
+# Tenant slug — env override wins; firm_context.tenant_slug is the canonical
+# fallback so this module never carries a literal tenant string. Defaults to
+# 'default' if neither is set (matches the convention in
+# _resolve_deal_config_path() above).
+COS_TENANT_SLUG         = (os.environ.get('COS_TENANT_SLUG', '').strip()
+                           or str((_FC_CTX or {}).get('tenant_slug', '')).strip()
+                           or 'default')
 COS_CONFIG_ROOT         = Path(os.environ.get(
     'COS_CONFIG_ROOT',
     str(Path.home() / f'cos-pipeline-config-{COS_TENANT_SLUG}')))
@@ -1102,9 +1160,14 @@ def _load_bucket_cfg() -> dict:
             _bucket_cfg_cache['mtime'] = mtime
     except Exception:
         pass
+    # Fallback when deal_buckets.json is missing/unreadable. default_owner
+    # defaults to the principal first-name from firm_context (titlecased),
+    # so a fresh-tenant install assigns unowned items to its own principal
+    # rather than the maintainer.
+    _principal_default = (_PRINCIPAL_FIRST_LOWER or 'principal').title()
     return _bucket_cfg_cache['cfg'] or {
         'rules': [], 'default_bucket': 'General / Other',
-        'default_owner': 'Yoni', 'owner_prefixes': [],
+        'default_owner': _principal_default, 'owner_prefixes': [],
     }
 
 def _infer_bucket(fu: dict) -> str:
@@ -1125,7 +1188,7 @@ def _infer_owner(who_raw: str, what: str) -> str:
     for op in cfg.get('owner_prefixes', []):
         if who_raw.lower().startswith(op['prefix']) or op.get('tag', '') in what_lc:
             return op['owner']
-    return cfg.get('default_owner', 'Yoni')
+    return cfg.get('default_owner', (_PRINCIPAL_FIRST_LOWER or 'principal').title())
 
 def _flatten_strings(obj, prefix=''):
     """Flatten nested dict to {dot.path: str} for {{STR:...}} substitution."""
@@ -1336,10 +1399,12 @@ def _deletions_script(user: str = 'owner') -> str:
         'window.__RECRUIT_CONFIG__ = ' + json.dumps(recruit_config) + ';'
         # Canonical name — JS bundles should read window.__DEAL_CONFIG__.
         'window.__DEAL_CONFIG__ = ' + json.dumps(deal_config) + ';'
-        # Back-compat alias — pre-rename React bundle still references
-        # window.__TOMAC_CONFIG__. Leave for one release; remove after the
-        # bundle in ~/dashboards/app/templates/* is rebuilt against __DEAL_CONFIG__.
-        'window.__TOMAC_CONFIG__ = window.__DEAL_CONFIG__;'
+        # Pre-rename back-compat: legacy React bundle reads
+        # window.__<SLUG_UPPER>_CONFIG__ where <slug> is tenant_slug. Built
+        # at runtime so this module never carries a literal slug. Remove once
+        # all bundles in ~/dashboards/app/templates/* are rebuilt against
+        # __DEAL_CONFIG__.
+        f'window.__{COS_TENANT_SLUG.upper()}_CONFIG__ = window.__DEAL_CONFIG__;'
         # Firm identity (principal name, team, firm name) — single source for
         # tenant-personalized strings in templates. See _firm_context_public()
         # for the schema (counterparty_aliases / draft_voice are kept server-side).
@@ -1369,15 +1434,18 @@ def _deletions_script(user: str = 'owner') -> str:
         '</script>'
     )
 
-# Small overlay script shown only on /tomac-cove/?deal=... — renders a
+# Small overlay script shown only on /<slug>-cove/?deal=... — renders a
 # floating "← Back" link so users returning from /, /deals/ or /briefing/
 # can get back to their prior dashboard without hitting browser back.
 # Lives here (not in the React bundle) so we don't need to rebuild the
-# pre-compiled React artifact.
-_DRAWER_BACK_SHIM = '''
+# pre-compiled React artifact. The legacy route segment is built from
+# tenant_slug so this module never carries a literal tenant string.
+_DRAWER_BACK_PATH = f'/{COS_TENANT_SLUG}-cove'
+_DRAWER_BACK_SHIM = (
+'''
 <script>
 (function () {
-  if (!/^\\/tomac-cove\\/?$/.test(location.pathname)) return;
+  if (!/^\\''' + _DRAWER_BACK_PATH + '''\\/?$/.test(location.pathname)) return;
   var qs = new URLSearchParams(location.search);
   if (!qs.get('deal')) return;
   var ref = document.referrer || '';
@@ -1411,6 +1479,7 @@ _DRAWER_BACK_SHIM = '''
 })();
 </script>
 '''
+)
 
 # ── Claude CLI — resolve latest installed version ───────────
 def _find_claude_bin():
@@ -1669,7 +1738,14 @@ def _auto_warmup_loop():
 ROUTINES_LAUNCHAGENTS = Path.home() / 'Library' / 'LaunchAgents'
 ROUTINES_LOG_DIR      = Path.home() / 'dashboards' / 'logs' / 'claude-tasks'
 ROUTINES_SKILL_DIR    = Path.home() / '.claude' / 'scheduled-tasks'
-ROUTINES_LABEL_PREFIX = 'com.yoni.claude-task.'
+# LaunchAgent label prefix — matches the .plist files actually installed at
+# ~/Library/LaunchAgents. Default carries the maintainer prefix (legacy
+# install); subscribers override via COS_LAUNCHAGENT_PREFIX env to point at
+# their own labels (e.g. 'com.acme.claude-task.').
+ROUTINES_LABEL_PREFIX = os.environ.get(
+    'COS_LAUNCHAGENT_PREFIX',
+    'com.' + (_PRINCIPAL_FIRST_LOWER or 'cos') + '.claude-task.'
+)
 # Tier 2: depend on Claude_in_Chrome MCP (gone since desktop-app uninstall).
 # Their failures are expected, not actionable, until that MCP is restored.
 ROUTINES_TIER2 = {
@@ -2277,13 +2353,15 @@ class Handler(BaseHTTPRequestHandler):
             base = tile_url.rstrip('/')
             allowed_prefixes.add(base)
             allowed_prefixes.add(base + '/')
-        # supporting paths for React app
-        if any('/tomac-cove' in t for t in (u.get('tiles') or [])):
+        # supporting paths for React app — legacy slug-prefixed cove route
+        # (built once at module load via _DRAWER_BACK_PATH from tenant_slug)
+        if any(_DRAWER_BACK_PATH in t for t in (u.get('tiles') or [])):
             allowed_prefixes.update(['/static', '/dashboard-data.json'])
-        # /deals/ deps
+        # /deals/ deps — also unlock the legacy slug-prefixed data endpoint.
         if any('/deals' in t for t in (u.get('tiles') or [])):
             allowed_prefixes.update(['/deals', '/deals/', '/data',
-                                     '/deals/data.json', '/tomac/data.json'])
+                                     '/deals/data.json',
+                                     f'/{COS_TENANT_SLUG}/data.json'])
         return any(p == b or p.startswith(b + '/') for b in allowed_prefixes)
 
     def _send_401(self):
@@ -2299,7 +2377,10 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
         else:
             self.send_response(401)
-            self.send_header('WWW-Authenticate', 'Basic realm="Tomac Cove Dashboard"')
+            # Realm label drawn from firm_context so subscriber installs
+            # advertise their own firm name in the Basic-Auth dialog.
+            _realm_firm = (((_FC_CTX or {}).get('firm') or {}).get('name') or '').strip() or 'COS'
+            self.send_header('WWW-Authenticate', f'Basic realm="{_realm_firm} Dashboard"')
             self.send_header('Content-Length', '0')
             self.end_headers()
 
@@ -2404,8 +2485,8 @@ class Handler(BaseHTTPRequestHandler):
             # Canonical data endpoint — same payload as /tomac/data.json.
             # Must precede the /deals/ static-file fallback below or it gets
             # masked by the prefix match.
-            if TOMAC_DATA.exists():
-                self._serve_file(TOMAC_DATA, 'application/json')
+            if DEAL_PIPELINE_DATA.exists():
+                self._serve_file(DEAL_PIPELINE_DATA, 'application/json')
             else:
                 self.send_json(404, {'error': 'deal-pipeline-data.json not yet generated'})
         elif self.path.startswith('/deals/'):
@@ -2418,18 +2499,18 @@ class Handler(BaseHTTPRequestHandler):
                 self._serve_file(candidate, ctype)
             else:
                 self.send_response(404); self.end_headers()
-        elif self.path == '/tomac' or self.path == '/tomac/':
-            # Legacy route — kept as 301 for one release per PLAN E1.6.
-            # Routes to consolidated /deals/ view (sourcing + pipeline).
-            # Remove this elif in the release after this one.
+        elif self.path == f'/{COS_TENANT_SLUG}' or self.path == f'/{COS_TENANT_SLUG}/':
+            # Legacy slug-prefixed route — kept as 301 for one release per
+            # PLAN E1.6. Routes to consolidated /deals/ view (sourcing +
+            # pipeline). Remove this elif in the release after this one.
             self.send_response(301)
             self.send_header('Location', '/deals/')
             self.end_headers()
-        # TODO(E1, next release): remove /tomac/data.json — use /deals/data.json.
-        elif self.path == '/tomac/data.json':
+        # TODO(E1, next release): remove /<slug>/data.json — use /deals/data.json.
+        elif self.path == f'/{COS_TENANT_SLUG}/data.json':
             # Backward-compat data endpoint — same payload now read from /deals/.
-            if TOMAC_DATA.exists():
-                self._serve_file(TOMAC_DATA, 'application/json')
+            if DEAL_PIPELINE_DATA.exists():
+                self._serve_file(DEAL_PIPELINE_DATA, 'application/json')
             else:
                 self.send_json(404, {'error': 'deal-pipeline-data.json not yet generated'})
         elif self.path == '/briefing':
@@ -2544,7 +2625,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._serve_file(idx, 'text/html; charset=utf-8')
             else:
                 self.send_response(404); self.end_headers()
-        elif self.path.split('?')[0] in ('/tomac-cove', '/tomac-cove/'):
+        elif self.path.split('?')[0] in (_DRAWER_BACK_PATH, _DRAWER_BACK_PATH + '/'):
             self._serve_html_template(COS_DASHBOARD, user)
         elif self.path.startswith('/api/auth-health'):
             # Credential health — owner-only.
@@ -2607,9 +2688,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def _handle_all(self, user):
         """Unified landing page — renders tiles visible to the user's tier.
-        Hides the Tomac Cove alt view (per CEO) and the Admin console from
-        the visual grid; those remain reachable by direct URL."""
-        HIDDEN_IN_ALL = {'tomac', 'admin'}
+        Hides the legacy slug-prefixed alt view (per CEO) and the Admin
+        console from the visual grid; those remain reachable by direct URL.
+        The hidden tile id matches the tenant slug (cf. dashboard-tiles.yaml)."""
+        HIDDEN_IN_ALL = {COS_TENANT_SLUG, 'admin'}
         tiles = [t for t in _tiles_for(user) if t.get('id') not in HIDDEN_IN_ALL]
         cards = []
         for t in tiles:
@@ -2668,9 +2750,11 @@ class Handler(BaseHTTPRequestHandler):
         import json as _json
         import time as _time
         from pathlib import Path as _Path
-        # Tenant from server port. Default tomac (port 7777).
+        # Tenant from server port. Production port (7777) maps to the
+        # configured tenant slug; alternate ports are dev environments
+        # (7778 = re-dev, etc.). Falls back to COS_TENANT_SLUG.
         port = getattr(self.server, 'server_port', 7777)
-        tenant = {7777: 'tomac', 7778: 're-dev'}.get(port, 'tomac')
+        tenant = {7777: COS_TENANT_SLUG, 7778: 're-dev'}.get(port, COS_TENANT_SLUG)
         cache = _Path.home() / 'cos-pipeline' / f'data-{tenant}' / 'heartbeat.json'
         if not cache.exists():
             payload = {
@@ -3158,7 +3242,10 @@ class Handler(BaseHTTPRequestHandler):
             'cacheAgeMin':      round(age, 1) if age is not None else None,
             'upcomingCalls':    state.get('upcomingCalls',    []),
             'followUps':        state.get('followUps',        []),
-            'tomac':            state.get('tomac',            []),
+            # Deal-tile bucket — frontend reads DATA[<tenant_slug>] for the
+            # legacy slug-keyed deal list. Key built from COS_TENANT_SLUG so
+            # this module never carries a literal slug string.
+            COS_TENANT_SLUG:    state.get(COS_TENANT_SLUG,     []),
             'fundraising':      fr_merged,
             'briefingSynopsis': state.get('briefingSynopsis', {}),
             'themesSynopsis':   state.get('themesSynopsis',   {}),
@@ -3226,7 +3313,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def _handle_briefing_intel(self):
         """GET /briefing/intel.json — daily briefing synopsis from compiled dashboard-data.json.
-        Shape: {synopsis: {captureSummary: {date, tomac, recruiting, other, actionItems}}, fetchedAt}"""
+        Shape: {synopsis: {captureSummary: {date, <slug>, recruiting, other, actionItems}}, fetchedAt}
+        where <slug> is the tenant slug (legacy deal-bucket key)."""
         global _briefing_cache
         cache = _briefing_cache.get('briefing_intel')
         if cache and (time.time() - cache[0]) < 120:
@@ -3489,7 +3577,7 @@ class Handler(BaseHTTPRequestHandler):
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Sign in — Tomac Cove</title>
+<title>Sign in — {firm_name}</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: #1a1714; color: #e8e0d4; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
@@ -3506,7 +3594,7 @@ class Handler(BaseHTTPRequestHandler):
 </head>
 <body>
 <div class="card">
-  <h1>Tomac Cove Dashboard</h1>
+  <h1>{firm_name} Dashboard</h1>
   {error_block}
   <form method="post" action="/login">
     <input type="hidden" name="next" value="{next_path}">
@@ -3516,14 +3604,21 @@ class Handler(BaseHTTPRequestHandler):
     <input id="p" name="password" type="password" autocomplete="current-password" required>
     <button type="submit">Sign in</button>
   </form>
-  <div class="brand">Tomac Cove &nbsp;·&nbsp; Private</div>
+  <div class="brand">{firm_name} &nbsp;·&nbsp; Private</div>
 </div>
 </body>
 </html>"""
 
     def _serve_login_page(self, error: str = '', next_path: str = '/'):
         error_block = f'<div class="err">{error}</div>' if error else ''
-        html = self._LOGIN_PAGE.replace('{error_block}', error_block).replace('{next_path}', next_path)
+        # Firm-name substitution — sourced from firm_context so subscriber
+        # installs render their own brand on the login page rather than
+        # the maintainer's. Falls back to a tenant-neutral default.
+        _firm_name = (((_FC_CTX or {}).get('firm') or {}).get('name') or '').strip() or 'COS Dashboard'
+        html = (self._LOGIN_PAGE
+                .replace('{firm_name}',  _firm_name)
+                .replace('{error_block}', error_block)
+                .replace('{next_path}',   next_path))
         body = html.encode('utf-8')
         self.send_response(200)
         self.send_header('Content-Type', 'text/html; charset=utf-8')
@@ -4657,7 +4752,7 @@ class Handler(BaseHTTPRequestHandler):
         write to Follow-ups Doc. Fast (~2s) when nothing is new; slower if transcripts
         are waiting. Must complete before Phase 2 reads the Follow-ups Doc.
 
-        Phase 2 (fetch + compile in parallel): read Follow-ups/Recruiting/Tomac Docs +
+        Phase 2 (fetch + compile in parallel): read Follow-ups/Recruiting/Deal Docs +
         Calendar; compile deal YAML + Excel → JSON.
 
         Phase 3: inject HTML, broadcast SSE reload to open tabs.
@@ -4778,13 +4873,16 @@ class Handler(BaseHTTPRequestHandler):
                         'owner': '',
                     })
 
-        # Tomac deals  →  Status / Dealflow
-        _diff_list('Status', 'Tomac Cove → Dealflow',
-                   live.get('tomac', []), proposed.get('tomac', []),
+        # Sub-tab label — uses firm display name from firm_context so the
+        # admin diff panel doesn't hardcode the maintainer firm.
+        _firm_label = (((_FC_CTX or {}).get('firm') or {}).get('name') or '').strip() or 'Firm'
+        # Deal-tile bucket  →  Status / Dealflow
+        _diff_list('Status', f'{_firm_label} → Dealflow',
+                   live.get(COS_TENANT_SLUG, []), proposed.get(COS_TENANT_SLUG, []),
                    'name', 'name')
 
         # LP data  →  Status / Fundraising
-        _diff_list('Status', 'Tomac Cove → Fundraising',
+        _diff_list('Status', f'{_firm_label} → Fundraising',
                    live.get('lpData', []), proposed.get('lpData', []),
                    'name', 'name')
 
@@ -4835,7 +4933,7 @@ class Handler(BaseHTTPRequestHandler):
         prop_fs  = str(proposed.get('fundraising',{}).get('approach','') or '')[:200]
         if live_fs != prop_fs:
             changes.append({
-                'tab': 'Status', 'subtab': 'Tomac Cove → Fundraising',
+                'tab': 'Status', 'subtab': f'{_firm_label} → Fundraising',
                 'action': 'MODIFY', 'item': 'Fundraising Strategy text',
                 'detail': f'Content changed ({len(live_fs)} → {len(prop_fs)} chars)',
                 'owner': '',
