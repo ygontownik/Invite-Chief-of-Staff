@@ -380,9 +380,9 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans
    personal-item names ("Dashboard Update — Verify ANTHROPIC_API_KEY...") wrap
    gracefully instead of overflowing into adjacent cells. min-width: 0 +
    overflow-wrap on direct children prevents grid blowout. */
-.pt-col-hdr { display: grid; grid-template-columns: minmax(160px, 1.2fr) minmax(0, 1.6fr) 110px 80px; gap: 8px; padding: 4px 4px 6px; border-bottom: 1px solid #e2e8f2; margin-top: 4px; }
+.pt-col-hdr { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(80px, 1.4fr) minmax(120px, 150px) minmax(80px, 100px); gap: 8px; padding: 4px 4px 6px; border-bottom: 1px solid #e2e8f2; margin-top: 4px; }
 .pt-col-hdr span { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #64748b; }
-.pt-row { display: grid; grid-template-columns: minmax(150px, 1.1fr) minmax(0, 1.5fr) minmax(120px, 150px) minmax(80px, 100px); gap: 10px; align-items: start; padding: 7px 4px; border-bottom: 1px solid #f1f5f9; cursor: pointer; border-radius: 5px; transition: background 0.12s, border 0.12s; }
+.pt-row { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(80px, 1.4fr) minmax(120px, 150px) minmax(80px, 100px); gap: 10px; align-items: start; padding: 7px 4px; border-bottom: 1px solid #f1f5f9; cursor: pointer; border-radius: 5px; transition: background 0.12s, border 0.12s; }
 .pt-row > div { min-width: 0; overflow-wrap: break-word; }
 .pt-row[draggable="true"] { cursor: grab; }
 .pt-row[draggable="true"]:active { cursor: grabbing; }
@@ -839,7 +839,7 @@ body { padding: 0 !important; }
    collapsing to mobile layout. Codified 2026-05-05 — 110px fixed status was
    truncating "in-progress" and "scheduled" labels at 1100px. */
 @media (max-width: 1100px) and (min-width: 781px) {
-  .pt-row { grid-template-columns: minmax(140px, 1fr) minmax(0, 1.3fr) 130px 90px !important; gap: 8px !important; }
+  .pt-row { grid-template-columns: minmax(140px, 1fr) minmax(70px, 1.3fr) 130px 90px !important; gap: 8px !important; }
 }
 @media (max-width: 780px) {
   .priority-panels           { grid-template-columns: 1fr !important; }
@@ -1825,6 +1825,9 @@ function buildAwaitingExternal(filter) {
   const rawCount   = visible.length;
   const uniqueCount = clusterList.reduce((s, c) => s + c.items.length, 0);
 
+  // Generic counterparty names that provide no useful identity — fall back to
+  // source title so at least the meeting/call context is visible.
+  const _VAGUE_CP = new Set(['assistant','external','unknown','speaker','speaker 1','speaker 2','speaker 3','—','']);
   const renderCluster = (c) => {
     const overdueItems = c.items.filter(i => i.due && i.due <= today);
     const earliest = c.items.map(i => i.due).filter(Boolean).sort()[0] || '';
@@ -1836,15 +1839,27 @@ function buildAwaitingExternal(filter) {
     const extra = c.items.length > 1 ? `<span style="color:#94a3b8;font-size:10px"> +${c.items.length - 1} more</span>` : '';
     const key = esc(lead.id || '');
     const srvKey = esc(((lead.counterparty || '') + '|' + (lead.content || '').slice(0, 40)).replace(/"/g, ''));
+    // If counterparty is a generic/unidentifiable word, use the source call title as
+    // the cluster header so the user can tell what meeting this came from.
+    const isVague = _VAGUE_CP.has(c.display.toLowerCase());
+    const srcTitle = lead.source_ref && lead.source_ref.title ? _cleanSrcTitle(lead.source_ref.title) : '';
+    const displayLabel = isVague && srcTitle ? srcTitle : c.display;
+    const vagueNote = isVague && srcTitle ? `<span style="font-size:10px;font-weight:400;color:#94a3b8"> · unidentified counterparty</span>` : '';
+    // Show context line when it adds info not already in the content
+    const ctx = lead.context || '';
+    const showCtx = ctx && !lead.content.toLowerCase().includes(ctx.split('—')[0].trim().toLowerCase().slice(0, 15));
+    const ctxLine = showCtx ? `<div style="font-size:10px;color:#94a3b8;margin-top:2px">${esc(ctx)}</div>` : '';
     return `
       <div style="padding:8px 12px;border-bottom:1px solid rgba(148,163,184,0.12);display:flex;gap:8px;align-items:flex-start">
         <div style="flex:1">
           <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:2px">
-            <span style="font-weight:600;color:#0f1e38;font-size:12px">${esc(c.display)}</span>
+            <span style="font-weight:600;color:#0f1e38;font-size:12px">${esc(displayLabel)}${vagueNote}</span>
             <span style="font-size:10px;color:${dueColor};white-space:nowrap;flex-shrink:0">${dueText}${extra}</span>
           </div>
           <div style="font-size:11px;color:#475569;line-height:1.4">${esc(lead.content || '')}</div>
-          ${(()=>{ const r=lead.source_ref; if(!r||!r.title) return ''; const t=_cleanSrcTitle(r.title); const d=r.date?` · ${esc(r.date)}`:''; return `<div style="font-size:10px;color:#94a3b8;margin-top:3px">${r.doc_url?`<a href="${esc(r.doc_url)}" target="_blank" rel="noopener" style="color:#94a3b8;text-decoration:none">↗ ${esc(t)}</a>`:esc(t)}${d}</div>`; })()}
+          ${ctxLine}
+          ${(()=>{ const r=lead.source_ref; if(!r||!r.title) return ''; const t=_cleanSrcTitle(r.title); const d=r.date?` · ${esc(r.date)}`:''; if(isVague) return ''; return `<div style="font-size:10px;color:#94a3b8;margin-top:3px">${r.doc_url?`<a href="${esc(r.doc_url)}" target="_blank" rel="noopener" style="color:#94a3b8;text-decoration:none">↗ ${esc(t)}</a>`:esc(t)}${d}</div>`; })()}
+          ${(()=>{ const r=lead.source_ref; if(!r||!r.doc_url||!isVague) return ''; return `<div style="font-size:10px;color:#94a3b8;margin-top:3px"><a href="${esc(r.doc_url)}" target="_blank" rel="noopener" style="color:#94a3b8;text-decoration:none">↗ view source transcript</a></div>`; })()}
         </div>
         <button class="dismiss-btn" onclick="dismissAction('${key}','${srvKey}')" title="Dismiss" style="flex-shrink:0;margin-top:2px">×</button>
       </div>`;
@@ -1878,14 +1893,21 @@ function buildAwaitingExternal(filter) {
         const extra = c.items.length > 1 ? ` +${c.items.length - 1}` : '';
         const key = esc(lead.id || '');
         const srvKey = esc(((lead.counterparty||'')+'|'+(lead.content||'').slice(0,40)).replace(/"/g,''));
+        const isVagueRow = _VAGUE_CP.has(c.display.toLowerCase());
+        const srcTitleRow = lead.source_ref && lead.source_ref.title ? _cleanSrcTitle(lead.source_ref.title) : '';
+        const displayRow = isVagueRow && srcTitleRow ? srcTitleRow : c.display;
+        const vagueNoteRow = isVagueRow && srcTitleRow ? `<span style="font-size:10px;font-weight:400;color:#94a3b8"> · unidentified counterparty</span>` : '';
+        const ctxRow = lead.context || '';
+        const showCtxRow = ctxRow && !lead.content.toLowerCase().includes(ctxRow.split('—')[0].trim().toLowerCase().slice(0, 15));
         return `<div style="padding:7px 12px;border-bottom:1px solid rgba(148,163,184,0.1);display:flex;gap:8px;align-items:flex-start">
           <div style="flex:1">
             <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:2px">
-              <span style="font-weight:600;font-size:12px;color:#0f1e38">${esc(c.display)}</span>
+              <span style="font-weight:600;font-size:12px;color:#0f1e38">${esc(displayRow)}${vagueNoteRow}</span>
               <span style="font-size:10px;color:${overdue ? '#dc2626' : '#64748b'};white-space:nowrap;flex-shrink:0">${dueText}${extra ? `<span style="color:#94a3b8"> ${extra}</span>` : ''}</span>
             </div>
             <div style="font-size:11px;color:#475569;line-height:1.4">${esc(lead.content||'')}</div>
-            ${(()=>{ const r=lead.source_ref; if(!r||!r.title) return ''; const t=_cleanSrcTitle(r.title); const d=r.date?` · ${esc(r.date)}`:''; return `<div style="font-size:10px;color:#94a3b8;margin-top:3px">${r.doc_url?`<a href="${esc(r.doc_url)}" target="_blank" rel="noopener" style="color:#94a3b8;text-decoration:none">↗ ${esc(t)}</a>`:esc(t)}${d}</div>`; })()}
+            ${showCtxRow ? `<div style="font-size:10px;color:#94a3b8;margin-top:2px">${esc(ctxRow)}</div>` : ''}
+            ${(()=>{ const r=lead.source_ref; if(!r||!r.title) return ''; const t=_cleanSrcTitle(r.title); const d=r.date?` · ${esc(r.date)}`:''; if(isVagueRow) return r.doc_url?`<div style="font-size:10px;color:#94a3b8;margin-top:3px"><a href="${esc(r.doc_url)}" target="_blank" rel="noopener" style="color:#94a3b8;text-decoration:none">↗ view source transcript</a></div>`:''; return `<div style="font-size:10px;color:#94a3b8;margin-top:3px">${r.doc_url?`<a href="${esc(r.doc_url)}" target="_blank" rel="noopener" style="color:#94a3b8;text-decoration:none">↗ ${esc(t)}</a>`:esc(t)}${d}</div>`; })()}
           </div>
           <button class="dismiss-btn" onclick="dismissAction('${key}','${srvKey}')" title="Dismiss" style="flex-shrink:0;margin-top:2px">×</button>
         </div>`;
@@ -2619,6 +2641,16 @@ function _ptHelpers(today) {
       : 'email';
     if (url) {
       return `<a class="pt-task-btn pt-task-${cls}" href="${resolveMailto(url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${esc(label)}</a>`;
+    }
+    // 2026-05-06: email-type tasks with no explicit URL fall through to Gmail search
+    // for the contact name so the button opens their inbox thread rather than a modal.
+    // Recruiter rows are excluded — they use the recruiter modal which is more useful.
+    if (cls === 'email' && t && (t.name || t.who) && !rowKey.startsWith('rec|')) {
+      const searchTerm = (t.name || t.who || '').replace(/[()\/\\|]/g, ' ').trim();
+      if (searchTerm) {
+        const gmailUrl = 'https://mail.google.com/mail/#search/' + encodeURIComponent(searchTerm);
+        return `<a class="pt-task-btn pt-task-${cls}" href="${gmailUrl}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Search Gmail for ${esc(searchTerm)}">${esc(label)}</a>`;
+      }
     }
     // 2026-05-04: claude_code rows + name-prefix "Dashboard Update —" personal_items
     // route the task button to a Claude session pre-loaded with the task description,
