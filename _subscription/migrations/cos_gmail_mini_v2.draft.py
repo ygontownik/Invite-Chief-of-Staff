@@ -60,8 +60,8 @@ except Exception:
 
 CREDS_DIR      = Path.home() / "credentials"
 PROCESSED_FILE = CREDS_DIR / "processed_emails.json"
-CONFIG_FILE    = Path.home() / "tomac-cove-pipeline" / "firm_config.json"
-LOG_FILE       = Path.home() / "tomac-cove-pipeline" / "logs" / "gmail_mini.log"
+CONFIG_FILE    = Path(os.environ.get("COS_PIPELINE_DIR", "")) / "firm_config.json" if os.environ.get("COS_PIPELINE_DIR") else Path(__file__).parent.parent / "firm_config.json"
+LOG_FILE       = Path(os.environ.get("COS_PIPELINE_DIR", "")) / "logs" / "gmail_mini.log" if os.environ.get("COS_PIPELINE_DIR") else Path(__file__).parent.parent / "logs" / "gmail_mini.log"
 
 LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
 logging.basicConfig(
@@ -90,18 +90,16 @@ DEFAULT_CONFIG = {
     # Required: firm_config.json :: research_senders — may be {} if no routing.
     "research_senders": {},
 
-    # Keywords that signal DEAL classification in subject/sender
+    # Keywords that signal DEAL classification in subject/sender.
+    # Firm/deal-specific names must be provided via firm_config.json :: deal_keywords.
+    # Only generic signal words are listed here as defaults.
     "deal_keywords": [
-        "cholla", "gideon", "venus", "bbeh", "black bayou",
-        "pngts", "pfs", "thunderhead", "arclight", "takanock",
-        "encore", "ercot", "oncor", "term sheet", "loi", "nda",
-        "diligence", "ic memo", "bid", "proposal"
+        "term sheet", "loi", "nda", "diligence", "ic memo", "bid", "proposal"
     ],
 
-    # Keywords that signal RECRUIT classification
+    # Keywords that signal RECRUIT classification.
+    # Firm/recruiter-specific names must be provided via firm_config.json :: recruit_keywords.
     "recruit_keywords": [
-        "castleton", "related digital", "reinova", "ridgewood",
-        "piper maddox", "one search", "barton partnership",
         "interview", "role", "opportunity", "resume", "cv",
         "offer", "comp", "compensation", "headhunter", "recruiter"
     ],
@@ -142,7 +140,7 @@ def load_config():
       1. firm_config.json (per-tenant, in COS_CONFIG_DIR or ~/cos-pipeline-config-<slug>/)
       2. firm_context.yaml :: firm.name as a fallback for firm_name only
       3. drive-docs.yaml as a fallback for `docs` (keys: followups, pipeline,
-         people_crm→people, recruiting, tomac_pipeline→pipeline)
+         people_crm→people, recruiting, deal_pipeline→pipeline)
     """
     # Try to source firm_config.json from the team config repo first
     try:
@@ -175,7 +173,7 @@ def load_config():
         # Map drive-docs.yaml canonical keys to gmail-mini's expected keys
         cfg_docs = {
             "followups":  drive_docs.get("followups", ""),
-            "pipeline":   drive_docs.get("tomac_pipeline", ""),
+            "pipeline":   drive_docs.get("deal_pipeline", drive_docs.get("tomac_pipeline", "")),  # noqa: tenant-leak — backward-compat key
             "people":     drive_docs.get("people_crm", ""),
             "recruiting": drive_docs.get("recruiting", ""),
         }
@@ -632,7 +630,7 @@ def haiku_triage(email: dict) -> dict:
 # PASS 2: SONNET ENRICHMENT (DEAL / RECRUIT only, confidence >= 0.7)
 # ────────────────────────────────────────────────────────────────────
 
-DEAL_ENRICHMENT_SYSTEM = """You are a chief of staff for a senior infrastructure PE investor at Tomac Cove Infrastructure Partners.
+DEAL_ENRICHMENT_SYSTEM = """You are a chief of staff for a senior infrastructure PE investor.
 An email has been classified as DEAL-related. Extract structured information for the deal pipeline.
 Reply with JSON only — no markdown.
 
@@ -978,7 +976,7 @@ def subject_already_in_doc(doc_id: str, subject: str) -> bool:
     """Return True if this email subject was already written to doc (dedup guard).
 
     Searches the cached full doc text for the subject as a substring — catches
-    both 'Subject: Re: Cholla update' and bare title lines. Works across team
+    both 'Subject: Re: Deal update' and bare title lines. Works across team  # noqa: tenant-leak
     members: if machine A wrote an entry 2h ago, machine B's cache loads fresh
     and finds the subject before writing a duplicate.
     """

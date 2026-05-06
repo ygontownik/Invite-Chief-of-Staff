@@ -1001,6 +1001,93 @@
           </table>
         </div>
 
+        <!-- Grid Intelligence Data Sources -->
+        <div class="tc-card" style="margin-top:24px">
+          <div class="adm-section-label" style="margin-bottom:16px">Grid Intelligence — Interconnection Queue Scanner</div>
+
+          <div style="font-size:.83rem;color:var(--ink-mid);margin-bottom:20px;line-height:1.7">
+            Pulls live interconnection queue data from MISO, ERCOT, and PJM via the <code>gridstatus</code> Python library.
+            Screens for large-MW gas/storage/nuclear projects and writes <code>data/compiled/grid-signals.json</code> for the deal pipeline.
+            MISO and ERCOT require no credentials. PJM requires a free API key.
+          </div>
+
+          <!-- ISO status -->
+          <table class="adm-table" style="margin-bottom:24px">
+            <thead><tr><th>ISO</th><th>Coverage</th><th>Status</th><th>Notes</th></tr></thead>
+            <tbody>
+              <tr>
+                <td style="font-weight:600;font-size:.83rem">MISO</td>
+                <td style="font-size:.82rem;color:var(--ink-mid)">IL, IN, MI, MN, MO, WI + more</td>
+                <td><span style="background:#e8f4e8;color:#2a6b2a;padding:2px 8px;border-radius:3px;font-size:.72rem;font-weight:700">ACTIVE</span></td>
+                <td style="font-size:.82rem;color:var(--ink-mid)">No key needed. Project name = Interconnection Location (substation).</td>
+              </tr>
+              <tr>
+                <td style="font-weight:600;font-size:.83rem">ERCOT</td>
+                <td style="font-size:.82rem;color:var(--ink-mid)">Texas</td>
+                <td><span style="background:#e8f4e8;color:#2a6b2a;padding:2px 8px;border-radius:3px;font-size:.72rem;font-weight:700">ACTIVE</span></td>
+                <td style="font-size:.82rem;color:var(--ink-mid)">No key needed. Full project_name, fuel_type, state available.</td>
+              </tr>
+              <tr>
+                <td style="font-weight:600;font-size:.83rem">PJM</td>
+                <td style="font-size:.82rem;color:var(--ink-mid)">PA, NJ, MD, OH, DE, VA, WV, IL, IN</td>
+                <td><span style="background:#fff3cd;color:#856404;padding:2px 8px;border-radius:3px;font-size:.72rem;font-weight:700">NEEDS KEY</span></td>
+                <td style="font-size:.82rem;color:var(--ink-mid)">Free API key from <a href="https://www.pjm.com/markets-and-operations/etools/open-access-same-time-information-system" target="_blank" style="color:var(--navy)">pjm.com</a> — set <code>PJM_API_KEY</code> in <code>~/.zshrc</code>.</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <!-- PJM setup steps -->
+          <div style="font-size:.8rem;font-weight:700;color:var(--navy);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">Get PJM API Key — 3 steps</div>
+          <ol style="font-size:.82rem;color:var(--ink-mid);padding-left:20px;line-height:2;margin-bottom:20px">
+            <li>Go to <a href="https://dataminer2.pjm.com/list" target="_blank" style="color:var(--navy)">dataminer2.pjm.com/list</a> → click <strong>Subscribe</strong> → create a free account</li>
+            <li>After account creation, your API key appears in your profile under <strong>API Key</strong></li>
+            <li>Add to <code>~/.zshrc</code>:
+              <div style="background:var(--bg);border-radius:5px;padding:10px 14px;font-family:var(--font-data);font-size:.82rem;color:var(--ink);margin-top:6px">
+                export PJM_API_KEY="your-key-here"
+              </div>
+              Then <code>source ~/.zshrc</code> and verify: <code>echo $PJM_API_KEY</code>
+            </li>
+          </ol>
+
+          <!-- Usage commands -->
+          <div style="font-size:.8rem;font-weight:700;color:var(--navy);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">Usage</div>
+          <table class="adm-table" style="margin-bottom:16px">
+            <thead><tr><th>Command</th><th>What it does</th></tr></thead>
+            <tbody>
+              <tr>
+                <td style="font-family:var(--font-data);font-size:.78rem;padding-right:20px;white-space:nowrap">
+                  <code>python3 ~/dashboards/routines/ingest/grid_signal_scanner.py --dry-run</code>
+                </td>
+                <td style="font-size:.82rem;color:var(--ink-mid)">Preview hits without writing. MISO + ERCOT + PJM if key set.</td>
+              </tr>
+              <tr>
+                <td style="font-family:var(--font-data);font-size:.78rem;padding-right:20px;white-space:nowrap">
+                  <code>... --isos MISO ERCOT --min-mw 200 --fuel gas</code>
+                </td>
+                <td style="font-size:.82rem;color:var(--ink-mid)">Gas projects ≥200 MW in MISO/ERCOT only.</td>
+              </tr>
+              <tr>
+                <td style="font-family:var(--font-data);font-size:.78rem;padding-right:20px;white-space:nowrap">
+                  <code>... --states IL IN OH PA --min-mw 500</code>
+                </td>
+                <td style="font-size:.82rem;color:var(--ink-mid)">Large projects in specific states (good for MISO GenCo screening).</td>
+              </tr>
+              <tr>
+                <td style="font-family:var(--font-data);font-size:.78rem;padding-right:20px;white-space:nowrap">
+                  <code>... --isos MISO ERCOT PJM --min-mw 100</code>
+                </td>
+                <td style="font-size:.82rem;color:var(--ink-mid)">Write hits to <code>grid-signals.json</code>. Drop <code>--dry-run</code> to persist.</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div style="font-size:.78rem;color:var(--ink-ghost);line-height:1.6">
+            Output lands in <code>~/dashboards/data/compiled/grid-signals.json</code>.
+            Asset signal tracker runs weekly (Mon 6:52 AM) for news signals.
+            Grid scanner has no auto-schedule yet — run manually or ask Claude to add one.
+          </div>
+        </div>
+
       </div><!-- /tab-setup -->
 
       <!-- ══ TAB 7: Auth Health ══════════════════════════════════ -->

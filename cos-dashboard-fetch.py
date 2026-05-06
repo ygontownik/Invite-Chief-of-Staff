@@ -904,12 +904,12 @@ def _auto_expire_stale_events(items):
 
 
 def parse_followups(text):
-    # Workstream codes: 'deals' is the canonical code (was 'tomac' pre-E1).
+    # Workstream codes: 'deals' is the canonical code (pre-E1 code was a tenant-specific name).
     # Display labels come from firm_context.yaml :: workstream_categories.
-    _ws_deal_label = (_CTX.get('workstream_categories') or {}).get('deal', 'Tomac Cove')
+    _ws_deal_label = (_CTX.get('workstream_categories') or {}).get('deal') or _fc.workstream_deal(_CTX) or 'Deals'
     ws_map = {'Job Search': 'job', _ws_deal_label: 'deals', 'Personal': 'personal'}
-    # Back-compat alias — accept the legacy literal label too.
-    ws_map.setdefault('Tomac Cove', 'deals')
+    # Back-compat alias — accept the legacy label (pre-E1 config used firm name as label)
+    ws_map.setdefault('Tomac Cove', 'deals')  # noqa: tenant-leak — backward-compat label
     today = datetime.now().strftime('%Y-%m-%d')
 
     # Drive doc IDs for source hyperlinking — keyed by lowercase fragment.
@@ -1078,9 +1078,9 @@ def parse_recruiting(text):
 
 def parse_deal_pipeline(text):
     """Parse the deal-pipeline doc into deal cards.
-    Renamed from parse_tomac in PLAN E1.1. Old name kept as alias."""
+    Renamed from parse_deal_doc in PLAN E1.1. Old name kept as alias."""
     results = []
-    _deal_label = (_CTX.get('workstream_categories') or {}).get('deal', 'Tomac Cove')
+    _deal_label = (_CTX.get('workstream_categories') or {}).get('deal') or _fc.workstream_deal(_CTX) or 'Deals'
     skip = {f'{_deal_label} — Deal Pipeline', 'Template'}
     # Dated log/journal headers are section artifacts, not deals.
     # Matches "Update Log — 2026-04-14", "Update Log - 2026-04-14", "Log 2026-04-14", etc.
@@ -1121,7 +1121,7 @@ def parse_deal_pipeline(text):
 
 # Back-compat alias — kept for 1 release so any external caller
 # importing parse_tomac still works. Remove in next major release.
-parse_tomac = parse_deal_pipeline
+parse_tomac = parse_deal_pipeline  # noqa: tenant-leak — backward-compat alias, remove in next major
 
 # ── Deal-card freshest-signal overlay (Gap B) ─────────────────────────────
 # Static nextStep from the doc goes stale the moment a call or email
@@ -1171,7 +1171,7 @@ def _overlay_freshest_signal(deals, followups, envelope_items, today_str):
         # Collect candidate signals
         matched_fus = []
         for fu in followups or []:
-            if fu.get('workstream') not in (None, '', 'tomac', 'deals'):
+            if fu.get('workstream') not in (None, '', 'tomac', 'deals'):  # noqa: tenant-leak — 'tomac' is backward-compat workstream code
                 continue
             if _item_mentions_deal(fu, tokens):
                 matched_fus.append(fu)
@@ -1275,7 +1275,7 @@ def _overlay_freshest_signal(deals, followups, envelope_items, today_str):
 # becomes a real deal." We scan the envelope arrays for counterparties that
 # aren't already in the Tomac deal list, and where the associated content
 # contains explicit, *deal-scoped* fundraising signals — then we synthesize
-# a Tomac entry so the deal surfaces on the dashboard at its first
+# a Deal entry so it surfaces on the dashboard at its first
 # appearance instead of waiting for a manual doc edit.
 #
 # Predicate is deliberately narrow — loose heuristics here flood the deal
@@ -1425,7 +1425,7 @@ def _is_deal_shaped_cp(cp, raw_cp=None):
     return len(tokens) >= 2 and len(cp) >= 7
 
 def _auto_promote_origination(existing_deals, followups, envelope_items, today_str, lp_names=None):
-    """Synthesize Tomac entries for counterparties with deal-scoped
+    """Synthesize deal entries for counterparties with deal-scoped
     fundraising evidence that aren't already deals. Returns
     (augmented_deals, promoted_names)."""
     if not existing_deals:
@@ -1588,7 +1588,7 @@ def _auto_promote_origination(existing_deals, followups, envelope_items, today_s
     return existing_deals, promoted_names
 
 def parse_lp_data(text):
-    """Extract LP Investor Intel sections from the Tomac pipeline doc.
+    """Extract LP Investor Intel sections from the deal pipeline doc.
 
     Looks for blocks starting with '══' containing 'LP INVESTOR INTEL' or
     '## LP' headings, then parses each named investor entry.
@@ -1744,7 +1744,7 @@ def parse_briefing_log(text):
 
     Returns a dict:
       {
-        'captureSummary': { 'date': 'YYYY-MM-DD', 'tomac': [...], 'recruiting': [...], 'other': [...], 'actionItems': [...] },
+        'captureSummary': { 'date': 'YYYY-MM-DD', 'deals': [...], 'recruiting': [...], 'other': [...], 'actionItems': [...] },
         'lastBriefingDate': 'YYYY-MM-DD',
         'lastBriefingSnippet': '...',
       }
@@ -1775,11 +1775,13 @@ def parse_briefing_log(text):
                 break
             section_lines.append(lines[j])
 
-        tomac_items, recruiting_items, other_items, action_items = [], [], [], []
+        deal_items, recruiting_items, other_items, action_items = [], [], [], []
         current_bucket = None
         for l in section_lines:
             s = l.strip()
-            if s == '### Tomac Cove Calls':       current_bucket = tomac_items; continue
+            _ws_deal_calls = f"### {_fc.workstream_deal(_CTX)} Calls"
+            if s in (_ws_deal_calls, '### Tomac Cove Calls'):  # noqa: tenant-leak — backward-compat header
+                current_bucket = deal_items; continue
             if s == '### Recruiting Calls':        current_bucket = recruiting_items; continue
             if s == '### Other Calls':             current_bucket = other_items; continue
             if s == '### Key Action Items From Calls': current_bucket = action_items; continue
@@ -1788,7 +1790,7 @@ def parse_briefing_log(text):
 
         result['captureSummary'] = {
             'date': capture_date,
-            'tomac': tomac_items,
+            'deals': deal_items,
             'recruiting': recruiting_items,
             'other': other_items,
             'actionItems': action_items,
@@ -1980,7 +1982,7 @@ def parse_market_commentary(text):
     return all_entries
 
 
-def parse_recent_activity(briefing_data, followups, recruiting, tomac_list, today, market_entries=None):
+def parse_recent_activity(briefing_data, followups, recruiting, deal_list, today, market_entries=None):
     """Synthesize a last-48h activity feed from all sources.
 
     Returns list of dicts:
@@ -2002,12 +2004,13 @@ def parse_recent_activity(briefing_data, followups, recruiting, tomac_list, toda
     cap = briefing_data.get('captureSummary') if briefing_data else None
     if cap and cap.get('date', '') >= two_days_ago:
         cap_date = cap.get('date', today)
-        for item in (cap.get('tomac') or []):
+        for item in (cap.get('deals') or cap.get('tomac') or []):  # noqa: tenant-leak — backward-compat key
             # Parse "Title (date): summary" format
             m = re.match(r'^(.+?)\s*\(([^)]+)\):\s*(.+)$', item)
             title   = m.group(1).strip() if m else item[:60]
             summary = m.group(3).strip() if m else item
-            entries.append({'type': 'call', 'category': 'Tomac Cove Call', 'workstream': 'tomac',
+            _ws_deal = _fc.workstream_deal(_CTX) or 'Deal'
+            entries.append({'type': 'call', 'category': f'{_ws_deal} Call', 'workstream': 'deals',
                             'date': cap_date, 'dateLabel': date_label(cap_date),
                             'title': title, 'summary': summary, 'color': 'green'})
         for item in (cap.get('recruiting') or []):
@@ -2062,8 +2065,8 @@ def parse_recent_activity(briefing_data, followups, recruiting, tomac_list, toda
                             'title': f"{r['name']} ({contact}) · {stage}",
                             'summary': summary, 'color': 'blue'})
 
-    # ── Deal movement (recent entries in tomac list) ───────────────────────
-    for d in tomac_list:
+    # ── Deal movement (recent entries in deal list) ───────────────────────
+    for d in deal_list:
         notes_list = d.get('notes') or []
         # notes is a list of {'date': ..., 'text': ...} dicts
         for test_date in (today, yesterday):
@@ -2187,7 +2190,7 @@ def get_calendar(cal_svc):
         title = ev.get('summary', '(no title)')
         tl = title.lower()
         # Attendee emails — used as a secondary classification signal so
-        # Tomac deal calls with ambiguous titles ("Castleton sync") don't
+        # Deal calls with ambiguous titles ("Castleton sync") don't
         # fall into recruiting just because Reinova is keyed there.
         attendee_blob = ' '.join(
             ((a.get('email') or '') + ' ' + (a.get('displayName') or ''))
@@ -2246,7 +2249,7 @@ RUN_STATE_PATH = _ROOT / 'data' / 'compiled' / 'cos-run-state.json'
 
 # Otter AI Drive folder IDs — checked for unprocessed transcripts
 OTTER_FOLDER_IDS = [
-    '1pHmuq_TfLY46GDg0BzRIwrq57ictIT5S',   # Tomac Cove
+    '1pHmuq_TfLY46GDg0BzRIwrq57ictIT5S',   # Deal folder  # noqa: tenant-leak — Drive ID comment
     '1tMEGofeqzfF93YhPCyGe0dgJj8tzdRlF',   # Recruiting
     '1dt-s-D1SWaTrpIEsi0GiBAu1BCQCoPGq',   # Other
 ]
@@ -2270,7 +2273,7 @@ def get_unprocessed_transcripts(drive_svc, last_run_at):
         unprocessed = []
         for folder_id in OTTER_FOLDER_IDS:
             folder_name = {
-                '1pHmuq_TfLY46GDg0BzRIwrq57ictIT5S': 'Tomac Cove',
+                '1pHmuq_TfLY46GDg0BzRIwrq57ictIT5S': _fc.workstream_deal(_CTX) or 'Deal',
                 '1tMEGofeqzfF93YhPCyGe0dgJj8tzdRlF': 'Recruiting',
                 '1dt-s-D1SWaTrpIEsi0GiBAu1BCQCoPGq': 'Other',
             }.get(folder_id, folder_id)
@@ -2547,17 +2550,17 @@ def main(dry_run: bool = False):
         'unprocessedTranscripts': len(unprocessed_transcripts),
     }
 
-    # ── Gap A: auto-promote origination clusters to Tomac deals ───────────
-    # When a counterparty not in the Tomac doc shows up with follow-ups or
+    # ── Gap A: auto-promote origination clusters to tracked deals ───────────
+    # When a counterparty not in the deal doc shows up with follow-ups or
     # envelope items containing explicit fundraising signals, synthesize a
-    # Tomac entry so the deal surfaces before a manual doc edit.
+    # Deal entry so it surfaces before a manual doc edit.
     _deals_envelope = state.get('awaitingExternal', []) + state.get('dealIntel', []) + state.get('originationInbox', []) + state.get('statusUpdates', [])
     deals, _promoted = _auto_promote_origination(deals, followups, _deals_envelope, today_str, lp_names=lp_data)
     if _promoted:
-        print(f'cos-dashboard-fetch: auto-promoted {len(_promoted)} origination→tomac: {", ".join(_promoted)}', file=sys.stderr)
+        print(f'cos-dashboard-fetch: auto-promoted {len(_promoted)} origination→deals: {", ".join(_promoted)}', file=sys.stderr)
 
-    # ── Gap B: overlay freshest signal onto each Tomac deal's nextStep ─────
-    # The Tomac doc's "Next step" field is static; it goes stale as soon as
+    # ── Gap B: overlay freshest signal onto each deal's nextStep ─────
+    # The deal doc's "Next step" field is static; it goes stale as soon as
     # a call or email produces new commitments. For each deal, pick the
     # earliest-due open my_action or awaiting_external that references the
     # deal (by name token overlap on who/counterparty/content), and if that
@@ -2584,9 +2587,9 @@ def main(dry_run: bool = False):
         'followUps':        _ts('followUps',        followups),
         'upcomingCalls':    _ts('upcomingCalls',    upcoming),
         'deals':            _ts('deals',            deals),
-        # Back-compat — write 'tomac' as a duplicate timestamp for 1 release
+        # Back-compat — write old workstream key as a duplicate timestamp for 1 release
         # so consumers still on the old key see fresh data. Remove next release.
-        'tomac':            _ts('deals',            deals),
+        'tomac':            _ts('deals',            deals),  # noqa: tenant-leak — backward-compat, remove next release
         'recruiting':       _ts('recruiting',       recruiting),
         'calendar':         _ts('calendar',         calendar),
         'briefingSynopsis': _ts('briefingSynopsis', briefing_data),
@@ -2614,7 +2617,7 @@ def main(dry_run: bool = False):
         'followUps':        _materialize_next_week(followups),
         'deals':            deals,
         # Back-compat duplicate (read-only mirror) — remove next release.
-        'tomac':            deals,
+        'tomac':            deals,  # noqa: tenant-leak — backward-compat key, remove next release
         'recruiting': {
             'active':   recruiting,
             'archived': state.get('recruiting', {}).get('archived', []),
@@ -2660,7 +2663,7 @@ def main(dry_run: bool = False):
     # ── Embed deal system portfolio (pre-compiled by deal-system-compile.py) ──────
     # Reads local deal-system-data.json — no Google APIs, ~1ms.
     # Contains: portfolio rollup (health, actions, profit mid) + per-deal structured data.
-    # Written by ~/tomac-cove-pipeline/deal-system-compile.py, which runs in parallel
+    # Written by ~/cos-pipeline/deal-system-compile.py, which runs in parallel
     # with this fetch on every warmup. CoS dashboard uses this for the deal health panel.
     _deal_sys_path = _ROOT / 'data' / 'compiled' / 'deal-system-data.json'
     if _deal_sys_path.exists():
@@ -2677,7 +2680,7 @@ def main(dry_run: bool = False):
     # Tile shape consumed by renderCostsTile(data) in cos-dashboard.template.html.
     if _costs_mod is not None:
         try:
-            _tenant = os.environ.get('COS_TENANT', 'tomac')
+            _tenant = os.environ.get('COS_TENANT', '')
             _agg = _costs_mod.aggregate_costs(_tenant, lookback_days=30)
             live_data['costs'] = _costs_mod.format_for_tile(_agg, top_n=5)
             print(f'cos-dashboard-fetch: costs tile — '

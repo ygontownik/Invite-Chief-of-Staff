@@ -33,7 +33,7 @@ FOLLOWUPS_DOC  = "10leX26u8n3XkoCHzg7SDwLUodVX2CqKjvXcSJ-KAsCY"
 RECRUITING_DOC = "1ZnTCVoA0ID7XTDFy27yDnrEVhBqx75kaTg_QXFq4eXA"
 
 FOLDERS = {
-    "Otter/Tomac":   "1pHmuq_TfLY46GDg0BzRIwrq57ictIT5S",
+    "Otter/Deal":    "1pHmuq_TfLY46GDg0BzRIwrq57ictIT5S",
     "Otter/Recruit": "1tMEGofeqzfF93YhPCyGe0dgJj8tzdRlF",
     "Otter/Other":   "1dt-s-D1SWaTrpIEsi0GiBAu1BCQCoPGq",
     "CallRec":       "1jYntgSVBsW5-5rdx18TeZhHRsI9xT74p",
@@ -41,7 +41,7 @@ FOLDERS = {
     "ATT_FTTH":      "1qMhb6QUe9n3OT0zDGT2gyck1NDT7QEDm",
     "BlackBayou":    "1dY0sJM2BbknEAMv9aTolImhJWJM3Roqu",
     "PacificFleet":  "1rD1oggo5PIzV7_Jy_s-TJ6iujvhyjECx",
-    "TomacRoot":     "1JWzfdAKq9OmiCq8OKwei0DXye4cal4bA",
+    "DealRoot":      "1JWzfdAKq9OmiCq8OKwei0DXye4cal4bA",
 }
 
 MIME_FILTER = (

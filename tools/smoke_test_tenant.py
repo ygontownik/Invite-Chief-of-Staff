@@ -229,6 +229,10 @@ def probe_static_source_scan(config_dir: Path, env: dict) -> tuple[str, str]:
         # and asserting none appear in subscriber output. Its contents are
         # by-design tenant-named.
         "validate_tenant.py",
+        # Tools-check files that reference the denylist by design
+        "check_smoke_tenant_leaks.py",
+        "check_served_html_inject.py",
+        "check_y2.py",
     }
     findings = []
     for py in pipeline_root.rglob("*.py"):
@@ -236,6 +240,9 @@ def probe_static_source_scan(config_dir: Path, env: dict) -> tuple[str, str]:
             continue
         s = str(py)
         if any(seg in s for seg in (".bak", "-bak", ".next", ".pre-", "/.git/", "__pycache__", "-cutover-bak")):
+            continue
+        # .sandbox/ and next/ are dev/experimental dirs, not production code
+        if "/.sandbox/" in s or "/next/" in s:
             continue
         # tests/ contains by-design tenant-fixture data (test_validate_gate4
         # asserts setup.sh --instance=tomac works; test_multi_tenant uses

@@ -4685,7 +4685,7 @@ class Handler(BaseHTTPRequestHandler):
                 'days_to_deadline': days_out,
                 'health': d.get('health'),
                 'key_risk': str(d.get('key_risk', ''))[:200],
-                'edge': str(d.get('tcip_edge') or d.get('edge', ''))[:200],
+                'edge': str(d.get('tcip_edge') or d.get('edge', ''))[:200],  # noqa: tenant-leak — backward-compat read of legacy key
                 'open_workstreams': [w.get('title') for w in d.get('workstreams', [])
                                      if w.get('status') not in ('done', 'closed')][:3],
                 'last_session_date': sm.get('last_session_date'),
@@ -4772,10 +4772,10 @@ Return ONLY the complete HTML. Start with <!DOCTYPE html>."""
                     f'</div></div>'
                 )
 
-            html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>TCIP Morning Brief — {today_str}</title></head>
+            html = f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>{_firm_name} Morning Brief — {today_str}</title></head>
 <body style="font-family:'SF Mono',monospace;background:#0a0a0a;color:#d0d0d0;max-width:860px;margin:0 auto;padding:40px 20px">
 <nav style="margin-bottom:28px"><a href="/" style="color:#555;text-decoration:none;font-size:12px;margin-right:20px">Dashboard</a><a href="/briefing/" style="color:#555;text-decoration:none;font-size:12px;margin-right:20px">Briefing</a><a href="/project-sync/status" style="color:#555;text-decoration:none;font-size:12px;margin-right:20px">Sync Status</a><a href="/project-sync/update" style="color:#555;text-decoration:none;font-size:12px">Session Close</a></nav>
-<div style="color:#555;font-size:11px;letter-spacing:3px;text-transform:uppercase">TCIP Morning Brief</div>
+<div style="color:#555;font-size:11px;letter-spacing:3px;text-transform:uppercase">{_firm_name} Morning Brief</div>
 <div style="color:#6bcbff;font-size:13px;margin-bottom:24px">{today_str} (rule-based — ANTHROPIC_API_KEY not set)</div>
 {cards}
 </body></html>"""

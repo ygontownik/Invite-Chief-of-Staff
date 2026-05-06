@@ -136,7 +136,7 @@ def load_drive_docs(drive_docs_path=None) -> dict:
     Usage in scripts:
         _DOCS = _fc.load_drive_docs()
         FOLLOW_UPS_DOC = _DOCS.get("followups", "")
-        TOMAC_DOC      = _DOCS.get("tomac_pipeline", "")
+        DEAL_DOC       = _DOCS.get("deal_pipeline", _DOCS.get("tomac_pipeline", ""))  # noqa: tenant-leak — backward-compat key
     """
     if drive_docs_path is None:
         config_dir = _find_config_dir()
@@ -317,7 +317,7 @@ _FEATURE_DEFAULTS = {
 }
 
 
-def get_features(ctx: dict, user: dict | None = None) -> dict:
+def get_features(ctx: dict, user=None) -> dict:
     """Resolve features for the current request: tenant default ⊕ user override.
 
     Lookup chain (per session-4 scope A):
@@ -334,7 +334,7 @@ def get_features(ctx: dict, user: dict | None = None) -> dict:
     return out
 
 
-def feature_enabled(ctx: dict, name: str, user: dict | None = None) -> bool:
+def feature_enabled(ctx: dict, name: str, user=None) -> bool:
     """Convenience: True iff feature `name` is enabled for the user/tenant."""
     return bool(get_features(ctx, user).get(name, False))
 
@@ -353,7 +353,7 @@ def is_read_only(ctx: dict) -> bool:
     """True if this install should skip write pipelines (per scope A read_only).
 
     Use to gate write-side daemons (capture, gmail-mini, otter-backfill) on
-    partner/secondary tomac installs that share the primary's Drive.
+    partner/secondary read-only installs that share the primary's Drive.
     """
     return bool((ctx or {}).get("read_only", False))
 

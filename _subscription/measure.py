@@ -216,7 +216,7 @@ def write_report(results: dict[tuple[str, str], dict[str, Any]]) -> None:
     lines.append("")
     lines.append("**Real-traffic ground truth needed:** these are synthetic measurements. "
                  "Token counts are realistic; output quality cannot be benchmarked synthetically. "
-                 "The decision-relevant data is whether IC memos produced by Opus on real Tomac "
+                 "The decision-relevant data is whether IC memos produced by Opus on real pipeline "
                  "deals are visibly better than Sonnet output. That requires a side-by-side eval "
                  "across 5–10 real Pass 3 cases, which this run cannot generate.")
     lines.append("")

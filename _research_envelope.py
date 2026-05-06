@@ -28,8 +28,19 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+# Firm context — loaded lazily so the module still works without a config file
+# (e.g. in unit tests or isolated runs). `_PRINCIPAL_NAME` is used as the
+# default owner on envelope items; falls back to "principal" if config missing.
+try:
+    import _firm_context as _fc
+    _CTX = _fc.load_firm_context()
+    _PRINCIPAL_NAME: str = (_fc._principal(_CTX).get("name") or "principal")
+except Exception:
+    _CTX = {}
+    _PRINCIPAL_NAME = "principal"
+
 # Research-doc envelope extraction runs on Gemini 2.5 Pro. Owner is always
-# "Yoni" on these items by construction (research sources cannot emit
+# the principal on these items by construction (research sources cannot emit
 # my_action / awaiting_external / status_update per config/routing-rules.md
 # and the _envelope_writer._validate() contract), so the harder Claude
 # attribution work is not required here. Transcript pipelines
@@ -68,8 +79,8 @@ def _load_pipeline_context() -> str:
         d = json.loads(_DASHBOARD_DATA.read_text())
     except Exception:
         return ""
-    lines = ["TOMAC COVE DEAL PIPELINE (resolve parent_id to one of these slugs when relevant):"]
-    for t in (d.get("tomac") or []):
+    lines = ["ACTIVE DEAL PIPELINE (resolve parent_id to one of these slugs when relevant):"]
+    for t in (d.get("deals") or d.get("tomac") or []):  # noqa: tenant-leak — backward-compat read of old key
         name = t.get("name") or ""
         ticker = t.get("ticker") or ""
         sector = t.get("sector") or ""
@@ -104,12 +115,12 @@ You are the routing layer for a research document (bank note, sell-side summary,
 
 Because this is a research source (not a direct interaction), you must ONLY emit: deal_takeaway, origination_idea, theme_note. Do NOT emit my_action, awaiting_external, status_update, or lp_intel — those content types come from calls and emails only. A post-filter will drop any forbidden items, but your job is to emit clean input.
 
-Ignore descriptive backgrounds, disclaimers, macroeconomic generics, and company primers with no incremental insight. Yoni has no time for filler.
+Ignore descriptive backgrounds, disclaimers, macroeconomic generics, and company primers with no incremental insight. Keep output lean.
 
-**PARENT_ID ATTRIBUTION (critical for dashboard wiring).** The TOMAC COVE DEAL PIPELINE block above lists every tracked deal as `ticker | name | sector/stage`. For a `deal_takeaway` item, you MUST set `parent_id` to the ticker (or exact name if no ticker) of the tracked deal when the research note discusses that specific asset, company, sponsor, or counterparty — even when the reference is indirect (e.g. a Rio Grande LNG note attaches to the NextDecade deal if NextDecade/Rio Grande is a tracked deal). Match on: deal name, ticker, counterparty firm, asset names mentioned in the deal's thesis, sector+geography overlap with explicit naming. Do NOT fabricate a parent_id — if no tracked deal is a clear match, leave parent_id empty and the item flows to general dealIntel[]. For `origination_idea` on a new target (not yet a tracked deal), leave parent_id empty; the item routes to originationInbox[]. For `theme_note`, parent_id is always empty.
+**PARENT_ID ATTRIBUTION (critical for dashboard wiring).** The ACTIVE DEAL PIPELINE block above lists every tracked deal as `ticker | name | sector/stage`. For a `deal_takeaway` item, you MUST set `parent_id` to the ticker (or exact name if no ticker) of the tracked deal when the research note discusses that specific asset, company, sponsor, or counterparty — even when the reference is indirect (e.g. a Rio Grande LNG note attaches to the NextDecade deal if NextDecade/Rio Grande is a tracked deal). Match on: deal name, ticker, counterparty firm, asset names mentioned in the deal's thesis, sector+geography overlap with explicit naming. Do NOT fabricate a parent_id — if no tracked deal is a clear match, leave parent_id empty and the item flows to general dealIntel[]. For `origination_idea` on a new target (not yet a tracked deal), leave parent_id empty; the item routes to originationInbox[]. For `theme_note`, parent_id is always empty.
 
 RESPOND WITH JSON ONLY (no markdown, no explanation):
-{"envelope_items":[{"content_type":"deal_takeaway|origination_idea|theme_note","owner":"Yoni","counterparty":"...","parent_id":"...","due":"","context":"...","dashboard_path":"","content":"..."}]}
+{"envelope_items":[{"content_type":"deal_takeaway|origination_idea|theme_note","owner":"<principal-name>","counterparty":"...","parent_id":"...","due":"","context":"...","dashboard_path":"","content":"..."}]}
 """
 
 
@@ -278,7 +289,7 @@ def extract_and_route(title: str, markdown: str, source_type: str,
     }
     for it in items:
         it.setdefault("source_ref", src_ref)
-        it.setdefault("owner", "Yoni")
+        it.setdefault("owner", _PRINCIPAL_NAME)
         it.setdefault("due", "")
 
     ew = _load_envelope_writer()

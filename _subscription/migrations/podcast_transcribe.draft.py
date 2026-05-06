@@ -378,7 +378,7 @@ def generate_memo(show: str, title: str,
     Parses the ONE-SENTENCE SUMMARY section out of the memo.
 
     MIGRATED: now routes through `_subscription.cached_client.complete`,
-    which sends the static-core system prompt (sections 1-5 + Tomac bundle)
+    which sends the static-core system prompt (sections 1-5 + deal bundle)
     as cached `system=` blocks. MEMO_PREAMBLE moves into `user_query`
     because its plain-text formatting + section-heading rules are
     podcast-specific and not part of the universal core. The transcript

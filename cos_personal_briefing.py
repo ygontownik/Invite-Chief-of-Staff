@@ -415,7 +415,7 @@ def fetch_meeting_context() -> str:
     Fails silently — a missing script or error never blocks the briefing.
     """
     import subprocess
-    script = Path.home() / "tomac-cove-pipeline" / "meeting_prep.py"
+    script = Path(os.environ.get("COS_PIPELINE_DIR", "")) / "meeting_prep.py" if os.environ.get("COS_PIPELINE_DIR") else Path(__file__).parent / "meeting_prep.py"
     if not script.exists():
         return ""
     try:

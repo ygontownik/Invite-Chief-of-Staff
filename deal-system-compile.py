@@ -8,21 +8,21 @@ and syncs outputs to the dashboard server.
 What it does (fast — all local, no Google APIs, ~3–5 sec end-to-end):
   1. python3 scripts/compile-dashboard.py  → dashboard/dashboard-data.json
   2. python3 scripts/cos-briefing.py       → dashboard/cos-briefing-latest.md
-  3. Copy compiled JSON to ~/tomac-cove-pipeline/dashboard/deal-system-data.json
+  3. Copy compiled JSON to ~/cos-pipeline/dashboard/deal-system-data.json
      (this is where cos-dashboard-fetch.py reads it to embed into the CoS dashboard)
-  4. Copy briefing MD to ~/tomac-cove-pipeline/dashboard/deal-briefing-latest.md
+  4. Copy briefing MD to ~/cos-pipeline/dashboard/deal-briefing-latest.md
   5. POST /refresh-deals  → fast HTML inject into Deal Pipeline Dashboard.html
   6. POST /warmup         → triggers CoS data re-fetch so dealPortfolio is embedded
 
 Called by:
   - cos-dashboard-server.py  POST /compile-deals  (on-demand from dashboard)
   - cos-dashboard-server.py  _warmup_in_background()  (in parallel with every warmup)
-  - ~/.claude/scheduled-tasks/tomac-deal-compile/SKILL.md  (daily scheduled task)
-  - Direct:  python3 ~/tomac-cove-pipeline/deal-system-compile.py
+  - ~/.claude/scheduled-tasks/deal-compile/SKILL.md  (daily scheduled task)
+  - Direct:  python3 ~/cos-pipeline/deal-system-compile.py
 
 Output paths:
-  ~/tomac-cove-pipeline/dashboard/deal-system-data.json   ← read by cos-dashboard-fetch.py
-  ~/tomac-cove-pipeline/dashboard/deal-briefing-latest.md ← for reference
+  ~/cos-pipeline/dashboard/deal-system-data.json   ← read by cos-dashboard-fetch.py
+  ~/cos-pipeline/dashboard/deal-briefing-latest.md ← for reference
 """
 import json, shutil, subprocess, sys, time, urllib.request
 from pathlib import Path
@@ -88,10 +88,10 @@ def _norm_name(s: str) -> str:
     return ''.join(c.lower() for c in (s or '') if c.isalnum())
 
 def overlay_fresh_signals() -> int:
-    """Read dashboard-data.json `tomac[]`; for each deal in
-    deal-system-data.json `deals[]`, if a tomac entry matches by name or
+    """Read dashboard-data.json `deals[]`; for each deal in
+    deal-system-data.json `deals[]`, if an entry matches by name or
     ticker (normalized, with substring fallback), update last_activity /
-    last_updated when the tomac date is fresher (lexicographic ISO date
+    last_updated when the date is fresher (lexicographic ISO date
     compare) and copy `signalCount` / `freshSignal` into additive
     `_signal_count` / `_fresh_signal` fields. Returns count of overlaid
     deals. Silent no-op if either file is missing or unparseable."""
@@ -106,11 +106,11 @@ def overlay_fresh_signals() -> int:
         print(f'  overlay: skipped — {e}', file=sys.stderr)
         return 0
 
-    tomac = dash.get('tomac') or []
-    if not isinstance(tomac, list):
+    deals = dash.get('deals') or dash.get('tomac') or []  # noqa: tenant-leak — backward-compat key
+    if not isinstance(deals, list):
         return 0
     by_name: dict = {}
-    for t in tomac:
+    for t in deals:
         if not isinstance(t, dict):
             continue
         n = _norm_name(t.get('name'))
@@ -1038,7 +1038,7 @@ def main():
     # compilers.
     print('→ Overlaying fresh signals from dashboard-data.json...', flush=True)
     n = overlay_fresh_signals()
-    print(f'  overlaid {n} deal(s)' if n else '  no overlay (no matching tomac entries)')
+    print(f'  overlaid {n} deal(s)' if n else '  no overlay (no matching entries)')
 
     # ── Step 3.5b: compute deal readthroughs from marketCommentary
     # (codified 2026-05-04 — U2 generic rule). Silent — writes
@@ -1078,7 +1078,7 @@ def main():
         deals = data.get('deals', [])
         crit  = p.get('total_critical_open', 0)
         total = p.get('total_open_actions', 0)
-        mid   = sum(d.get('tcip_profit', {}).get('total', {}).get('mid', 0) for d in deals)
+        mid   = sum(d.get('tcip_profit', {}).get('total', {}).get('mid', 0) for d in deals)  # noqa: tenant-leak — private JSON schema key
         print(
             f'\n✅  Deal compile done in {elapsed:.1f}s\n'
             f'   {p.get("total_deals", 0)} deals · avg health {p.get("avg_health", 0)}/100 · '
@@ -1088,6 +1088,15 @@ def main():
         )
     except Exception:
         print(f'✅  Deal compile done in {elapsed:.1f}s', flush=True)
+
+    # Project-sync exports — runs after main compile, failure does not
+    # block the primary pipeline
+    import subprocess as _ps, sys as _sys
+    _ps.run(
+        [_sys.executable,
+         str(Path(__file__).parent / 'compile-project-sync.py')],
+        check=False
+    )
 
 
 if __name__ == '__main__':

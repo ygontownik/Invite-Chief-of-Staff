@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 
 _HERE = pathlib.Path(__file__).resolve().parent
 _PROMPT_FILE = _HERE / "system_prompt_v1.md"
-_PIPELINE_DATA = pathlib.Path.home() / "cos-pipeline" / "data-tomac" / "compiled" / "deal-pipeline-data.json"
+_PIPELINE_DATA = pathlib.Path(os.environ.get("COS_DEAL_DATA", "")) or (pathlib.Path.home() / "cos-pipeline" / "data" / "compiled" / "deal-pipeline-data.json")
 
 _BEGIN = "<!-- AUTO_THEMES_BEGIN — managed by _subscription/refresh_bundle.py; do not hand-edit -->"
 _END = "<!-- AUTO_THEMES_END -->"

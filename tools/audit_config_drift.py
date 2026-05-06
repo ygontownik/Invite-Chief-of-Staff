@@ -79,7 +79,7 @@ KNOWN_FALLBACK_FILES = {
     "setup_new_firm.py",        # same
     "validate_tenant.py",       # explicit tenant validation, references both
     "deal-system-compile.py",   # documents both as input directories
-    "cos-dashboard-server.py",  # documented one-release fallback for legacy tomac-config.yaml
+    "cos-dashboard-server.py",  # documented one-release fallback for legacy per-tenant config
     "audit_config_drift.py",    # this script — references both intentionally
 }
 

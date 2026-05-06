@@ -1,6 +1,6 @@
 """Multi-tenant scaffolding for the COS pipeline.
 
-Pure-Python helpers for mapping a tenant *slug* (short name like ``tomac`` or
+Pure-Python helpers for mapping a tenant *slug* (short name like ``acme`` or
 ``re-dev``) onto the per-tenant resources defined by the run-2 plan and
 DECISIONS log:
 
@@ -18,14 +18,14 @@ the onboarding script (see ``J_SETUP.md``).
 
 Examples
 --------
->>> slug_to_port("tomac")
+>>> slug_to_port("acme")
 7777
 >>> slug_to_port("re-dev")
 7778
 >>> launchagent_label("re-dev", "morning-briefing")
 'com.cos.re-dev.morning-briefing'
->>> keychain_service("tomac")
-'cos-pipeline-tomac'
+>>> keychain_service("acme")
+'cos-pipeline-acme'
 
 Run as a script for a self-test::
 
@@ -45,8 +45,9 @@ from typing import List
 HOME = Path.home()
 
 #: Reserved fixed-port assignments (per DECISIONS C6 / PLAN J1).
+#: Port 7777 is the default for the primary tenant; "re-dev" reserves 7778
+#: for a development/staging clone. Tenants not listed here get hash-allocated ports.
 RESERVED_PORTS: dict[str, int] = {
-    "tomac": 7777,
     "re-dev": 7778,
 }
 
@@ -174,7 +175,7 @@ def _hash_port(slug: str) -> int:
 def slug_to_port(slug: str) -> int:
     """Return the dashboard port for *slug*.
 
-    - ``tomac`` → 7777, ``re-dev`` → 7778 (reserved, per DECISIONS C6).
+    - ``re-dev`` → 7778 (reserved for staging/dev clone, per DECISIONS C6).
     - Otherwise: hash-based starting at ``DYNAMIC_PORT_START`` (7779) with
       collision check against the on-disk registry plus the reserved table.
       Linear probing within the dynamic range until a free port is found.
@@ -238,7 +239,7 @@ def list_known_tenants() -> List[str]:
 def _selftest() -> None:
     print("multi_tenant.py self-test")
     print("=" * 60)
-    for slug in ("tomac", "re-dev"):
+    for slug in ("acme", "re-dev"):
         print(f"\nslug = {slug!r}")
         print(f"  port              : {slug_to_port(slug)}")
         print(f"  data dir          : {tenant_data_dir(slug)}")

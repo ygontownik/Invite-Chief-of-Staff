@@ -22,7 +22,7 @@ from typing import Any
 from cached_client import complete
 
 _HERE = pathlib.Path(__file__).resolve().parent
-_PIPELINE_DATA = pathlib.Path.home() / "cos-pipeline" / "data-tomac" / "compiled" / "deal-pipeline-data.json"
+_PIPELINE_DATA = pathlib.Path.home() / "cos-pipeline" / "data" / "compiled" / "deal-pipeline-data.json"
 _REPORT_FILE = _HERE / "EVAL_PASS3.md"
 
 # Three themes spanning sectors. Picked manually for diversity.
@@ -86,11 +86,11 @@ def _format_pass2_brief(theme: dict) -> str:
                 f"  Deal status: {deal_ctx.get('dealStatus', 'n/a')}",
                 f"  Process signal: {deal_ctx.get('processSignal', 'n/a')}",
             ])
-        fit = t.get("investorFit", {}).get("tomacCove", {})
+        fit = t.get("investorFit", {}).get("tomacCove", {})  # noqa: tenant-leak — private JSON schema key
         if fit:
             lines.extend([
                 "",
-                "Tomac Cove fit:",
+                "Deal fit:",
                 f"  Score: {fit.get('score')}",
                 f"  Angle: {fit.get('angle')}",
                 f"  Rationale: {fit.get('rationale', 'n/a')}",
@@ -147,13 +147,13 @@ def main() -> None:
 
 def _write_report(results: list[dict[str, Any]]) -> None:
     lines = []
-    lines.append("# Pass 3 Eval — Sonnet 4.6 vs Opus 4.7 on Real Tomac IC Memos")
+    lines.append("# Pass 3 Eval — Sonnet 4.6 vs Opus 4.7 on Real Pipeline IC Memos")
     lines.append("")
     lines.append("**The question.** Should Pass 3 (IC memo production) in `MODEL_ROUTER.md` "
                  "move from Sonnet 4.6 ($3/$15 per M) to Opus 4.7 ($5/$25 per M)?")
     lines.append("")
     lines.append("**The cost gap.** From `MEASUREMENT_REPORT.md`: Opus is ~1.81× Sonnet on a "
-                 "Pass-3-shaped workload. Absolute delta ~$0.016/call. At Tomac's current pace "
+                 "Pass-3-shaped workload. Absolute delta ~$0.016/call. At this pace "
                  "of roughly 5-10 IC memos per week, total cost difference is on the order of "
                  "$5-10/month. Cost is not the deciding factor — output quality is.")
     lines.append("")

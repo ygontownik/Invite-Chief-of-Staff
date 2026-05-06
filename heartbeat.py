@@ -42,7 +42,7 @@ HOME = Path(os.path.expanduser("~"))
 LOG_DIRS = [
     HOME / "dashboards" / "logs",
     HOME / "dashboards" / "logs" / "claude-tasks",
-    HOME / "cos-pipeline" / "logs-tomac",  # populated once Track B3 lands
+    HOME / "cos-pipeline" / "logs",  # tenant log dir (Track B3)
     Path("/tmp"),
 ]
 CREDENTIALS_DIR = HOME / "credentials"
@@ -426,7 +426,7 @@ def build_routine_set(parsed: dict[str, Any]) -> list[tuple[dict[str, Any], str]
 
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--tenant", default="tomac")
+    parser.add_argument("--tenant", default="")
     parser.add_argument(
         "--config",
         default=str(HOME / "cos-pipeline-config-tomac"),

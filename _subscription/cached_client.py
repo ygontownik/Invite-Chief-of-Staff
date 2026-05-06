@@ -72,7 +72,7 @@ def _build_system_blocks(tenant_bundle: str,
                          routine_prompt: str = "") -> list[dict[str, Any]]:
     """Render system segments with cache markers.
 
-    Blocks 1 + 2: investor identity and Tomac bundle — always cached.
+    Blocks 1 + 2: investor identity and deal bundle — always cached.
     Block 3: static tail of system_prompt_v1.md — NOT cached (volatile slot).
     Block 4 (optional): per-routine format prompt (MEMO_PREAMBLE, JSON schema,
     capture ruleset) — cached when provided. This is the third breakpoint:

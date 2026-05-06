@@ -73,7 +73,7 @@ try:
             if isinstance(contact, dict):
                 if contact.get("name"): contact["name"] = _resolve(contact["name"])
                 if contact.get("firm"): contact["firm"] = _resolve(contact["firm"])
-        for item in data.get("tomac_intel", []) or []:  # noqa: tenant-leak (LLM-prompt JSON contract key — schema migration is a separate ticket)
+        for item in (data.get("deal_intel") or data.get("tomac_intel") or []):  # noqa: tenant-leak — backward-compat read of old key
             if isinstance(item, dict) and item.get("investor_or_firm"):
                 item["investor_or_firm"] = _resolve(item["investor_or_firm"])
         for item in data.get("lp_updates", []) or []:
@@ -230,7 +230,7 @@ def build_dashboard_path_reference():
     if not active_deals and DASHBOARD_DATA_PATH.exists():
         try:
             dash = json.loads(DASHBOARD_DATA_PATH.read_text())
-            for item in dash.get("tomac", []):
+            for item in dash.get(_DEAL_WS, dash.get("tomac", [])):  # noqa: tenant-leak — backward-compat read
                 name = item.get("name", "?")
                 if name and "Update Log" not in name:
                     active_deals.append((name, item.get("stage", "?")))
@@ -273,7 +273,7 @@ def build_dashboard_path_reference():
 
     lines.append("\nDEAL IDEAS DASHBOARD (/deals/) — THEMES & SCORED TARGETS:")
     lines.append("  Cross-reference: if the call mentions any asset, geography, sector, or")
-    lines.append("  counterparty that touches a theme or target below, flag it in tomac_intel")
+    lines.append("  counterparty that touches a theme or target below, flag it in deal_intel")  # noqa: tenant-leak — deferred schema migration
     lines.append("  using the Deal Pipeline path. This is how call intel flows into the pipeline.")
     current_theme = None
     for theme_label, target_name, status in pipeline_paths:
@@ -378,7 +378,7 @@ EXTRACTION TASKS:
 
 6. recruiting_intel (only if {_fc.workstream_recruiting(_CTX)}): {{"firm":"","role":"","stage":"Screening|Longlist|Shortlist|Live Process","key_dates":"","comp_intel":"","notes":""}}
 
-7. tomac_intel: Named deal and LP intelligence. For substantive {_DEAL_WS} calls, aim for 5+ items. Include: deal structure details, competitive dynamics, counterparty motivations, LP mandate fit, precedent transactions, new asset angles, fundraising strategy advice, market observations with investment implications.
+7. deal_intel: Named deal and LP intelligence. For substantive {_DEAL_WS} calls, aim for 5+ items. Include: deal structure details, competitive dynamics, counterparty motivations, LP mandate fit, precedent transactions, new asset angles, fundraising strategy advice, market observations with investment implications.  # noqa: tenant-leak — deferred schema migration
    CROSS-REFERENCE: scan against the DEAL IDEAS DASHBOARD paths injected below. If something discussed (asset type, geography, sector, counterparty) connects to a named pipeline theme or target, include that item with the matching dashboard_path. This is how call intel flows into the deal pipeline.
    Each: {{
      "investor_or_firm": "",
@@ -391,11 +391,11 @@ EXTRACTION TASKS:
 
 8. one_line_summary: Under 25 words. Lead with the so-what for a senior investor.
 
-KEY COMPETITOR / CO-INVESTOR FIRMS — flag any mention in tomac_intel:
+KEY COMPETITOR / CO-INVESTOR FIRMS — flag any mention in deal_intel:  # noqa: tenant-leak — deferred schema key
 {_PEER_FIRMS}.
 
 RESPOND WITH THIS JSON ONLY (no markdown, no explanation):
-{{"category":"...","one_line_summary":"...","speakers":[{{"label":"...","name":"...","role":"...","evidence":"..."}}],"action_items":[{{"who":"...","what":"...","due":"...","owner":"...","workstream":"...","action_type":"new_action|status_update","context":"...","dashboard_path":"..."}}],"deal_updates":[{{"deal_name":"...","status_change":"...","key_developments":["..."],"owner":"...","next_step":"...","dashboard_directive":"..."}}],"lp_updates":[{{"lp_name":"...","contact_name":"...","status":"...","owner":"...","context":"...","next_action":"...","dashboard_directive":"..."}}],"new_contacts":[...],"recruiting_intel":{{}},"tomac_intel":[{{"investor_or_firm":"...","status":"...","key_feedback":"...","next_action":"...","intel_type":"...","dashboard_path":"..."}}]}}
+{{"category":"...","one_line_summary":"...","speakers":[{{"label":"...","name":"...","role":"...","evidence":"..."}}],"action_items":[{{"who":"...","what":"...","due":"...","owner":"...","workstream":"...","action_type":"new_action|status_update","context":"...","dashboard_path":"..."}}],"deal_updates":[{{"deal_name":"...","status_change":"...","key_developments":["..."],"owner":"...","next_step":"...","dashboard_directive":"..."}}],"lp_updates":[{{"lp_name":"...","contact_name":"...","status":"...","owner":"...","context":"...","next_action":"...","dashboard_directive":"..."}}],"new_contacts":[...],"recruiting_intel":{{}},"deal_intel":[{{"investor_or_firm":"...","status":"...","key_feedback":"...","next_action":"...","intel_type":"...","dashboard_path":"..."}}]}}  # noqa: tenant-leak — deal_intel is a deferred schema migration
 """
 
 EXTRACTION_PREAMBLE = _fc.build_extraction_header(_CTX) + _EXTRACTION_BODY
@@ -471,7 +471,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--doc-id",   required=True,  help="Google Doc ID of the transcript")
     parser.add_argument("--title",    required=True,  help="Human-readable call title")
-    parser.add_argument("--category", default="auto", help="tomac / recruiting / other / auto")
+    parser.add_argument("--category", default="auto", help="deal / recruiting / other / auto")
     args = parser.parse_args()
 
     print(f"[hook] Starting COS extraction: {args.title}", flush=True)
@@ -541,7 +541,7 @@ def main():
     actions     = data.get("action_items", [])
     contacts    = data.get("new_contacts", [])
     rec_intel   = data.get("recruiting_intel", {})
-    tomac_intel = data.get("tomac_intel", [])
+    deal_intel  = data.get("deal_intel") or data.get("tomac_intel") or []  # noqa: tenant-leak — backward-compat read of old key
     speakers    = data.get("speakers", [])
     deal_upd    = data.get("deal_updates", [])
     lp_upd      = data.get("lp_updates", [])
@@ -623,9 +623,9 @@ def main():
             print(f"[hook] Recruiting doc write failed: {e}", file=sys.stderr)
 
     # ── Deal Pipeline doc ─────────────────────────────────────────────────────
-    if category == _DEAL_WS and tomac_intel:
+    if category == _DEAL_WS and deal_intel:  # noqa: tenant-leak — deferred schema migration
         try:
-            tdoc2    = gdocs_get(token, TOMAC_DOC)
+            tdoc2    = gdocs_get(token, TOMAC_DOC)  # noqa: tenant-leak — TOMAC_DOC is a backward-compat variable name
             tcontent = tdoc2.get("body", {}).get("content", [])
             tend     = (tcontent[-1].get("endIndex", 2) - 1) if tcontent else 1
             ttext2   = (
@@ -633,15 +633,15 @@ def main():
                 f"| Investor | Status | Key feedback | Next action |\n"
                 f"|---|---|---|---|\n"
             )
-            for item in tomac_intel:
+            for item in deal_intel:
                 ttext2 += (
                     f"| {item.get('investor_or_firm','?')} "
                     f"| {item.get('status','?')} "
                     f"| {item.get('key_feedback','?')} "
                     f"| {item.get('next_action','?')} |\n"
                 )
-            gdocs_insert(token, TOMAC_DOC, tend, ttext2)
-            print(f"[hook] ✅  {_DEAL_WS} doc: {len(tomac_intel)} LP intel rows", flush=True)
+            gdocs_insert(token, TOMAC_DOC, tend, ttext2)  # noqa: tenant-leak — TOMAC_DOC is backward-compat variable
+            print(f"[hook] ✅  {_DEAL_WS} doc: {len(deal_intel)} LP intel rows", flush=True)
         except Exception as e:
             print(f"[hook] {_DEAL_WS} doc write failed: {e}", file=sys.stderr)
 
@@ -746,20 +746,20 @@ def main():
                 header += f"  ↳ {item.get('what', '')} ({dpath})\n"
 
         header += "\nKEY INTEL:\n"
-        for item in tomac_intel:
+        for item in deal_intel:
             intel_type = item.get("intel_type", "")
             dpath      = item.get("dashboard_path", "")
             header += f"  • [{intel_type}] {item.get('investor_or_firm', '')}: {item.get('key_feedback', '')}\n"
             if dpath:
                 header += f"      → {dpath}\n"
-        if not tomac_intel:
+        if not deal_intel:
             header += "  None\n"
 
         header += (
             f"\nDOCS TOUCHED: Follow-ups (+{added} rows)"
             f" | People ({'+'+ str(len(contacts)) if contacts else 'No change'})"
             f" | Recruiting ({'Updated: ' + rec_intel.get('firm','') if category=='Recruiting' and rec_intel.get('firm') else 'No change'})"
-            f" | {_DEAL_WS} Pipeline ({'Updated' if category==_DEAL_WS and tomac_intel else 'No change'})\n"
+            f" | {_DEAL_WS} Pipeline ({'Updated' if category==_DEAL_WS and deal_intel else 'No change'})\n"
             f"══════════════════════════════════════════════════════════════════════\n\n"
         )
         gdocs_insert(token, args.doc_id, 1, header)

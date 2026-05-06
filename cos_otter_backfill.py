@@ -4,7 +4,7 @@ cos_otter_backfill.py — Full backfill pass for COS transcript pipeline.
 
 Scans all Otter AI and Call Transcript folders, processes any unprocessed
 Google Doc using Claude, and writes outputs to Follow-ups, People, Recruiting,
-and Tomac Cove Pipeline docs.
+and deal pipeline docs.
 
 Dedup tracker: ~/credentials/processed_cos_transcripts.json
 """
@@ -31,14 +31,15 @@ from _usage import log_usage  # noqa: E402
 from _entity_normalizer import EntityNormalizer  # noqa: E402
 
 # ── Firm context (no hardcoded principal/firm references below this line) ──────
-_PIPELINE_DIR = Path.home() / "tomac-cove-pipeline"
+_PIPELINE_DIR = Path(os.environ.get("COS_PIPELINE_DIR", "")) or Path(__file__).parent
 if str(_PIPELINE_DIR) not in sys.path:
     sys.path.insert(0, str(_PIPELINE_DIR))
 import _firm_context as _fc  # noqa: E402
 import _transcript_source as _ts  # noqa: E402
 _CTX = _fc.load_firm_context()
-_OWNERS        = _fc.owner_whitelist_str(_CTX)   # e.g. "Yoni|Mark|Nik"
-_DEAL_WS       = _fc.workstream_deal(_CTX)        # e.g. "Tomac Cove"
+_OWNERS        = _fc.owner_whitelist_str(_CTX)   # e.g. "Alice|Bob|Carol"
+_SELF_EMAIL    = (_fc._principal(_CTX).get('email') or '').lower()
+_DEAL_WS       = _fc.workstream_deal(_CTX)        # e.g. "Acme Capital"
 _RECRUIT_WS    = _fc.workstream_recruiting(_CTX)  # e.g. "Recruiting"
 _PEER_FIRMS    = _fc.peer_firms_str(_CTX)
 _DOCS          = _fc.load_drive_docs()            # flat key→Drive-ID map
@@ -104,7 +105,7 @@ def _normalize_extraction_in_place(data: dict, norm: EntityNormalizer, stats: di
                 contact["name"] = _resolve(contact["name"])
             if contact.get("firm"):
                 contact["firm"] = _resolve(contact["firm"])
-    for intel in data.get("tomac_intel", []) or []:
+    for intel in (data.get("deal_intel") or data.get("tomac_intel") or []):  # noqa: tenant-leak — backward-compat read of old key
         if isinstance(intel, dict):
             for k in ("counterparty", "deal", "lp", "firm"):
                 if intel.get(k):
@@ -125,7 +126,7 @@ ROUTING_RULES_PATH = Path.home() / "dashboards/config/routing-rules.md"
 FOLLOW_UPS_DOC  = _DOCS.get("followups",      "10leX26u8n3XkoCHzg7SDwLUodVX2CqKjvXcSJ-KAsCY")
 PEOPLE_DOC      = _DOCS.get("people_crm",     "1ZCKnZlQgKD13dLsQNxCM_nRsTjz2DVitjeUWowUur0Y")
 RECRUITING_DOC  = _DOCS.get("recruiting",     "1ZnTCVoA0ID7XTDFy27yDnrEVhBqx75kaTg_QXFq4eXA")
-TOMAC_DOC       = _DOCS.get("tomac_pipeline", "1LHorixPs8ppwSvQzGfA_B6609YZA8dSpR4rmppENzpc")
+TOMAC_DOC       = _DOCS.get("deal_pipeline", _DOCS.get("tomac_pipeline", "1LHorixPs8ppwSvQzGfA_B6609YZA8dSpR4rmppENzpc"))  # noqa: tenant-leak — backward-compat key
 DASHBOARD_URL   = "http://localhost:7777/warmup"
 CLAUDE_MODEL    = "claude-sonnet-4-6"
 MEMO_MODEL      = "claude-opus-4-7"
@@ -139,7 +140,7 @@ ANTHROPIC_KEY   = os.environ.get("ANTHROPIC_API_KEY", "")
 # or these same defaults.
 OTTER_ROOT_FOLDER       = _DOCS.get("otter_ai",          "1zJly0cCiqsbZ3umYBXse7nYE7tUpFGOr")
 OTTER_RECRUITING_FOLDER = _DOCS.get("otter_recruiting",   "1tMEGofeqzfF93YhPCyGe0dgJj8tzdRlF")
-OTTER_TOMAC_FOLDER      = _DOCS.get("otter_tomac",        "1pHmuq_TfLY46GDg0BzRIwrq57ictIT5S")
+OTTER_TOMAC_FOLDER      = _DOCS.get("otter_deal", _DOCS.get("otter_tomac", "1pHmuq_TfLY46GDg0BzRIwrq57ictIT5S"))  # noqa: tenant-leak — backward-compat key
 OTTER_OTHER_FOLDER      = _DOCS.get("otter_other",        "1dt-s-D1SWaTrpIEsi0GiBAu1BCQCoPGq")
 CALL_TRANSCRIPTS_FOLDER = _DOCS.get("call_transcripts",   "1jYntgSVBsW5-5rdx18TeZhHRsI9xT74p")
 
@@ -274,7 +275,7 @@ def move_file_to_folder(token, file_id, new_folder_id, old_folder_id):
 # Legacy category→folder map. Only used if a GoogleDriveFolderSource has no
 # category_folders configured and we need a fallback for root-file moving.
 _LEGACY_CATEGORY_FOLDER = {
-    _DEAL_WS:    OTTER_TOMAC_FOLDER,
+    _DEAL_WS:    OTTER_TOMAC_FOLDER,  # noqa: tenant-leak — variable name contains legacy key, backward-compat
     _RECRUIT_WS: OTTER_RECRUITING_FOLDER,
     "Other":     OTTER_OTHER_FOLDER,
 }
@@ -717,12 +718,15 @@ def _pick_best_calendar_match(events, transcript_title, transcript_iso_time):
     return best if best_score >= 0.2 else None
 
 
-def _participants_from_event(event, exclude_emails=("ygontownik@gmail.com",)):
+def _participants_from_event(event, exclude_emails=None):
     """Extract participant display-names from a calendar event's attendees.
 
-    Yoni's own email is filtered — the prompt handles Yoni separately.
+    The principal's own email (from firm_context.yaml) is filtered by default —
+    the prompt handles the principal separately.
     Falls back to email local-part (prettified) when displayName is missing.
     """
+    if exclude_emails is None:
+        exclude_emails = (_SELF_EMAIL,) if _SELF_EMAIL else ()
     out = []
     seen = set()
     for a in event.get("attendees", []) or []:
@@ -838,7 +842,7 @@ def load_pipeline_context():
     if PIPELINE_DATA_PATH.exists():
         try:
             data = json.loads(PIPELINE_DATA_PATH.read_text())
-            lines = ["TOMAC COVE DEAL PIPELINE TARGETS (flag any match in tomac_intel):"]
+            lines = [f"{_DEAL_WS.upper()} DEAL PIPELINE TARGETS (flag any match in deal_intel):"]  # noqa: tenant-leak — deferred schema key
             for theme in data.get("themes", []):
                 targets = theme.get("targets", [])
                 if not targets:
@@ -866,7 +870,7 @@ def load_pipeline_context():
         try:
             dash = json.loads(DASHBOARD_DATA_PATH.read_text())
             port_lines = [f"\n{_DEAL_WS.upper()} ACTIVE DEALS (COS Dashboard › {_DEAL_WS} Deals):"]
-            for item in dash.get("tomac", []):
+            for item in dash.get(_DEAL_WS, dash.get("tomac", [])):  # noqa: tenant-leak — backward-compat fallback
                 name  = item.get("name", "?")
                 stage = item.get("stage", "?")
                 contacts = item.get("contacts", "")
@@ -1029,7 +1033,7 @@ EXTRACTION TASKS:
 4. recruiting_intel: Populate whenever there is job search, firm evaluation, or role discussion — regardless of call category.
    {{"firm":"","role":"","stage":"Screening|Longlist|Shortlist|Live Process|Networking","key_dates":"","comp_intel":"","notes":""}}
 
-5. tomac_intel: Named LP or deal intelligence — populate for ANY category if the call touches a firm from the DEAL PIPELINE TARGETS or LP TARGETS above, OR if there is competitive intel, co-investment discussion, or deal origination relevant to the firm.
+5. deal_intel: Named LP or deal intelligence — populate for ANY category if the call touches a firm from the DEAL PIPELINE TARGETS or LP TARGETS above, OR if there is competitive intel, co-investment discussion, or deal origination relevant to the firm.  # noqa: tenant-leak — deferred schema key
    Each: {{
      "investor_or_firm": "",
      "status": "Active|Qualified|Hold|Long-term|Unknown",
@@ -1055,9 +1059,9 @@ EXTRACTION TASKS:
 
    ACTION-DIRECTION INVERSION CHECK (rule Y2) — when the action verb is a transmission verb (`send`, `share`, `deliver`, `forward`, `provide`, `transmit`, `circulate`, `pass along`), explicitly identify which side is the sender by inspecting role context BEFORE emitting the item:
    • Investment banks / placement agents / advisors pitching deal flow to the principal → THEY send teasers/CIMs/data rooms TO the principal. Counterparty owns the action; emit `state: waiting`, `owner: external`, `counterparty: "Firm — Person"`. The principal RECEIVES; do NOT emit a my_action telling the principal to "send" what is being pitched IN.
-   • Principal sponsoring a deal to LPs / co-investors / lenders → PRINCIPAL sends materials. Emit `owner: <Yoni|Mark|Nick>`, `state: active`.
+   • Principal sponsoring a deal to LPs / co-investors / lenders → PRINCIPAL sends materials. Emit `owner: <{"| ".join(_CTX.get("owner_whitelist", ["principal"]))}>`, `state: active`.
    • Mutual exchanges (NDAs, term sheets, mark-ups, redlines passed back and forth) → emit two items, one per direction, each with the correct owner.
-   • Default if unclear: emit as `state: waiting` with the counterparty as owner — better to under-attribute to the principal than fabricate a send-verb on the wrong side. The "Astris-flip" failure (codified 2026-05-04) was a fundraising advisor pitching IN; it was wrongly written as the principal owing the send.
+   • Default if unclear: emit as `state: waiting` with the counterparty as owner — better to under-attribute to the principal than fabricate a send-verb on the wrong side. The "advisor-flip" failure pattern: a fundraising advisor pitching deal flow IN was wrongly written as the principal owing the send.
 
    ABSOLUTE-DATE RULE (rule AB1) — every reference to a date or week in `content`, `context`, or `due` MUST be absolute YYYY-MM-DD form. Resolve relative phrasing against the transcript's date.
    • ALLOWED: `2026-05-12`, `week of 2026-05-12`, `May 12 2026`
@@ -1082,7 +1086,7 @@ EXTRACTION TASKS:
    Skip the deal entirely if it was only mentioned in passing (no decision, no data point, no action, no commitment). High-precision tagging — better to omit than to over-attribute. Codified 2026-05-04 (rule V1+).
 
 RESPOND WITH THIS JSON ONLY (no markdown, no explanation):
-{{"category":"...","one_line_summary":"...","call_date":"...","action_items":[{{"who":"...","what":"...","due":"...","owner":"...","workstream":"...","action_type":"new_action|status_update","state":"active|waiting|watching|blocked|dormant|closed","resolution_source":"","context":"...","dashboard_path":"..."}}],"new_contacts":[{{"name":"...","firm":"...","title":"...","context":"...","confidence":"high|medium|low"}}],"recruiting_intel":{{}},"tomac_intel":[{{"investor_or_firm":"...","status":"...","key_feedback":"...","next_action":"...","intel_type":"...","dashboard_path":"..."}}],"mentioned_firms":[{{"name":"...","context":"..."}}],"envelope_items":[{{"content_type":"...","owner":"...","counterparty":"","parent_id":"","due":"","context":"...","dashboard_path":"...","content":"..."}}],"deal_log_entries":[{{"deal_id":"","summary":"","evidence":""}}]}}
+{{"category":"...","one_line_summary":"...","call_date":"...","action_items":[{{"who":"...","what":"...","due":"...","owner":"...","workstream":"...","action_type":"new_action|status_update","state":"active|waiting|watching|blocked|dormant|closed","resolution_source":"","context":"...","dashboard_path":"..."}}],"new_contacts":[{{"name":"...","firm":"...","title":"...","context":"...","confidence":"high|medium|low"}}],"recruiting_intel":{{}},"deal_intel":[{{"investor_or_firm":"...","status":"...","key_feedback":"...","next_action":"...","intel_type":"...","dashboard_path":"..."}}],"mentioned_firms":[{{"name":"...","context":"..."}}],"envelope_items":[{{"content_type":"...","owner":"...","counterparty":"","parent_id":"","due":"","context":"...","dashboard_path":"...","content":"..."}}],"deal_log_entries":[{{"deal_id":"","summary":"","evidence":""}}]}}
 """
 
 BACKFILL_PREAMBLE = _fc.build_backfill_header(_CTX) + _BACKFILL_BODY
@@ -1096,7 +1100,7 @@ def _extract_participants_from_title(title):
     or "Firm / First Last". Returns a list of plausible person-name strings, or [].
 
     Conservative by design — it's OK to return [] if the title is chrome-only
-    (e.g. "Tomac Cove Weekly Call"). The downstream prompt treats this as a hint,
+    (e.g. "Weekly All-Hands Call"). The downstream prompt treats this as a hint,
     not a contract: the model still has to confirm by content.
     """
     if not title:
@@ -1111,14 +1115,17 @@ def _extract_participants_from_title(title):
     # Split on connectors commonly used for multi-party calls, including em/en dash
     parts = re.split(r'\s*(?:\band\b|\bwith\b|\bw/\b|&|\+|,|/|\||—|–|\s-\s)\s*', t, flags=re.IGNORECASE)
 
-    # Deny-list of phrases that match the name shape but are not people
+    # Deny-list of phrases that match the name shape but are not people.
+    # Generic chrome is static; firm/deal-specific names are injected from
+    # firm context at runtime so no tenant strings live in this public file.
     _NON_PERSON = {
-        'Tomac Cove', 'Tomac Cove Weekly', 'Tomac Cove Weekly Call',
-        'Black Bayou', 'Black Bayou Energy Hub', 'Pacific Fleet',
         'Europe Gas', 'Europe Gas Call', 'Weekly Call', 'Market Blast',
         'Policy Day', 'Capstone DC', 'Capstone DC Policy Day',
         'Gas Call', 'Daily Call', 'Monthly Call',
     }
+    if _DEAL_WS:
+        _NON_PERSON |= {_DEAL_WS, f"{_DEAL_WS} Weekly", f"{_DEAL_WS} Weekly Call"}
+    _NON_PERSON |= set(_CTX.get("call_title_chrome") or [])
     _NAME_RE = re.compile(
         r'^([A-Z][a-zA-Z\'\-]+)(\s+(?:de|van|der|da|la|le|bin|al))?'
         r'(\s+[A-Z][a-zA-Z\'\-\.]+){1,3}$'
@@ -1224,7 +1231,7 @@ def extract_all(transcript_text, title, hint_category="auto", pipeline_context="
         })
     content.append({"type": "text", "text": dynamic})
 
-    # Pass 2: Opus for Tomac Cove/Unknown (deal ideation, pipeline connections, TC right-to-win
+    # Pass 2: Opus for deal calls (unknown category) (deal ideation, pipeline connections, firm right-to-win
     # angle — multi-hop inference connecting call content → ownership structures → entry paths).
     # Sonnet for Recruiting/Other (structured extraction, no deal inference needed).
     p2_model = MEMO_MODEL if hint_category not in ("Recruiting", "Other") else CLAUDE_MODEL
@@ -1263,17 +1270,17 @@ def mark_processed(tracker, file_id, title, category):
 
 # ── Write helpers ─────────────────────────────────────────────────────────────
 
-def _backfill_action_dashboard_paths(actions, envelope_items, tomac_intel, category):
-    """Fill empty dashboard_path on action_items by cross-referencing envelope_items and tomac_intel.
+def _backfill_action_dashboard_paths(actions, envelope_items, deal_intel, category):
+    """Fill empty dashboard_path on action_items by cross-referencing envelope_items and deal_intel.
 
-    Priority: (1) content-match against envelope_items, (2) first Tomac/LP path from
-    envelope_items, (3) first tomac_intel path, (4) category-based default.
+    Priority: (1) content-match against envelope_items, (2) first deal/LP path from
+    envelope_items, (3) first deal_intel path, (4) category-based default.
     """
     if not actions:
         return
 
     env_items = envelope_items or []
-    tomac_items = tomac_intel or []
+    deal_items = deal_intel or []
 
     # Collect all non-empty paths from envelope items, preferring deal/LP paths
     deal_env_paths = [e.get("dashboard_path", "") for e in env_items
@@ -1281,16 +1288,16 @@ def _backfill_action_dashboard_paths(actions, envelope_items, tomac_intel, categ
                       (f"{_DEAL_WS} Deals" in e.get("dashboard_path", "") or
                        f"{_DEAL_WS} Fundraising" in e.get("dashboard_path", "") or
                        _RECRUIT_WS in e.get("dashboard_path", ""))]
-    tomac_intel_paths = [t.get("dashboard_path", "") for t in tomac_items
+    deal_intel_paths = [t.get("dashboard_path", "") for t in deal_items
                          if t.get("dashboard_path")]
 
     best_deal_path = next(iter(deal_env_paths), "")
-    best_tomac_path = next(iter(tomac_intel_paths), "")
+    best_deal_intel_path = next(iter(deal_intel_paths), "")
 
     if category == _RECRUIT_WS:
         fallback = best_deal_path or f"COS › {_RECRUIT_WS}"
     elif category == _DEAL_WS:
-        fallback = best_deal_path or best_tomac_path or f"COS › {_DEAL_WS} Deals"
+        fallback = best_deal_path or best_deal_intel_path or f"COS › {_DEAL_WS} Deals"
     else:
         fallback = best_deal_path or "COS › Follow-ups"
 
@@ -1396,11 +1403,11 @@ def write_recruiting(token, rec_intel, title, today):
         return "Error"
 
 
-def write_tomac(token, tomac_intel, title, today):
-    if not tomac_intel:
+def write_deal_intel(token, deal_intel, title, today):
+    if not deal_intel:
         return "No change"
     try:
-        tdoc = gdocs_get(token, TOMAC_DOC)
+        tdoc = gdocs_get(token, TOMAC_DOC)  # noqa: tenant-leak — TOMAC_DOC is a backward-compat variable name
         tcontent = tdoc.get("body", {}).get("content", [])
         tend = (tcontent[-1].get("endIndex", 2) - 1) if tcontent else 1
         ttext = (
@@ -1408,23 +1415,23 @@ def write_tomac(token, tomac_intel, title, today):
             f"| Investor | Status | Key feedback | Next action |\n"
             f"|---|---|---|---|\n"
         )
-        for item in tomac_intel:
+        for item in deal_intel:
             ttext += (
                 f"| {item.get('investor_or_firm','?')} "
                 f"| {item.get('status','?')} "
                 f"| {item.get('key_feedback','?')} "
                 f"| {item.get('next_action','?')} |\n"
             )
-        gdocs_insert(token, TOMAC_DOC, tend, ttext)
-        print(f"    ✅  {_DEAL_WS} doc: {len(tomac_intel)} LP intel rows", flush=True)
+        gdocs_insert(token, TOMAC_DOC, tend, ttext)  # noqa: tenant-leak — TOMAC_DOC is a backward-compat variable name
+        print(f"    ✅  {_DEAL_WS} doc: {len(deal_intel)} LP intel rows", flush=True)
         return "Updated"
     except Exception as e:
         print(f"    ❌  {_DEAL_WS} doc write failed: {e}", file=sys.stderr)
         return "Error"
 
 
-def build_processing_header(category, now_str, actions, tomac_intel, rec_intel,
-                            n_added, n_contacts, rec_result, tomac_result):
+def build_processing_header(category, now_str, actions, deal_intel, rec_intel,
+                            n_added, n_contacts, rec_result, deal_result):
     """Return the processing summary block as a plain string."""
     new_actions    = [i for i in actions if i.get("action_type") != "status_update"]
     status_updates = [i for i in actions if i.get("action_type") == "status_update"]
@@ -1462,19 +1469,19 @@ def build_processing_header(category, now_str, actions, tomac_intel, rec_intel,
             f"  {rec_intel.get('notes','')}\n"
         )
     header += "\nKEY INTEL:\n"
-    for item in tomac_intel:
+    for item in deal_intel:
         intel_type = item.get("intel_type", "")
         dpath      = item.get("dashboard_path", "")
         header += f"  • [{intel_type}] {item.get('investor_or_firm','')}: {item.get('key_feedback','')}\n"
         if dpath:
             header += f"      → {dpath}\n"
-    if not tomac_intel:
+    if not deal_intel:
         header += "  None\n"
     header += (
         f"\nDOCS TOUCHED: Follow-ups (+{n_added} rows)"
         f" | People ({'+'+ str(n_contacts) if n_contacts else 'No change'})"
         f" | Recruiting ({rec_result})"
-        f" | Tomac Pipeline ({tomac_result})\n"
+        f" | {_DEAL_WS} Pipeline ({deal_result})\n"
         f"══════════════════════════════════════════════════════════════════════\n\n"
     )
     return header
@@ -1523,12 +1530,12 @@ def persist_status_updates(actions, category, transcript_title, transcript_date)
         print(f"    ⚠️   status-updates persist failed: {e}", file=sys.stderr)
 
 
-def write_processing_header(token, doc_id, category, now_str, actions, tomac_intel, rec_intel,
-                            n_added, n_contacts, rec_result, tomac_result,
+def write_processing_header(token, doc_id, category, now_str, actions, deal_intel, rec_intel,
+                            n_added, n_contacts, rec_result, deal_result,
                             is_gdoc=True, original_text="", memo_text=""):
     header = build_processing_header(
-        category, now_str, actions, tomac_intel, rec_intel,
-        n_added, n_contacts, rec_result, tomac_result,
+        category, now_str, actions, deal_intel, rec_intel,
+        n_added, n_contacts, rec_result, deal_result,
     )
     # Append memo section directly after the PROCESSED header if available.
     # This places the full analytical memo at the top of the doc before the
@@ -1653,8 +1660,8 @@ def process_transcript(token, file_id, file_name, hint_category, source_label, s
         print(f"    ⚠️   Pass 1 memo failed — falling back to single-pass: {e}", file=sys.stderr)
 
     # ── Pass 2: Deal analysis + JSON extraction (Opus/Sonnet) ────────────────
-    # Opus for Tomac Cove/Unknown: multi-hop deal ideation, pipeline connections,
-    # TC right-to-win angle. Sonnet for Recruiting/Other: structured extraction only.
+    # Opus for deal calls (unknown category): multi-hop deal ideation, pipeline connections,
+    # firm right-to-win angle. Sonnet for Recruiting/Other: structured extraction only.
     # Primary input is the memo when available; raw transcript provided as
     # reference for specific details the memo may not have fully captured.
     try:
@@ -1700,7 +1707,7 @@ def process_transcript(token, file_id, file_name, hint_category, source_label, s
         actions = data.get("action_items", [])
     contacts    = data.get("new_contacts", [])
     rec_intel   = data.get("recruiting_intel", {})
-    tomac_intel = data.get("tomac_intel", [])
+    deal_intel = data.get("deal_intel", [])
     summary     = data.get("one_line_summary", "")
 
     print(f"    Category: {category} | Actions: {len(actions)} | Contacts: {len(contacts)}", flush=True)
@@ -1709,17 +1716,17 @@ def process_transcript(token, file_id, file_name, hint_category, source_label, s
 
     # Backfill any empty dashboard_path on action_items before writing
     envelope_items_pre = data.get("envelope_items", []) or []
-    _backfill_action_dashboard_paths(actions, envelope_items_pre, tomac_intel, category)
+    _backfill_action_dashboard_paths(actions, envelope_items_pre, deal_intel, category)
 
     # Write outputs
     n_added   = write_followups(token, actions, file_name, doc_link, stats)
     write_people(token, contacts, file_name, today, stats)
     rec_result   = "No change"
-    tomac_result = "No change"
+    deal_result = "No change"
     if category == "Recruiting" or (rec_intel and rec_intel.get("firm")):
         rec_result = write_recruiting(token, rec_intel, file_name, today)
-    if category == "Tomac Cove" or tomac_intel:
-        tomac_result = write_tomac(token, tomac_intel, file_name, today)
+    if category == _DEAL_WS or deal_intel:
+        deal_result = write_deal_intel(token, deal_intel, file_name, today)
 
     # Write processing header + memo — Google Docs get prepend via Docs API,
     # plain text files get header prepended via Drive upload re-upload.
@@ -1727,8 +1734,8 @@ def process_transcript(token, file_id, file_name, hint_category, source_label, s
     # Local files (pre_loaded_text is set) have no Drive ID — skip header write.
     if pre_loaded_text is None:
         write_processing_header(
-            token, file_id, category, now_str, actions, tomac_intel, rec_intel,
-            n_added, len(contacts), rec_result, tomac_result,
+            token, file_id, category, now_str, actions, deal_intel, rec_intel,
+            n_added, len(contacts), rec_result, deal_result,
             is_gdoc=is_gdoc, original_text=text if not is_gdoc else "",
             memo_text=memo_text,
         )
@@ -1741,7 +1748,7 @@ def process_transcript(token, file_id, file_name, hint_category, source_label, s
     # ── Route envelope items to routing-v2 arrays in dashboard-data.json ─────
     # Routing spec §4 — emit to awaitingExternal[], dealIntel[],
     # originationInbox[], themes[], and parent history[] timelines.
-    # Legacy arrays (action_items, tomac_intel) above are preserved for the
+    # Legacy arrays (action_items, deal_intel) above are preserved for the
     # existing Google Doc writers; envelope_items is the new JSON surface.
     envelope_items = data.get("envelope_items", []) or []
     if is_intel_call:
