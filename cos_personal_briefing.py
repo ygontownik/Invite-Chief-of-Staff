@@ -218,6 +218,12 @@ If none: "No urgent items due today."
 Follow-up rows due in the next 3 calendar days (not today). Same format.
 If none: "Nothing due in the next 3 days."
 
+### Meetings Today
+From TODAY'S EXTERNAL MEETINGS section. One bullet per meeting:
+**[Time] [Title]** — [counterparty name/firm] · [one-line context from transcript history or pipeline match, if any]
+Example: **09:30 Stonepeak intro** — Stonepeak Infrastructure · 2 prior calls; matches LS Power PJM Gas portfolio target (Active Pursuit)
+If no external meetings or section absent: omit this section entirely.
+
 ### {deal_section}
 Active deals (stage ≠ Closed/Pass), one line each:
 **[Company]** · [Stage] → [Next step] _({dl_first}'s status if noted)_
@@ -245,7 +251,8 @@ RULES:
 - Output ONLY the briefing markdown. No preamble, no closing remarks.
 - Be specific: named people, firms, dates, deal stages. Never vague summaries.
 - Today's Priorities and Coming Up draw exclusively from the Follow-ups doc — do not invent items.
-- Podcasts draw exclusively from the Briefing Log — do not invent episodes."""
+- Podcasts draw exclusively from the Briefing Log — do not invent episodes.
+- Meetings Today draws exclusively from TODAY'S EXTERNAL MEETINGS — do not invent meetings."""
 
 
 # ── Claude call via cached_client ─────────────────────────────────────────────
@@ -399,6 +406,30 @@ def send_briefing_email(token: str, briefing: str, today_str: str) -> None:
         log.warning(f"Email delivery failed (non-fatal): {e}")
 
 
+# ── Meeting context ───────────────────────────────────────────────────────────
+
+def fetch_meeting_context() -> str:
+    """Run meeting_prep.py --dry-run to get today's external meetings with context.
+
+    Returns a plain-text block suitable for injection into source_content.
+    Fails silently — a missing script or error never blocks the briefing.
+    """
+    import subprocess
+    script = Path.home() / "tomac-cove-pipeline" / "meeting_prep.py"
+    if not script.exists():
+        return ""
+    try:
+        result = subprocess.run(
+            [sys.executable, str(script), "--dry-run"],
+            capture_output=True, text=True, timeout=30,
+        )
+        out = result.stdout.strip()
+        return out if out else ""
+    except Exception as e:
+        log.warning(f"Meeting context fetch failed (non-fatal): {e}")
+        return ""
+
+
 # ── Dashboard warmup ──────────────────────────────────────────────────────────
 
 def trigger_warmup() -> None:
@@ -445,6 +476,13 @@ def main() -> int:
     log.info(f"  pipeline:   {len(pipeline)} chars")
     log.info(f"  market:     {len(market)} chars")
 
+    log.info("Fetching today's meeting context...")
+    meeting_context = fetch_meeting_context()
+    if meeting_context:
+        log.info(f"  meeting context: {len(meeting_context)} chars")
+    else:
+        log.info("  meeting context: none (no external meetings or script unavailable)")
+
     format_prompt = _build_briefing_format_prompt(today_str, day_of_week)
     source_content = f"""=== FOLLOW-UPS DOC ===
 {followups}
@@ -460,6 +498,9 @@ def main() -> int:
 
 === PERSONAL BRIEFING LOG (tail — for Captured Overnight) ===
 {briefing_tail}"""
+
+    if meeting_context:
+        source_content += f"\n\n=== TODAY'S EXTERNAL MEETINGS ===\n{meeting_context}"
 
     fc = _fc.load_firm_context()
     _auth_mode = fc.get("auth_mode")
