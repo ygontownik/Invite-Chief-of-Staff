@@ -22,7 +22,7 @@ from googleapiclient.discovery import build
 
 _HERE      = Path(__file__).parent             # ~/dashboards/app/
 _ROOT      = _HERE.parent                                 # ~/dashboards/
-CREDS_PATH = Path.home() / 'credentials/gcal_token.json'
+CREDS_PATH = Path.home() / 'credentials/token.json'
 STATE_PATH = _ROOT / 'data' / 'compiled' / 'dashboard-data.json'
 
 # Track G — costs/quota tile aggregator. Pure-stdlib, no I/O at import time.
@@ -137,7 +137,7 @@ def _is_deal_ws(ws):
 
 # ── Services ──────────────────────────────────────────────
 def get_services():
-    # gcal_token.json has: documents + calendar.readonly + drive.file
+    # token.json has: drive + documents + calendar.readonly + gmail
     # Gmail reads handled by scheduled capture pipeline (7:29am) via MCP tools.
     creds    = Credentials.from_authorized_user_file(str(CREDS_PATH))
     docs_svc = build('docs',     'v1', credentials=creds)
