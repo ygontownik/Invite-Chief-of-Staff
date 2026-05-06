@@ -134,7 +134,7 @@ _DEAL_KEYWORDS_CACHE: list[str] | None = None
 
 def _slug_tokens(s: str) -> list[str]:
     """Lowercase a string and split into alpha tokens (≥3 chars). Used to
-    extract searchable substrings from deal names like "US Towers" → ["towers"]."""
+    extract searchable substrings from multi-word deal names → token list."""
     if not s:
         return []
     return [t for t in re.findall(r"[a-z]+", s.lower()) if len(t) >= 3]

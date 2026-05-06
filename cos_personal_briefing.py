@@ -6,7 +6,7 @@ Replaces the cos-personal-briefing SKILL. ONE Sonnet call via
 _subscription.cached_client replaces a multi-turn agent session.
 
 WHAT IT DOES:
-  1. Reads 5 Google Docs (follow-ups, recruiting, tomac-pipeline,
+  1. Reads 5 Google Docs (follow-ups, recruiting, deal-pipeline,
      market-update, briefing-log tail for Captured Overnight context)
   2. Calls Claude Sonnet once via cached_client — investor identity +
      Tomac bundle ride the cached system blocks; briefing structural

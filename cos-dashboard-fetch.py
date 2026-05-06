@@ -549,7 +549,17 @@ def _materialize_next_week(items):
     """
     from datetime import date as _date, timedelta as _td
     for item in items:
+        # 2026-05-05 (rule AB1 follow-up): dealIntel + originationInbox
+        # items often lack a top-level addedDate — the date lives at
+        # source_ref.date. Without this fallback, the materialize pass
+        # silently no-ops on those buckets and relative phrasings
+        # ("this week", "by 5/12") survive into the rendered dashboard.
+        # Same fallback pattern as _compute_deal_logs() at line ~935.
         added_raw = item.get('addedDate') or ''
+        if not added_raw or len(added_raw) < 10:
+            sref = item.get('source_ref') or {}
+            if isinstance(sref, dict):
+                added_raw = (sref.get('date') or '')[:10]
         if not added_raw or len(added_raw) < 10:
             continue
         try:

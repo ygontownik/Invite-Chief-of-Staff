@@ -40,8 +40,8 @@ SPEC FORMAT (Claude writes this JSON):
 }
 
 Usage:
-    echo '{...spec...}' | python3 ~/tomac-cove-pipeline/cos_batch_write.py
-    python3 ~/tomac-cove-pipeline/cos_batch_write.py --spec-file /tmp/cos_spec.json
+    echo '{...spec...}' | python3 ~/cos-pipeline/cos_batch_write.py
+    python3 ~/cos-pipeline/cos_batch_write.py --spec-file /tmp/cos_spec.json
 """
 import argparse
 import datetime

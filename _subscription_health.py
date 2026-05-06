@@ -16,7 +16,7 @@ USAGE
     python3 _subscription_health.py --tenant=re-dev --hours=168
 
     # JSON output (dashboard ingestion):
-    python3 _subscription_health.py --tenant=tomac --json
+    python3 _subscription_health.py --tenant=<slug> --json
 
 WHAT IT REPORTS
 
