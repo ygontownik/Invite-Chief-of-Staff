@@ -68,7 +68,9 @@ def _resolve_own_host_ips() -> set:
 _OWN_HOST_IPS = _resolve_own_host_ips()
 
 def _sessions_path():
-    return Path(__file__).parent.parent / 'data' / 'user-state' / 'sessions.json'
+    # Canonical state dir is ~/dashboards/data/user-state/; Path(__file__).parent.parent
+    # resolves to ~ which has no data/ dir of its own.
+    return Path.home() / 'dashboards' / 'data' / 'user-state' / 'sessions.json'
 
 def _load_sessions():
     try:

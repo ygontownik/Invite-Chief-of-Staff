@@ -1278,11 +1278,14 @@ function renderCallHistory() {
 // ── Pipeline Confidence ────────────────────────────────────────
 function loadPipelineConfidence() {
   fetch('/system-health/latest.json')
-    .then(function(r){ return r.json(); })
+    .then(function(r){
+      if (!r.ok) throw new Error(r.status === 401 ? 'Session expired — refresh to log back in.' : 'HTTP ' + r.status);
+      return r.json();
+    })
     .then(renderHealthData)
-    .catch(function(){
+    .catch(function(e){
       document.getElementById('pc-overall').innerHTML =
-        '<span style="color:var(--red);font-size:.8rem">Failed to load health data.</span>';
+        '<span style="color:var(--red);font-size:.8rem">' + (e.message || 'Failed to load health data.') + '</span>';
       document.getElementById('pc-checks').innerHTML = '';
     });
 }
@@ -1321,7 +1324,10 @@ function runHealthCheck(btn) {
   var origText = btn.textContent;
   btn.disabled = true; btn.textContent = 'Running…';
   fetch('/api/run-health-check', {method:'POST'})
-    .then(function(r){ return r.json(); })
+    .then(function(r){
+      if (!r.ok) throw new Error(r.status === 401 ? 'Session expired — refresh to log back in.' : 'HTTP ' + r.status);
+      return r.json();
+    })
     .then(function(data) {
       renderHealthData(data);
       loadGitStatus();
@@ -1335,7 +1341,10 @@ function runHealthCheck(btn) {
 // ── GitHub Sync Status ─────────────────────────────────────────
 function loadGitStatus() {
   fetch('/api/git-status')
-    .then(function(r){ return r.json(); })
+    .then(function(r){
+      if (!r.ok) throw new Error(r.status === 401 ? 'Session expired — refresh to log back in.' : 'HTTP ' + r.status);
+      return r.json();
+    })
     .then(function(data) {
       document.getElementById('gs-checked-at').textContent =
         data.checked_at ? 'as of ' + data.checked_at.slice(0,16).replace('T',' ') : '';
@@ -2147,7 +2156,13 @@ var AH_LABEL = { google: 'Google API', chrome_cdp: 'Chrome CDP', jefferies: 'Jef
 
 function loadAuthHealth(manual) {
   fetch('/api/auth-health')
-    .then(function(r) { return r.json(); })
+    .then(function(r) {
+      if (!r.ok) {
+        if (r.status === 401) throw new Error('Session expired — refresh the page to log back in.');
+        throw new Error('Server returned ' + r.status);
+      }
+      return r.json();
+    })
     .then(function(data) {
       if (data.error && !data.credentials) {
         document.getElementById('ah-error').textContent = data.error;
@@ -2159,7 +2174,7 @@ function loadAuthHealth(manual) {
       renderAuthHealth(data.credentials || {});
     })
     .catch(function(e) {
-      document.getElementById('ah-error').textContent = 'Failed to load auth health: ' + e.message;
+      document.getElementById('ah-error').textContent = e.message;
       document.getElementById('ah-error').style.display = 'block';
     });
 }
