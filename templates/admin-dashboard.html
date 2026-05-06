@@ -110,6 +110,26 @@
                   border: 1px solid var(--red-bd); color: var(--red); background: transparent; }
     .btn-revoke:hover { background: var(--red-bg); }
 
+    /* Pipeline Confidence + GitHub Sync panels */
+    .pc-overall-row { display:flex; align-items:center; gap:10px; margin-bottom:12px; flex-wrap:wrap; }
+    .pc-check-table { width:100%; border-collapse:collapse; }
+    .pc-check-table td { padding:6px 8px 6px 0; font-size:.8rem; vertical-align:top; }
+    .pc-check-table tr { border-top:1px solid var(--rule); }
+    .pc-check-name { font-family:var(--font-data); font-size:.75rem; white-space:nowrap; color:var(--ink-mid); width:1%; }
+    .pc-check-summary { font-family:var(--font-body); color:var(--ink); }
+    .gs-repo-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:12px; }
+    .gs-repo-card { background:var(--paper); border:1px solid var(--rule); border-radius:8px; padding:12px 14px; }
+    .gs-repo-name { font-family:var(--font-data); font-size:.8rem; font-weight:700; color:var(--ink); }
+    .gs-vis-badge { font-family:var(--font-data); font-size:.68rem; padding:2px 6px; border-radius:3px; }
+    .gs-vis-public  { background:#dbeafe; color:#1d4ed8; }
+    .gs-vis-private { background:#f0fdf4; color:#166534; }
+    .gs-commit { font-family:var(--font-data); font-size:.75rem; color:var(--ink-mid); margin:6px 0; }
+    .gs-commit code { background:var(--bg); padding:1px 5px; border-radius:3px; font-size:.72rem; }
+    .gs-sync-tags { display:flex; gap:8px; flex-wrap:wrap; margin-top:4px; }
+    .gs-sync-ok     { font-family:var(--font-data); font-size:.72rem; color:#059669; }
+    .gs-sync-warn   { font-family:var(--font-data); font-size:.72rem; color:var(--amber,#d97706); }
+    .gs-sync-err    { font-family:var(--font-data); font-size:.72rem; color:var(--red); }
+
     /* Status tiles */
     .status-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px;
                    margin-bottom: 28px; }
@@ -713,6 +733,29 @@
 
       <!-- ══ TAB 4: Dashboard Status ══════════════════════════ -->
       <div id="tab-status" class="adm-tab-panel">
+
+        <!-- ── Pipeline Confidence ──────────────────────────── -->
+        <div class="tc-card" style="margin-bottom:24px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+            <div class="adm-section-label" style="margin-bottom:0">Pipeline Confidence</div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <span style="font-family:var(--font-data);font-size:.75rem;color:var(--ink-mid)" id="pc-checked-at">—</span>
+              <button class="btn-edit" id="pc-run-btn" onclick="runHealthCheck(this)">Run check</button>
+            </div>
+          </div>
+          <div class="pc-overall-row" id="pc-overall"></div>
+          <div id="pc-checks"><div class="adm-empty">Loading…</div></div>
+        </div>
+
+        <!-- ── GitHub Sync Status ────────────────────────────── -->
+        <div class="tc-card" style="margin-bottom:24px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+            <div class="adm-section-label" style="margin-bottom:0">GitHub Sync</div>
+            <span style="font-family:var(--font-data);font-size:.75rem;color:var(--ink-mid)" id="gs-checked-at">—</span>
+          </div>
+          <div class="gs-repo-grid" id="gs-repos"><div class="adm-empty">Loading…</div></div>
+        </div>
+
         <div class="status-grid" id="status-tiles"></div>
         <div class="tc-card" style="margin-bottom:24px">
           <div class="adm-section-label" style="margin-bottom:14px">Recent pipeline runs</div>
@@ -1047,6 +1090,10 @@ function switchTab(name, btn) {
   document.getElementById('tab-' + name).classList.add('visible');
   if (btn) btn.classList.add('active');
   localStorage.setItem('adm_tab', name);
+  if (name === 'status') {
+    loadPipelineConfidence();
+    loadGitStatus();
+  }
 }
 
 // ── Access tab: inline edit panels ────────────────────────────
@@ -1226,6 +1273,101 @@ function renderCallHistory() {
   }
 
   // Processed transcripts list lives on Status > Calls; not duplicated here.
+}
+
+// ── Pipeline Confidence ────────────────────────────────────────
+function loadPipelineConfidence() {
+  fetch('/system-health/latest.json')
+    .then(function(r){ return r.json(); })
+    .then(renderHealthData)
+    .catch(function(){
+      document.getElementById('pc-overall').innerHTML =
+        '<span style="color:var(--red);font-size:.8rem">Failed to load health data.</span>';
+      document.getElementById('pc-checks').innerHTML = '';
+    });
+}
+
+function renderHealthData(data) {
+  var overall = (data.overall || 'unknown').toUpperCase();
+  var counts  = data.counts || {};
+  var pillCls = overall === 'PASS' ? 'ok' : overall === 'WARN' ? 'expected_fail' : 'fail';
+  document.getElementById('pc-checked-at').textContent =
+    data.ts ? 'as of ' + data.ts.slice(0,16).replace('T',' ') + ' UTC' : '';
+  document.getElementById('pc-overall').innerHTML =
+    '<span class="rt-status-pill ' + pillCls + '">' + overall + '</span>'
+    + '<span style="font-family:var(--font-data);font-size:.8rem;color:var(--ink-mid)">'
+    + (counts.total||0) + ' checks · '
+    + (counts.pass||0)  + ' pass · '
+    + (counts.warn||0)  + ' warn · '
+    + (counts.fail||0)  + ' fail</span>';
+  var checks  = (data.checks || []);
+  var nonPass = checks.filter(function(c){ return c.status !== 'pass'; });
+  var html = '';
+  if (nonPass.length === 0) {
+    html = '<div style="font-family:var(--font-body);font-size:.825rem;color:var(--ink-mid)">All ' + (counts.total||0) + ' checks passing.</div>';
+  } else {
+    html = '<table class="pc-check-table">';
+    nonPass.forEach(function(c) {
+      var icon = c.status === 'fail' ? '❌' : '⚠️';
+      html += '<tr><td class="pc-check-name">' + icon + '&nbsp;' + esc(c.name) + '</td>'
+            + '<td class="pc-check-summary">' + esc(c.summary) + '</td></tr>';
+    });
+    html += '</table>';
+  }
+  document.getElementById('pc-checks').innerHTML = html;
+}
+
+function runHealthCheck(btn) {
+  var origText = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Running…';
+  fetch('/api/run-health-check', {method:'POST'})
+    .then(function(r){ return r.json(); })
+    .then(function(data) {
+      renderHealthData(data);
+      loadGitStatus();
+      btn.disabled = false; btn.textContent = origText;
+    })
+    .catch(function() {
+      btn.disabled = false; btn.textContent = origText;
+    });
+}
+
+// ── GitHub Sync Status ─────────────────────────────────────────
+function loadGitStatus() {
+  fetch('/api/git-status')
+    .then(function(r){ return r.json(); })
+    .then(function(data) {
+      document.getElementById('gs-checked-at').textContent =
+        data.checked_at ? 'as of ' + data.checked_at.slice(0,16).replace('T',' ') : '';
+      var html = (data.repos || []).map(function(repo) {
+        var dirty  = repo.dirty_count || 0;
+        var ahead  = repo.ahead  || 0;
+        var behind = repo.behind || 0;
+        var syncOk = dirty === 0 && ahead === 0 && behind === 0;
+        var tags = '';
+        if (dirty  > 0) tags += '<span class="gs-sync-warn">⚠ ' + dirty + ' uncommitted</span>';
+        if (ahead  > 0) tags += '<span class="gs-sync-warn">↑ ' + ahead + ' to push</span>';
+        if (behind > 0) tags += '<span class="gs-sync-err">↓ ' + behind + ' behind</span>';
+        if (syncOk)     tags += '<span class="gs-sync-ok">✓ in sync</span>';
+        var visCls = repo.visibility === 'public' ? 'gs-vis-public' : 'gs-vis-private';
+        return '<div class="gs-repo-card">'
+          + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'
+          + '<span class="gs-repo-name">' + esc(repo.name) + '</span>'
+          + '<span class="gs-vis-badge ' + visCls + '">' + esc(repo.visibility||'') + '</span>'
+          + '</div>'
+          + '<div class="gs-commit">'
+          + (repo.last_commit_hash ? '<code>' + esc(repo.last_commit_hash) + '</code> ' : '')
+          + esc(repo.last_commit_msg || '')
+          + '</div>'
+          + '<div class="gs-sync-tags">' + tags + '</div>'
+          + '</div>';
+      }).join('');
+      document.getElementById('gs-repos').innerHTML = html || '<div class="adm-empty">No repo data.</div>';
+    })
+    .catch(function() {
+      document.getElementById('gs-repos').innerHTML =
+        '<span style="color:var(--red);font-size:.8rem">Failed to load git status.</span>';
+    });
 }
 
 // ── Dashboard Status tab ───────────────────────────────────────

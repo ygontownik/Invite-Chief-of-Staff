@@ -2603,6 +2603,11 @@ class Handler(BaseHTTPRequestHandler):
             if user != 'owner':
                 self._send_403(); return
             self._handle_system_health_latest()
+        elif self.path.split('?')[0] == '/api/git-status':
+            # owner-only: last commit + dirty status for each tracked repo
+            if user != 'owner':
+                self._send_403(); return
+            self._handle_git_status()
         elif self.path.split('?')[0] == '/routines':
             # owner-only: routine inventory + per-task status
             if user != 'owner':
@@ -3856,6 +3861,12 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_refresh()
         elif self.path == '/warmup':
             self._handle_warmup()
+        elif self.path == '/api/run-health-check':
+            if not self._is_localhost():
+                user = self._authenticate()
+                if user != 'owner':
+                    self._send_403(); return
+            self._handle_run_health_check()
         elif self.path == '/run-pipeline':
             self._handle_run_pipeline()
         elif self.path == '/refresh-deals':
@@ -4020,6 +4031,96 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(500, {'error': f'unreadable: {exc}'})
             return
         self.send_json(200, payload)
+
+    def _handle_git_status(self):
+        """GET /api/git-status — last commit + dirty/ahead/behind for each tracked repo."""
+        import subprocess
+        repos = [
+            {'name': 'cos-pipeline',
+             'path': str(Path.home() / 'cos-pipeline'),
+             'visibility': 'public'},
+            {'name': 'dashboards',
+             'path': str(Path.home() / 'dashboards'),
+             'visibility': 'private'},
+            {'name': f'cos-pipeline-config-{COS_TENANT_SLUG}',
+             'path': str(COS_CONFIG_ROOT),
+             'visibility': 'private'},
+        ]
+        results = []
+        for repo in repos:
+            rp = repo['path']
+            info: dict = {
+                'name': repo['name'],
+                'visibility': repo['visibility'],
+            }
+            try:
+                # Last commit
+                r1 = subprocess.run(
+                    ['git', '-C', rp, 'log', '-1', '--format=%h\t%s\t%ci'],
+                    capture_output=True, text=True, timeout=5)
+                if r1.returncode == 0 and r1.stdout.strip():
+                    parts = r1.stdout.strip().split('\t', 2)
+                    info['last_commit_hash'] = parts[0] if len(parts) > 0 else ''
+                    info['last_commit_msg']  = parts[1] if len(parts) > 1 else ''
+                    info['last_commit_at']   = parts[2] if len(parts) > 2 else ''
+                else:
+                    info['last_commit_hash'] = ''
+                    info['last_commit_msg']  = '(no commits)'
+                    info['last_commit_at']   = ''
+                # Uncommitted files
+                r2 = subprocess.run(
+                    ['git', '-C', rp, 'status', '--porcelain'],
+                    capture_output=True, text=True, timeout=5)
+                dirty_lines = [l for l in r2.stdout.splitlines() if l.strip()]
+                info['dirty_count'] = len(dirty_lines)
+                info['dirty_files'] = [l.strip() for l in dirty_lines[:10]]
+                # Ahead / behind remote
+                r3 = subprocess.run(
+                    ['git', '-C', rp, 'rev-list', '--count', '--left-right', 'HEAD...@{u}'],
+                    capture_output=True, text=True, timeout=5)
+                if r3.returncode == 0 and r3.stdout.strip():
+                    ab = r3.stdout.strip().split()
+                    info['ahead']  = int(ab[0]) if len(ab) > 0 else 0
+                    info['behind'] = int(ab[1]) if len(ab) > 1 else 0
+                else:
+                    info['ahead'] = 0
+                    info['behind'] = 0
+            except Exception as exc:
+                info['error'] = str(exc)
+            results.append(info)
+        self.send_json(200, {
+            'repos': results,
+            'checked_at': datetime.now().isoformat(),
+        })
+
+    def _handle_run_health_check(self):
+        """POST /api/run-health-check — run system_health.py, return fresh results."""
+        import subprocess
+        script = Path.home() / 'cos-pipeline' / 'tools' / 'system_health.py'
+        if not script.exists():
+            self.send_json(404, {'error': 'system_health.py not found'})
+            return
+        try:
+            proc = subprocess.run(
+                [sys.executable, str(script)],
+                capture_output=True, text=True, timeout=120,
+            )
+            summary = (proc.stdout or '').strip().splitlines()[-1] \
+                if (proc.stdout or '').strip() else ''
+            latest_path = Path.home() / 'dashboards' / 'data' / 'system-health' / 'latest.json'
+            payload: dict = {}
+            if latest_path.exists():
+                try:
+                    payload = json.loads(latest_path.read_text(encoding='utf-8'))
+                except Exception:
+                    pass
+            payload['summary_line'] = summary
+            payload['exit_code'] = proc.returncode
+            self.send_json(200, payload)
+        except subprocess.TimeoutExpired:
+            self.send_json(500, {'error': 'health check timed out after 120s'})
+        except Exception as exc:
+            self.send_json(500, {'error': str(exc)})
 
     def _handle_routines_list(self):
         self.send_json(200, {'routines': _routines_data()})
