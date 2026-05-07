@@ -333,6 +333,42 @@ class OutlookProvider(EmailProvider):
 
         return [self._parse_message(m, with_body=False) for m in resp.get("value", [])]
 
+    def search_sent(
+        self,
+        since: Optional[datetime] = None,
+        max_results: int = 20,
+    ) -> list[EmailMessage]:
+        params = {
+            "$top": str(max_results),
+            "$orderby": "sentDateTime desc",
+            "$select": ("id,conversationId,subject,from,toRecipients,ccRecipients,"
+                        "sentDateTime,bodyPreview,hasAttachments,isRead"),
+        }
+        if since:
+            ts = since.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            params["$filter"] = f"sentDateTime ge {ts}"
+
+        try:
+            resp = self._get("/me/mailFolders/sentItems/messages", params)
+        except EmailProviderError:
+            raise
+
+        results = []
+        for m in resp.get("value", []):
+            msg = self._parse_message(m, with_body=False)
+            msg.direction = "sent"
+            # sentDateTime may be under a different key
+            if not msg.received_at and m.get("sentDateTime"):
+                try:
+                    from datetime import datetime as _dt
+                    msg.received_at = _dt.fromisoformat(
+                        m["sentDateTime"].replace("Z", "+00:00")
+                    )
+                except Exception:
+                    pass
+            results.append(msg)
+        return results
+
     # ── Threads & messages ──────────────────────────────────────────────────
 
     def get_thread(self, thread_id: str) -> EmailThread:

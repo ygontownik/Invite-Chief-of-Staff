@@ -169,7 +169,22 @@ def build_system_prompt(ctx: dict) -> str:
         f"  - Identify new contacts to add to the People doc.\n"
         f"  - DRAFT REPLIES: when an email requires a reply from {p_first} and "
         f"    they haven't responded yet, compose a contextually appropriate draft\n"
-        f"    following the DRAFT VOICE rules below. Output it in the 'drafts' array.",
+        f"    following the DRAFT VOICE rules below. Output it in the 'drafts' array.\n"
+        f"  - EMAIL DIRECTION: each email carries a `direction` field ('received' or 'sent').\n"
+        f"    'received' = inbound to {p_first}. 'sent' = outbound FROM {p_first}.\n",
+
+        f"\nA1b. Sent items (last 24h) — outbound commitment extraction\n"
+        f"Emails with direction='sent' show what {p_first} has ALREADY committed to.\n"
+        f"For each sent email:\n"
+        f"  - Extract explicit commitments {p_first} made: 'I'll send X', 'I'm preparing Y',\n"
+        f"    'I will introduce you to Z', 'I'll set up the meeting', etc.\n"
+        f"  - These are owner='{p_first}' actions. Check if a matching follow-up row\n"
+        f"    already exists; if not, ADD it. If it exists, ENRICH or ESCALATE if the\n"
+        f"    sent email creates a firm deadline.\n"
+        f"  - Do NOT draft replies for sent items — they are already sent.\n"
+        f"  - Do NOT double-count: if the same commitment appears in both a received\n"
+        f"    email (someone asked {p_first}) and a sent email ({p_first} confirmed),\n"
+        f"    emit ONE follow-up row capturing the commitment.",
 
         "\nA2. Calendar (next 14 days)\n"
         "Cross-check upcoming events against existing follow-up rows.\n"
@@ -491,6 +506,7 @@ def serialize_emails_for_prompt(emails: list[EmailMessage]) -> str:
             f"--- EMAIL ---\n"
             f"id: {m.id}\n"
             f"thread: {m.thread_id}\n"
+            f"direction: {m.direction}\n"
             f"from: {m.sender}\n"
             f"to: {', '.join(str(r) for r in m.recipients)}\n"
             f"subject: {m.subject}\n"
@@ -611,7 +627,14 @@ def main() -> int:
     except EmailProviderError as e:
         log.error(f"Inbox search failed: {e}")
         return 1
-    log.info(f"  {len(emails)} emails")
+    log.info(f"  {len(emails)} inbox emails")
+
+    try:
+        sent_emails = provider.search_sent(since=since, max_results=20)
+    except EmailProviderError as e:
+        log.warning(f"Sent search failed (non-fatal): {e}")
+        sent_emails = []
+    log.info(f"  {len(sent_emails)} sent emails")
 
     google_token = get_google_token()
 
@@ -634,11 +657,14 @@ def main() -> int:
                 continue
 
     # Round 3: build prompt + call Claude
+    all_emails = emails + sent_emails
     system_prompt = build_system_prompt(ctx)
     user_payload = (
         f"TODAY: {datetime.now(timezone.utc).strftime('%Y-%m-%d')}\n\n"
-        f"=== EMAILS (last {args.since}, {len(emails)} messages) ===\n"
+        f"=== INBOX EMAILS (last {args.since}, {len(emails)} messages) ===\n"
         f"{serialize_emails_for_prompt(emails)}\n\n"
+        f"=== SENT EMAILS (last {args.since}, {len(sent_emails)} messages) ===\n"
+        f"{serialize_emails_for_prompt(sent_emails)}\n\n"
         f"=== UPCOMING CALENDAR (next 14 days) ===\n"
         f"{json.dumps(calendar[:50], indent=2)}\n\n"
         f"=== EXISTING FOLLOW-UPS DOC (current state) ===\n"

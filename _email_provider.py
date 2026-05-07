@@ -51,6 +51,7 @@ class EmailMessage:
     has_attachments: bool = False
     labels: list[str] = field(default_factory=list)
     is_unread: bool = False
+    direction: str = "received"  # 'received' or 'sent'
     raw: dict = field(default_factory=dict)
 
 
@@ -115,6 +116,23 @@ class EmailProvider(ABC):
 
         Returns:
             List of EmailMessage, ordered newest-first.
+        """
+
+    @abstractmethod
+    def search_sent(
+        self,
+        since: Optional[datetime] = None,
+        max_results: int = 20,
+    ) -> list[EmailMessage]:
+        """
+        Fetch messages the user sent.
+
+        Returns EmailMessage objects with direction='sent'. Used to extract
+        commitments the principal made in outbound emails (e.g. 'I'll send you X',
+        'I'm preparing Y') which are not visible in the inbox-only fetch.
+
+        Returns:
+            List of EmailMessage (direction='sent'), ordered newest-first.
         """
 
     @abstractmethod

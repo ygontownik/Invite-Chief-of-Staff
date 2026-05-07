@@ -157,6 +157,39 @@ class GmailProvider(EmailProvider):
                 continue
         return results
 
+    def search_sent(
+        self,
+        since: Optional[datetime] = None,
+        max_results: int = 20,
+    ) -> list[EmailMessage]:
+        parts = ["in:sent"]
+        if since:
+            ts = int(since.replace(tzinfo=since.tzinfo or timezone.utc).timestamp())
+            parts.append(f"after:{ts}")
+        q = " ".join(parts)
+        try:
+            resp = self._svc().users().messages().list(
+                userId=self._user,
+                q=q,
+                maxResults=max_results,
+            ).execute()
+        except Exception as e:
+            raise EmailProviderError(f"Gmail sent search failed: {e}")
+
+        results = []
+        for mid in [m["id"] for m in resp.get("messages", [])]:
+            try:
+                m = self._svc().users().messages().get(
+                    userId=self._user, id=mid, format="metadata",
+                    metadataHeaders=["From", "To", "Cc", "Subject", "Date"],
+                ).execute()
+                msg = self._parse_message(m, with_body=False)
+                msg.direction = "sent"
+                results.append(msg)
+            except Exception:
+                continue
+        return results
+
     # ── Threads & messages ──────────────────────────────────────────────────
 
     def get_thread(self, thread_id: str) -> EmailThread:
@@ -287,6 +320,7 @@ class GmailProvider(EmailProvider):
         has_attachments = self._has_attachments(payload)
         labels = m.get("labelIds", []) or []
         is_unread = "UNREAD" in labels
+        direction = "sent" if "SENT" in labels else "received"
 
         return EmailMessage(
             id=m.get("id", ""),
@@ -302,6 +336,7 @@ class GmailProvider(EmailProvider):
             has_attachments=has_attachments,
             labels=labels,
             is_unread=is_unread,
+            direction=direction,
             raw=m,
         )
 
