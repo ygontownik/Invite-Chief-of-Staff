@@ -91,7 +91,10 @@ except Exception:
 FOLLOW_UPS_DOC      = _DOCS.get("followups",      "10leX26u8n3XkoCHzg7SDwLUodVX2CqKjvXcSJ-KAsCY")
 PEOPLE_DOC          = _DOCS.get("people_crm",     "1ZCKnZlQgKD13dLsQNxCM_nRsTjz2DVitjeUWowUur0Y")
 RECRUITING_DOC      = _DOCS.get("recruiting",     "1ZnTCVoA0ID7XTDFy27yDnrEVhBqx75kaTg_QXFq4eXA")
-DEAL_PIPELINE_DOC           = _DOCS.get("deal_pipeline", _DOCS.get("tomac_pipeline", "1LHorixPs8ppwSvQzGfA_B6609YZA8dSpR4rmppENzpc"))  # noqa: tenant-leak
+DEAL_PIPELINE_DOC   = _DOCS.get("deal_pipeline", _DOCS.get("tomac_pipeline", "1LHorixPs8ppwSvQzGfA_B6609YZA8dSpR4rmppENzpc"))  # noqa: tenant-leak
+# Transcripts inbox — Zapier/call_recorder drops files here; Drive organizer
+# routes them to deal folders only AFTER this hook moves them to _Ready/.
+TRANSCRIPTS_FOLDER  = _DOCS.get("call_transcripts", "1B7UgpFCElgyZMLbq1yrf-N7PsB-UA4SE")
 TOKEN_PATH          = Path.home() / "credentials/gcal_token.json"
 PIPELINE_DATA_PATH  = Path.home() / "dashboards/data/compiled/deal-pipeline-data.json"
 DASHBOARD_DATA_PATH = Path.home() / "dashboards/data/compiled/dashboard-data.json"
@@ -198,6 +201,49 @@ def gdocs_insert(token, doc_id, index, text):
         "Content-Type": "application/json",
     }, method="POST")
     with urllib.request.urlopen(req) as r:
+        return json.loads(r.read())
+
+
+def drive_get_or_create_folder(token, name, parent_id):
+    """Return the ID of a subfolder, creating it if it doesn't exist."""
+    safe = urllib.parse.quote(name.replace("'", r"\'"))
+    q = urllib.parse.quote(
+        f"name='{name}' and mimeType='application/vnd.google-apps.folder'"
+        f" and '{parent_id}' in parents and trashed=false"
+    )
+    url = f"https://www.googleapis.com/drive/v3/files?q={q}&fields=files(id)&pageSize=5"
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        files = json.loads(r.read()).get("files", [])
+    if files:
+        return files[0]["id"]
+    body = json.dumps({
+        "name": name,
+        "mimeType": "application/vnd.google-apps.folder",
+        "parents": [parent_id],
+    }).encode()
+    req = urllib.request.Request(
+        "https://www.googleapis.com/drive/v3/files?fields=id",
+        data=body,
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return json.loads(r.read())["id"]
+
+
+def drive_move(token, file_id, new_parent_id, old_parent_id):
+    """Move a Drive file from old_parent_id to new_parent_id."""
+    url = (
+        f"https://www.googleapis.com/drive/v3/files/{file_id}"
+        f"?addParents={new_parent_id}&removeParents={old_parent_id}&fields=id"
+    )
+    req = urllib.request.Request(
+        url, data=b"{}",
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        method="PATCH",
+    )
+    with urllib.request.urlopen(req, timeout=10) as r:
         return json.loads(r.read())
 
 
@@ -766,6 +812,15 @@ def main():
         print("[hook] ✅  Processing header written to call doc", flush=True)
     except Exception as e:
         print(f"[hook] Header write failed (non-critical): {e}", file=sys.stderr)
+
+    # Move transcript to _Ready/ so Drive organizer knows overlay is complete
+    # and can safely route the file to the correct deal's Transcripts folder.
+    try:
+        ready_id = drive_get_or_create_folder(token, "_Ready", TRANSCRIPTS_FOLDER)
+        drive_move(token, args.doc_id, ready_id, TRANSCRIPTS_FOLDER)
+        print("[hook] ✅  Moved to Transcripts/_Ready/ — ready for Drive organizer", flush=True)
+    except Exception as e:
+        print(f"[hook] ⚠️  Could not move to _Ready/ (non-critical): {e}", file=sys.stderr)
 
     warmup()
     print(f"[hook] Done. {added} follow-ups | {len(contacts)} contacts | dashboard pinged.", flush=True)
