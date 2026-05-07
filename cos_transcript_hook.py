@@ -815,12 +815,30 @@ def main():
 
     # Move transcript to _Ready/ so Drive organizer knows overlay is complete
     # and can safely route the file to the correct deal's Transcripts folder.
+    # Guard: only move if the doc is actually in TRANSCRIPTS_FOLDER (avoids
+    # accidentally moving the legacy aggregated "Call Transcripts & Memos" doc
+    # or any other doc not placed there by call_recorder.py).
     try:
-        ready_id = drive_get_or_create_folder(token, "_Ready", TRANSCRIPTS_FOLDER)
-        drive_move(token, args.doc_id, ready_id, TRANSCRIPTS_FOLDER)
-        print("[hook] ✅  Moved to Transcripts/_Ready/ — ready for Drive organizer", flush=True)
+        parents_resp = requests.get(
+            f"https://www.googleapis.com/drive/v3/files/{args.doc_id}",
+            params={"fields": "parents"},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=15,
+        )
+        parents_resp.raise_for_status()
+        file_parents = parents_resp.json().get("parents", [])
+        if TRANSCRIPTS_FOLDER not in file_parents:
+            print(
+                f"[hook] info  Doc {args.doc_id} not in Transcripts inbox "
+                f"(parents: {file_parents}) -- skipping _Ready/ move.",
+                flush=True,
+            )
+        else:
+            ready_id = drive_get_or_create_folder(token, "_Ready", TRANSCRIPTS_FOLDER)
+            drive_move(token, args.doc_id, ready_id, TRANSCRIPTS_FOLDER)
+            print("[hook] ok  Moved to Transcripts/_Ready/ -- ready for Drive organizer", flush=True)
     except Exception as e:
-        print(f"[hook] ⚠️  Could not move to _Ready/ (non-critical): {e}", file=sys.stderr)
+        print(f"[hook] warning  Could not move to _Ready/ (non-critical): {e}", file=sys.stderr)
 
     warmup()
     print(f"[hook] Done. {added} follow-ups | {len(contacts)} contacts | dashboard pinged.", flush=True)
