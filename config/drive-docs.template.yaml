@@ -19,6 +19,19 @@
 
 docs:
 
+  # ── Firm Identity ──────────────────────────────────────────────────────────
+  # Required by new_deal.py (tools/tcip_new_deal.py). The live firm context
+  # file is read at every Claude Project session open — not uploaded as a
+  # static file. This keeps the AI's firm knowledge current automatically.
+
+  firm_context_doc:
+    doc_id: PASTE_GOOGLE_DOC_ID_HERE
+    name: "firm_context.md"
+    purpose: "Live firm context — read at every deal session open (Step 0)"
+    writers: [tcip_new_deal]
+    readers: [deal_sessions_via_drive_connector]
+    package: deal_pipeline
+
   # ── Package B: Operations ──────────────────────────────────────────────────
 
   followups:

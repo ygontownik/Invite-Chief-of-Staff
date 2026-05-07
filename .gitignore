@@ -63,6 +63,18 @@ output/pass1-log-*.txt
 output/pass2-log-*.txt
 output/weekly-scan-*.md
 
+# ── DEAL ONBOARDING RUNTIME STATE (contain personal Drive IDs, project URLs) ──
+# Commit the .template.json versions; populate locally and keep out of git.
+tools/deal-system-data.json
+tools/sync-state.json
+tools/credentials.json
+tools/token.json
+# Per-deal project-sync folders contain real Drive IDs and deal-specific data.
+# Commit only tools/data/project-sync/_template/ (the generic scaffold).
+tools/data/project-sync/*/
+!tools/data/project-sync/_template/
+!tools/data/project-sync/_template/**
+
 # ── CLASP / APPS SCRIPT TOOLING (per-user node_modules + cloned sources) ──────
 # .tools/ holds a per-user clasp install (not committed; node_modules is huge).
 .tools/

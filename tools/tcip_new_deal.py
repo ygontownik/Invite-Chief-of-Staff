@@ -1,0 +1,1454 @@
+#!/usr/bin/env python3
+"""
+NEW DEAL ONBOARDING SCRIPT
+===========================
+Automates ~80% of the new deal setup process.
+Run this whenever the firm engages a new deal.
+
+USAGE:
+  python tcip_new_deal.py \
+    --deal-name "Black Bayou Energy Hub" \
+    --deal-id "black_bayou" \
+    --lead "Jane Smith" \
+    --support "John Doe" \
+    --docs-folder "/path/to/deal/documents"   # optional
+    --drive-folder-id "EXISTING_DRIVE_FOLDER_ID"  # optional, if folder exists
+
+  OR interactively (no flags needed):
+  python tcip_new_deal.py
+
+WHAT IT DOES AUTOMATICALLY:
+  Phase 1: Creates Google Drive folder structure
+  Phase 2: Reads deal documents + runs Critical Driver Framework via Claude API
+  Phase 3: Generates status.md and master_brief.md, saves to Drive, records IDs
+  Phase 4: Updates compile_drive_writeback.py with new file IDs
+  Phase 5: Updates deal-system-data.json
+  Phase 6: Creates local data folders and JSON registers
+  Phase 7: Generates populated Project instructions
+  Phase 8: Updates firm_context.md pipeline table in Drive
+  Phase 9: Outputs BROWSER-STEP signal — Claude Code pastes instructions
+           into the Claude Project and wires the Project URL automatically
+
+WHAT REMAINS MANUAL (one-time, ~1 minute):
+  - Create the Claude Project at claude.ai
+  - Enable Google Drive connector in Project settings
+  - Provide the Project URL to Claude Code -> rest is automatic
+  NOTE: No file uploads needed -- firm context is read live from Drive
+
+CONFIGURATION:
+  Firm identity is read from firm_context.yaml (principal.name, firm.name,
+  firm.short_name). Firm context Drive ID is read from drive-docs.yaml
+  (docs.firm_context_doc.doc_id). See drive-docs.template.yaml.
+
+REQUIREMENTS:
+  pip install anthropic google-auth google-auth-oauthlib google-api-python-client
+  credentials.json in same folder (Google Drive API OAuth credentials)
+"""
+
+import glob
+import os
+import shutil
+import subprocess
+import sys
+import json
+import argparse
+import re
+from pathlib import Path
+from datetime import date
+from textwrap import dedent
+
+# ── FIRM IDENTITY (from firm_context.yaml + drive-docs.yaml) ─────────────────
+# Graceful fallback — script still runs if config files are missing.
+_PIPELINE_DIR = Path(__file__).parent.parent
+try:
+    sys.path.insert(0, str(_PIPELINE_DIR))
+    import _firm_context as _fc
+    _CTX             = _fc.load_firm_context()
+    _DDOC            = _fc.load_drive_docs()
+    FIRM_NAME        = _CTX.get("firm", {}).get("name", "the firm")
+    FIRM_SHORT       = _CTX.get("firm", {}).get("short_name", "Firm")
+    PRINCIPAL_NAME   = _CTX.get("principal", {}).get("name", "the lead")
+    PRINCIPAL_FIRST  = PRINCIPAL_NAME.split()[0]
+    _team            = _CTX.get("team", [])
+    TEAM_NAMES       = [m.get("name", "") for m in _team if m.get("name")]
+    FIRM_CONTEXT_DRIVE_ID = (
+        _DDOC.get("docs", {}).get("firm_context_doc", {}).get("doc_id") or ""
+    )
+except Exception:
+    FIRM_NAME             = "the firm"
+    FIRM_SHORT            = "Firm"
+    PRINCIPAL_NAME        = "the lead"
+    PRINCIPAL_FIRST       = "the lead"
+    TEAM_NAMES            = []
+    FIRM_CONTEXT_DRIVE_ID = ""
+
+# ── INSTALL CHECK ─────────────────────────────────────────────────────────────
+
+def check_requirements():
+    missing = []
+    try: from googleapiclient.discovery import build
+    except ImportError: missing.append("google-api-python-client")
+    try: from google.oauth2.credentials import Credentials
+    except ImportError: missing.append("google-auth")
+    if missing:
+        print(f"\n❌ Missing packages: {', '.join(missing)}")
+        print(f"   Run: pip install {' '.join(missing)}")
+        sys.exit(1)
+
+check_requirements()
+
+from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaInMemoryUpload
+
+# ── CONFIGURATION ─────────────────────────────────────────────────────────────
+
+SCRIPT_DIR = Path(__file__).parent
+SCOPES = ["https://www.googleapis.com/auth/drive"]
+TODAY = date.today().isoformat()
+
+# Paths relative to dashboard folder
+COMPILE_WRITEBACK = SCRIPT_DIR / "compile_drive_writeback.py"
+DEAL_SYSTEM_DATA  = SCRIPT_DIR / "deal-system-data.json"
+SYNC_STATE        = SCRIPT_DIR / "sync-state.json"
+DATA_DIR          = SCRIPT_DIR / "data" / "project-sync"
+FIRM_CONTEXT_PATH = SCRIPT_DIR / "firm_context.md"
+
+# Drive folder subfolders to create per deal
+DEAL_SUBFOLDERS = ["Documents", "Transcripts", "Filings", "Correspondence"]
+
+# Supported document extensions for reading
+DOC_EXTENSIONS = {".txt", ".md", ".pdf", ".docx"}
+
+# ── TRIGGER AND RULES LIBRARIES ───────────────────────────────────────────────
+
+TRIGGER_LIBRARY = {
+    "cash_runway": """
+Trigger D1 — CASH CLIFF APPROACHING
+If today is within 30 days of the cash runway date in the status file:
+→ Open every session with: "CASH CLIFF: [N] days away.
+  Refi/funding status: [status]. Action needed: [action]."
+""",
+    "regulatory_vote": """
+Trigger D2 — REGULATORY VOTE APPROACHING
+If a board vote, commission ruling, or regulatory deadline is within 14 days:
+→ Flag: "REGULATORY EVENT IN [N] DAYS: [event].
+  Preparation status: [status]."
+""",
+    "disintermediation": """
+Trigger D3 — DISINTERMEDIATION RISK
+If any document suggests direct contact between an introducer
+and the target without {FIRM_SHORT} in the loop:
+→ Flag immediately: "DISINTERMEDIATION RISK DETECTED — [details]."
+""",
+    "process_deadline": """
+Trigger D4 — PROCESS DEADLINE
+If a bid deadline or bake-off date is within 7 days:
+→ Flag: "PROCESS DEADLINE IN [N] DAYS. Outstanding prep: [items]."
+""",
+    "relationship_tension": """
+Trigger D5 — RELATIONSHIP TENSION DETECTED
+If any document escalates tension with a key counterparty:
+→ Flag immediately and summarize the development.
+→ Ask: "How do you want to handle this?"
+""",
+    "market_news": """
+Trigger D6 — MARKET NEWS AFFECTING THESIS
+If any document contains news that directly affects the critical driver:
+→ Flag: "MARKET UPDATE: [summary]. Impact on thesis: [assessment]."
+""",
+}
+
+RULES_LIBRARY = {
+    "regulated_asset": """
+- Allowed return assumptions come from filed rate cases only
+- Do not estimate regulatory outcomes — find the filing
+- Rate case trajectory governs the cash flow model
+""",
+    "development_asset": """
+- Timeline assumptions = best-case unless source document says otherwise
+- Regulatory approvals are probabilistic until executed documents exist
+- Do not present development timeline as contracted
+""",
+    "relationship_sensitive": """
+- Do not name {FIRM_SHORT} fees in external drafts until formalized
+- Do not attribute analytical conclusions to named sources
+  in external communications
+- Flag any draft that could affect a key relationship
+""",
+}
+
+# ── AUTH ──────────────────────────────────────────────────────────────────────
+
+def get_drive_service():
+    creds = None
+    token_path = SCRIPT_DIR / "token.json"
+    creds_path = SCRIPT_DIR / "credentials.json"
+
+    if not creds_path.exists():
+        print("\n❌ credentials.json not found.")
+        print("   1. Go to console.cloud.google.com")
+        print("   2. Enable Google Drive API")
+        print("   3. Create OAuth credentials (Desktop app)")
+        print(f"   4. Download as credentials.json → save to {SCRIPT_DIR}")
+        sys.exit(1)
+
+    if token_path.exists():
+        creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            flow = InstalledAppFlow.from_client_secrets_file(
+                str(creds_path), SCOPES)
+            creds = flow.run_local_server(port=0)
+        with open(token_path, "w") as f:
+            f.write(creds.to_json())
+
+    return build("drive", "v3", credentials=creds)
+
+
+def _status_template(deal_name, deal_id, lead, support):
+    support_line = f"Support: {support}" if support else "Support: —"
+    return dedent(f"""\
+    # {deal_name} — Status
+    Deal ID: {deal_id}
+    Lead: {lead} | {support_line}
+    Last updated: {TODAY}
+
+    ## Critical Driver
+    *To be completed in first Claude Project session.*
+
+    ## Hard Deadlines
+    | Date | Item | Owner |
+    |------|------|-------|
+    | — | — | — |
+
+    ## Open Items
+    | # | Item | Owner | Due |
+    |---|------|-------|-----|
+    | 1 | Run Critical Driver Framework | {lead} | First session |
+
+    ## Counterparties
+    | Name | Firm | Role |
+    |------|------|------|
+    | — | — | — |
+
+    ## Session Log
+    | Date | Summary |
+    |------|---------|
+    | {TODAY} | Deal onboarded. Awaiting first session. |
+    """)
+
+def _master_brief_template(deal_name, deal_id, lead, support):
+    support_line = f"Support: {support}" if support else "Support: —"
+    return dedent(f"""\
+    # {deal_name} — Master Brief
+    Deal ID: {deal_id}
+    Lead: {lead} | {support_line}
+    Last updated: {TODAY}
+
+    ## THE CORE ARGUMENT
+    *To be completed in first Claude Project session.*
+
+    ## POINTS OF CONSENSUS
+    *To be completed in first Claude Project session.*
+
+    ## POINTS OF DISAGREEMENT OR TENSION
+    *To be completed in first Claude Project session.*
+
+    ## OPEN QUESTIONS AND UNRESOLVED ISSUES
+    *To be completed in first Claude Project session.*
+
+    ## WHAT YOU WOULD NEED TO FORM A VIEW
+    *To be completed in first Claude Project session.*
+
+    ## KEY NAMES AND FIRMS
+    *To be completed in first Claude Project session.*
+    """)
+
+# ── DRIVE OPERATIONS ──────────────────────────────────────────────────────────
+
+def create_drive_folder(service, name, parent_id=None):
+    meta = {"name": name, "mimeType": "application/vnd.google-apps.folder"}
+    if parent_id:
+        meta["parents"] = [parent_id]
+    f = service.files().create(body=meta, fields="id,name").execute()
+    return f["id"]
+
+
+def create_drive_doc(service, title, content, parent_id=None):
+    meta = {"name": title}
+    if parent_id:
+        meta["parents"] = [parent_id]
+    media = MediaInMemoryUpload(
+        content.encode("utf-8"),
+        mimetype="text/plain",
+        resumable=False
+    )
+    f = service.files().create(
+        body=meta,
+        media_body=media,
+        fields="id,name,webViewLink"
+    ).execute()
+    return f["id"], f.get("webViewLink", "")
+
+
+def update_drive_doc(service, file_id, content):
+    media = MediaInMemoryUpload(
+        content.encode("utf-8"),
+        mimetype="text/plain",
+        resumable=False
+    )
+    service.files().update(fileId=file_id, media_body=media).execute()
+
+
+def read_drive_file(service, file_id):
+    try:
+        content = service.files().export(
+            fileId=file_id, mimeType="text/plain"
+        ).execute()
+        return content.decode("utf-8") if isinstance(content, bytes) else content
+    except Exception:
+        try:
+            content = service.files().get_media(fileId=file_id).execute()
+            return content.decode("utf-8") if isinstance(content, bytes) else content
+        except Exception as e:
+            return f"[Could not read file: {e}]"
+
+# ── DOCUMENT READING ──────────────────────────────────────────────────────────
+
+def read_local_docs(folder_path):
+    """Read text from all supported document types in a folder."""
+    docs = []
+    folder = Path(folder_path)
+    if not folder.exists():
+        print(f"   ⚠️  Docs folder not found: {folder_path}")
+        return docs
+
+    for f in sorted(folder.iterdir()):
+        if f.suffix.lower() not in DOC_EXTENSIONS:
+            continue
+        try:
+            if f.suffix.lower() == ".txt" or f.suffix.lower() == ".md":
+                content = f.read_text(encoding="utf-8", errors="ignore")
+                docs.append({"name": f.name, "content": content[:8000]})
+                print(f"   ✓ Read: {f.name} ({len(content):,} chars)")
+            else:
+                print(f"   ⚠️  Skipped binary file (convert to .txt first): {f.name}")
+        except Exception as e:
+            print(f"   ⚠️  Could not read {f.name}: {e}")
+    return docs
+
+# ── CLAUDE API CALLS ──────────────────────────────────────────────────────────
+
+def run_critical_driver_framework(client, deal_name, deal_id, docs):
+    """Run the critical driver analysis on deal documents."""
+    print("\n   🤖 Running Critical Driver Framework via Claude API...")
+
+    doc_text = ""
+    if docs:
+        for d in docs[:3]:  # Limit to first 3 docs to stay within context
+            doc_text += f"\n\n--- DOCUMENT: {d['name']} ---\n{d['content'][:5000]}"
+    else:
+        doc_text = "[No deal documents provided — generating placeholder framework]"
+
+    prompt = f"""You are analyzing a new infrastructure deal for {FIRM_SHORT}
+({FIRM_NAME}).
+
+Deal: {deal_name}
+Deal ID: {deal_id}
+
+Deal documents provided:
+{doc_text}
+
+Run the Critical Driver Framework:
+
+STEP 1 — WHAT DOES THE RETURN DEPEND ON?
+Identify the single variable that, if wrong, kills the return thesis.
+State it in one sentence.
+
+STEP 2 — MARKET-DETERMINED OR ASSET-SPECIFIC?
+- Market-determined: driven by external supply/demand dynamics
+- Asset-specific: driven by contract, permit, physical characteristic
+- Or both
+
+STEP 3 — BEAR CASE
+Complete this sentence: "The thesis is wrong if..."
+One paragraph. No hedging.
+
+STEP 4 — DILIGENCE QUESTIONS
+List exactly 5-10 specific, answerable questions that research
+must answer to confirm or deny the critical driver.
+
+STEP 5 — RECOMMENDATION
+One paragraph on the primary diligence workstream and what
+must be answered first before any capital commitment.
+
+Output ONLY the structured block below, nothing else:
+
+---CRITICAL-DRIVER---
+deal_id: {deal_id}
+critical_driver: [single sentence]
+driver_type: [market-determined / asset-specific / both]
+bear_case: [one paragraph]
+diligence_questions:
+  1. [question]
+  2. [question]
+  3. [question]
+  4. [question]
+  5. [question]
+recommendation: [one paragraph]
+---END---"""
+
+    response = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=2000,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    return response.content[0].text
+
+
+def generate_status_file(client, deal_name, deal_id, lead, support,
+                          critical_driver_block, docs):
+    """Generate initial status.md from deal info and critical driver."""
+    print("   🤖 Generating status.md via Claude API...")
+
+    prompt = f"""Generate an initial status.md file for a new deal at {FIRM_SHORT}.
+
+Deal: {deal_name}
+Deal ID: {deal_id}
+Lead: {lead}
+Support: {support}
+Date: {TODAY}
+
+Critical driver analysis:
+{critical_driver_block}
+
+Documents available: {', '.join(d['name'] for d in docs) if docs else 'None yet'}
+
+Generate a complete status.md in this exact format:
+
+# {deal_name} — Project Status
+**deal_id:** {deal_id}
+**generated:** {TODAY} (initial setup — populate from deal documents)
+**last_session:** {TODAY}
+**project_url:** null (pending — wire via /project-sync/update)
+
+---
+
+## Stage
+[Describe current stage based on available information.
+If unknown: "Early — initial engagement. Context to be built
+in first full Claude session."]
+
+---
+
+## Hard Deadlines
+
+| Deadline | Date | Status |
+|----------|------|--------|
+| [Add when known] | TBD | Pending |
+
+---
+
+## Key People
+
+| Person | Role | Key facts |
+|--------|------|-----------|
+| {lead} | {FIRM_SHORT} lead | Active |
+| {support} | {FIRM_SHORT} support | Active |
+| [Add counterparties when known] | — | — |
+
+---
+
+## Critical Driver
+
+[Paste the critical driver, driver type, and bear case from the
+analysis above]
+
+## Diligence Questions (open)
+
+[List the diligence questions numbered, each as an open item]
+
+---
+
+## Counterparties
+
+| Party | Role | Status | Next action |
+|-------|------|--------|-------------|
+| [Add when known] | — | — | — |
+
+---
+
+## Open Workstreams
+
+This week:
+1. Complete initial deal orientation — read all available documents
+2. Confirm critical driver assessment with {lead}
+3. Answer diligence question #1 (highest priority)
+4. Formalize {FIRM_SHORT} economics before any external outreach
+
+Next 2 weeks:
+5. Build financial model (or review existing)
+6. Identify and contact primary counterparties
+7. [Add deal-specific items]
+
+---
+
+## Decisions Log (append only — never delete)
+
+| Date | Decision | Rationale | Alternatives rejected |
+|------|----------|-----------|----------------------|
+| {TODAY} | Engaged deal | [Reason for engagement] | Passed |
+
+---
+
+## Last Session Summary
+
+Date: {TODAY}
+Work completed: Initial deal setup via new_deal.py script.
+Critical driver framework run on available documents.
+Status.md and master brief generated. Project instructions prepared.
+
+---
+
+## Superseded Assumptions (append only)
+
+| Old | Correct | Source |
+|-----|---------|--------|
+| [None yet — add as assumptions are corrected] | — | — |
+
+---
+
+## Reference Documents
+
+| Document | Location | Purpose |
+|----------|----------|---------|
+| [Add as documents are processed] | — | — |
+
+Output ONLY the status.md content, no other text."""
+
+    response = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=3000,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    return response.content[0].text
+
+
+def generate_master_brief(client, deal_name, deal_id, lead, support,
+                           critical_driver_block, docs):
+    """Generate initial master brief from deal info."""
+    print("   🤖 Generating master_brief.md via Claude API...")
+
+    doc_summaries = ""
+    if docs:
+        for d in docs[:3]:
+            doc_summaries += f"\n\nDocument: {d['name']}\n{d['content'][:3000]}"
+
+    prompt = f"""Generate an initial master_brief.md for a new deal at {FIRM_SHORT}.
+Use the universal 11-part structure.
+
+Deal: {deal_name}
+Deal ID: {deal_id}
+Lead: {lead}
+Support: {support}
+Date: {TODAY}
+
+Critical driver analysis:
+{critical_driver_block}
+
+Available documents:
+{doc_summaries if doc_summaries else 'None provided yet'}
+
+Generate using this structure. Mark sections as [TO BE POPULATED]
+where information is not yet available rather than inventing facts.
+
+# {deal_name} — Master Deal Brief
+**Prepared:** {TODAY} | **By:** Claude / {FIRM_SHORT}
+**Status:** Initial — populate from deal documents in first full session
+
+---
+
+## PART I — SITUATION SUMMARY
+[2-3 paragraphs. What is the deal, who owns it, why is {FIRM_SHORT} involved,
+what is the near-term catalyst. Mark unknown facts as [TBC].]
+
+## PART II — KEY PEOPLE
+[Tables for deal team, {FIRM_SHORT} team, key externals. Use what is known.]
+
+## PART III — ASSET / DEAL DETAIL
+[Asset description, key metrics, site/portfolio detail if applicable.]
+
+## PART IV — CRITICAL DRIVER DEEP-DIVE
+[This is the most important section. Based on the critical driver
+analysis, write a thorough section covering:
+- What the critical driver is and why it governs the thesis
+- The market or asset-specific dynamics at play
+- What needs to be true for the thesis to work
+- What the diligence workstream should look like
+- Key questions that must be answered
+This section should be 3-5 paragraphs minimum.]
+
+## PART V — VALUATION FRAMEWORK
+[Initial valuation framework. Mark assumptions as [TBC] where unknown.]
+
+## PART VI — STRATEGY
+[{FIRM_SHORT}'s strategic angle, role, and fee structure. What conversations
+need to happen and in what order.]
+
+## PART VII — DEAL HISTORY TIMELINE
+| Date | Event |
+|------|-------|
+| {TODAY} | Initial {FIRM_SHORT} engagement — deal onboarding |
+
+## PART VIII — OPEN ITEMS
+[List from diligence questions + standard open items for a new deal.]
+
+## PART IX — KEY RISKS
+[5-7 key risks based on available information and critical driver.]
+
+## PART X — DOCUMENTS IN DRIVE
+| Document | Location | Purpose |
+|----------|----------|---------|
+[List available documents]
+
+## PART XI — FACTUAL CONFLICTS
+[None identified yet — flag conflicts as they emerge]
+
+Output ONLY the master brief content, no other text."""
+
+    response = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=4000,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    return response.content[0].text
+
+
+def generate_project_instructions(deal_name, deal_id, lead, support,
+                                   status_file_id, brief_file_id,
+                                   drive_folder_name, triggers, rules):
+    """Generate populated Project instructions from template."""
+
+    trigger_text = "\n".join(TRIGGER_LIBRARY.get(t, "") for t in triggers)
+    rules_text = "\n".join(RULES_LIBRARY.get(r, "") for r in rules)
+    support_line = f"{support} is support." if support else ""
+
+    return dedent(f"""
+    ════════════════════════════════
+    FIRST SESSION SETUP (run once, then delete this block)
+    ════════════════════════════════
+
+    This is the first session for {deal_name}. Before anything else:
+
+    1. Read all documents uploaded to this Project.
+    2. Run the Critical Driver Framework (defined in Level 3 below)
+       and output the full result.
+    3. Fill in status.md using the Critical Driver output:
+       - Update "Critical Driver" section
+       - Add any hard deadlines found
+       - Add any counterparties named
+       Write the updated content back to Drive:
+       File ID: {status_file_id}
+    4. Fill in master_brief.md using the six-section memo structure:
+       Core Argument / Consensus / Tension / Open Questions /
+       What You'd Need to Form a View / Key Names & Firms
+       Write the updated content back to Drive:
+       File ID: {brief_file_id}
+    5. Confirm both files written, then proceed as normal.
+
+    ════════════════════════════════
+
+    You are Claude working for {PRINCIPAL_NAME} at {FIRM_NAME}
+    ({FIRM_SHORT}) on the {deal_name} deal.
+
+    {lead} is lead. {support_line}
+    Do not ask {PRINCIPAL_FIRST} to re-explain the deal or his role.
+    Do not proceed with any response until Level 1 is complete.
+
+
+    ════════════════════════════════
+    LEVEL 1 — SESSION START
+    Runs automatically, every conversation.
+    ════════════════════════════════
+
+    Step 0. Read firm context from Google Drive:
+    File ID: {FIRM_CONTEXT_DRIVE_ID}
+    This is the live firm context — always read from Drive,
+    never from a cached or uploaded version.
+
+    Step 1. Fetch this file from Google Drive and read it —
+    this is the current deal state, updated after each session:
+    File ID: {status_file_id}
+
+    Step 2. Search the {drive_folder_name} folder in Google Drive
+    for any files modified in the last 7 days that are NOT the
+    status file above. For each new file found:
+    - State the filename
+    - State what it appears to contain (one line)
+    - Flag if time-sensitive (deadline, term sheet, NDA, filing)
+    Read anything that looks time-sensitive or new.
+
+    Step 3. Run Level 2 before responding to anything.
+
+    After Level 2, open every session with:
+    "{deal_name} — [date]. Since last session: [delta].
+     Urgent today: [what needs attention]. Resolved: [what closed]."
+
+
+    ════════════════════════════════
+    LEVEL 2 — DELTA DETECTION
+    Runs after Level 1, every conversation.
+    ════════════════════════════════
+
+    Compare new documents against the current status file.
+    For each new document:
+
+    A. Does it resolve an open item?
+       → Mark [RESOLVED date]. Never delete — keep for audit trail.
+
+    B. Does it introduce a new deadline?
+       → Add to hard deadlines. Flag if within 14 days.
+
+    C. Does it conflict with an existing conclusion?
+       → Flag: CONFLICT DETECTED: [describe].
+       → Present both versions. Ask {PRINCIPAL_FIRST} which governs.
+       → Never silently overwrite.
+
+    D. Does it name a new counterparty or change existing?
+       → Update counterparty table in working context.
+
+    Then run Level 3.
+
+
+    ════════════════════════════════
+    LEVEL 3 — AUTO-UPDATE TRIGGERS
+    Runs after Level 2. No prompt from {PRINCIPAL_FIRST} needed.
+    ════════════════════════════════
+
+    --- UNIVERSAL TRIGGERS ---
+
+    Trigger 0 — NEW PRIMARY DEAL DOCUMENT
+    When any CIM, IC memo, management presentation, financial model,
+    or incoming term sheet lands in the deal folder:
+    Run the Critical Driver Framework and output:
+
+    ---CRITICAL-DRIVER---
+    deal_id: {deal_id}
+    document_analyzed: [filename]
+    critical_driver: [single sentence]
+    driver_type: [market-determined / asset-specific / both]
+    bear_case: [one paragraph — The thesis is wrong if...]
+    diligence_questions:
+      1. [question]
+      2. [question]
+      3. [question]
+      4. [question]
+      5. [question]
+    recommendation: [one paragraph]
+    ---END---
+
+    Ask: "Does this match your read? Which question is most urgent?"
+
+    Trigger 1 — DEADLINE WITHIN 7 DAYS
+    → Open with: "DEADLINE ALERT: [deadline] is [N] days away.
+      Status: [status]. Action needed: [action]."
+
+    Trigger 2 — MATERIAL ANALYTICAL CHANGE
+    If new document contains new comp, rule change, executed
+    contract, or new principal counterparty position:
+    → Flag: "MASTER BRIEF UPDATE NEEDED: [what changed]"
+    → Ask: "Want me to output the updated section now?"
+    → If yes: fetch File ID {brief_file_id} and output updated
+      section only.
+
+    Trigger 3 — NEW COUNTERPARTY
+    → Add to working context. Output updated counterparty table.
+    → Flag if affects {FIRM_SHORT} economics or disintermediation risk.
+
+    Trigger 4 — {FIRM_SHORT} ECONOMICS UNFORMALIZED + OUTREACH
+    -> Flag: "STOP: {FIRM_SHORT} ECONOMICS NOT YET FORMALIZED.
+      Do not proceed with external outreach until resolved."
+
+    Trigger 5 — DRAFT REQUEST DETECTED
+    When {PRINCIPAL_FIRST} uses: draft, write, prepare, send to, email to,
+    memo on, one-pager for, update for, response to:
+    State what you are drafting, source documents, purpose,
+    and what must NOT be said. Then draft. Then output:
+
+    ---DRAFT---
+    deal_id: {deal_id}
+    type: [email/memo/term_sheet/one_pager/lp_update]
+    recipient: [name / firm]
+    purpose: [one sentence]
+    status: [ready_to_send / needs_review / draft_only]
+    date: {TODAY}
+    ---END---
+
+    --- DEAL-SPECIFIC TRIGGERS ---
+    {trigger_text}
+
+
+    ════════════════════════════════
+    LEVEL 4 — SESSION CLOSE
+    Triggered when {PRINCIPAL_FIRST} says "session close".
+    ════════════════════════════════
+
+    Output these blocks in order. No other text.
+
+    BLOCK 1 — DASHBOARD SYNC:
+    ---SESSION-CLOSE---
+    deal_id: {deal_id}
+    last_session_date: YYYY-MM-DD
+    session_summary: [2-3 sentences]
+    open_items_delta: [new or resolved, or "none"]
+    status_change: [any change to stage/facts/deadlines, or "none"]
+    activities:
+      - [what was worked on]
+    decisions:
+      - decision: [what was decided]
+        rationale: [why]
+        rejected: [alternatives not chosen, or "none"]
+    pending_drafts:
+      - type: [type]
+        recipient: [who]
+        purpose: [what it needs to accomplish]
+        priority: [this_week / this_month]
+    research_tasks:
+      - topic: [what to research]
+        driver: [which critical driver it relates to]
+        questions: [specific questions]
+        priority: [urgent / standard]
+    critical_driver_update: [change to assessment, or "none"]
+    ---END---
+
+    BLOCK 2 — UPDATED STATUS FILE:
+    Complete updated status.md incorporating this session.
+    Label: "UPDATED STATUS FILE — save to Drive
+    File ID: {status_file_id}"
+
+    BLOCK 3 — MASTER BRIEF DELTA (only if Trigger 2 fired):
+    Updated sections only.
+    Label: "MASTER BRIEF DELTA — paste into {deal_id}_master_brief.md
+    File ID: {brief_file_id}"
+
+    BLOCK 4 — SESSION NARRATIVE:
+    One paragraph per major topic: question, analysis, conclusion,
+    what was rejected and why, key counterparty quotes.
+    Label: "SESSION NARRATIVE — append to master brief Part VII"
+
+
+    ════════════════════════════════
+    ANALYTICAL RULES
+    ════════════════════════════════
+
+    Universal:
+    - Do not redo prior analytical work — build on it
+    - Flag document conflicts explicitly — never overwrite silently
+    - Always state which document a fact comes from
+    - {FIRM_SHORT} economics must be formalized before any external outreach
+    - Do not reverse established conclusions without flagging
+    - Timeline assumptions = best-case unless source says otherwise
+
+    Deal-specific:
+    {rules_text}
+
+
+    ════════════════════════════════
+    DRAFTING RULES
+    ════════════════════════════════
+
+    Universal:
+    - Never reference {FIRM_SHORT} fees in external drafts until formalized
+    - Never attribute conclusions to named sources externally
+    - Never commit to development-stage timelines as contracted
+    - Always ask: "Who else might read this?" before finalizing
+
+    Deal-specific:
+    {rules_text}
+    """).strip()
+
+# ── LOCAL FILE OPERATIONS ─────────────────────────────────────────────────────
+
+def update_compile_writeback(deal_id, file_id):
+    """Add new deal to compile_drive_writeback.py."""
+    if not COMPILE_WRITEBACK.exists():
+        print(f"   ⚠️  {COMPILE_WRITEBACK} not found — skipping")
+        return
+
+    content = COMPILE_WRITEBACK.read_text()
+    marker = "    # ADD NEW DEAL HERE:"
+
+    if deal_id in content:
+        print(f"   ⚠️  {deal_id} already in compile_drive_writeback.py — skipping")
+        return
+
+    if marker in content:
+        new_line = f"    '{deal_id}': '{file_id}',\n    {marker}"
+        content = content.replace(marker, new_line)
+        COMPILE_WRITEBACK.write_text(content)
+        print(f"   ✓ Added {deal_id} to compile_drive_writeback.py")
+    else:
+        print(f"   ⚠️  Could not find insertion marker in compile_drive_writeback.py")
+        print(f"       Add manually: '{deal_id}': '{file_id}'")
+
+
+def update_deal_system_data(deal_id, deal_name, lead, support,
+                             drive_folder_id, status_file_id, brief_file_id):
+    """Add new deal entry to deal-system-data.json."""
+    if not DEAL_SYSTEM_DATA.exists():
+        data = {"deals": []}
+    else:
+        data = json.loads(DEAL_SYSTEM_DATA.read_text())
+
+    # Check if already exists
+    if any(d.get("deal_id") == deal_id for d in data.get("deals", [])):
+        print(f"   ⚠️  {deal_id} already in deal-system-data.json — skipping")
+        return
+
+    new_deal = {
+        "deal_id": deal_id,
+        "name": deal_name,
+        "stage": "early",
+        "lead": lead,
+        "support": support,
+        "drive_folder_id": drive_folder_id,
+        "status_file_id": status_file_id,
+        "brief_file_id": brief_file_id,
+        "project_url": None,
+        "created": TODAY,
+        "last_session": TODAY,
+    }
+
+    data.setdefault("deals", []).append(new_deal)
+    DEAL_SYSTEM_DATA.write_text(json.dumps(data, indent=2))
+    print(f"   ✓ Added {deal_id} to deal-system-data.json")
+
+
+def update_sync_state(deal_id, deal_name):
+    """Add new deal to sync-state.json."""
+    if not SYNC_STATE.exists():
+        state = {}
+    else:
+        state = json.loads(SYNC_STATE.read_text())
+
+    if deal_id not in state:
+        state[deal_id] = {
+            "project_url": None,
+            "last_session_date": TODAY,
+            "session_summary": "Initial setup",
+        }
+        SYNC_STATE.write_text(json.dumps(state, indent=2))
+        print(f"   ✓ Added {deal_id} to sync-state.json")
+
+
+def update_firm_context_pipeline(service, new_deal_id=None, new_deal_name=None,
+                                  new_lead=None, new_support=None, new_stage="Early"):
+    """Upsert a deal row in the ACTIVE DEAL PIPELINE table in tcip_firm_context.md.
+    Existing rows are preserved. Only the new/updated deal row is added or refreshed."""
+    import io as _io, re as _re
+    from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
+
+    if not new_deal_id:
+        print("   ⚠️  No deal_id provided — skipping firm context update")
+        return
+
+    _principal_first = PRINCIPAL_NAME.split()[0] if PRINCIPAL_NAME else ""
+    _team_first = TEAM_NAMES[0].split()[0] if TEAM_NAMES else ""
+    yoni_role = "Lead" if new_lead and _principal_first and _principal_first in new_lead else (
+        "Support" if new_support and _principal_first and _principal_first in new_support else "—")
+    mark_role = "Lead" if new_lead and _team_first and _team_first in new_lead else (
+        "Support" if new_support and _team_first and _team_first in new_support else "—")
+    new_row = f"| **{new_deal_name}** | {new_stage} | {yoni_role} | {mark_role} | `{new_deal_id}_context.md` |"
+
+    # Download current file from Drive
+    try:
+        buf = _io.BytesIO()
+        dl = service.files().get_media(fileId=FIRM_CONTEXT_DRIVE_ID)
+        MediaIoBaseDownload(buf, dl).next_chunk()
+        content = buf.getvalue().decode("utf-8")
+    except Exception as e:
+        print(f"   ⚠️  Could not download firm context from Drive: {e}")
+        return
+
+    # Find the pipeline table block
+    table_match = _re.search(
+        r"(## ACTIVE DEAL PIPELINE.*?\n\|[-| ]+\|)(.*?)(?=\n## |\Z)",
+        content, flags=_re.DOTALL
+    )
+    if not table_match:
+        print("   ⚠️  Could not find pipeline table in firm context — skipping")
+        return
+
+    header = table_match.group(1)
+    body   = table_match.group(2)      # existing data rows as a block
+    rows   = [r for r in body.split("\n") if r.strip().startswith("|")]
+
+    # Check if deal already has a row (match on deal_id anywhere in the row)
+    found = False
+    updated_rows = []
+    for row in rows:
+        if f"`{new_deal_id}_context.md`" in row or f"**{new_deal_name}**" in row:
+            updated_rows.append(new_row)   # replace with updated row
+            found = True
+        else:
+            updated_rows.append(row)
+    if not found:
+        updated_rows.append(new_row)       # append new deal
+
+    new_table_block = header + "\n" + "\n".join(updated_rows) + "\n"
+
+    new_content = (
+        content[: table_match.start()]
+        + new_table_block
+        + content[table_match.end() :]
+    )
+
+    # Update Last updated line
+    new_content = _re.sub(
+        r"\*\*Last updated:\*\* .*",
+        f"**Last updated:** {TODAY}",
+        new_content,
+    )
+
+    # Upload back to Drive
+    try:
+        media = MediaIoBaseUpload(
+            _io.BytesIO(new_content.encode()), mimetype="text/plain"
+        )
+        service.files().update(fileId=FIRM_CONTEXT_DRIVE_ID, media_body=media).execute()
+        action = "updated" if found else "added"
+        print(f"   ✓ firm_context.md — deal row {action} in Drive")
+    except Exception as e:
+        print(f"   ⚠️  Could not upload firm context to Drive: {e}")
+        return
+
+    # Also update local copy if it exists
+    for lpath in [Path.home() / "Downloads" / "files" / "firm_context.md", FIRM_CONTEXT_PATH]:
+        if lpath.exists():
+            lpath.write_text(new_content, encoding="utf-8")
+            print(f"   ✓ Local copy updated: {lpath}")
+
+
+def create_local_data_folders(deal_id):
+    """Create local data/project-sync/[deal_id]/ folder and JSON files."""
+    deal_dir = DATA_DIR / deal_id
+    deal_dir.mkdir(parents=True, exist_ok=True)
+
+    for fname in ["decisions_log.json", "draft_queue.json", "research_queue.json"]:
+        fpath = deal_dir / fname
+        if not fpath.exists():
+            fpath.write_text("[]")
+
+    print(f"   ✓ Created local data folders: {deal_dir}")
+
+
+def save_instructions_locally(deal_id, instructions):
+    """Save generated Project instructions to local file for reference."""
+    out = DATA_DIR / deal_id / "project_instructions.txt"
+    out.write_text(instructions)
+    print(f"   ✓ Saved Project instructions to {out}")
+    return out
+
+# ── CLAUDE CODE ANALYSIS (CLAUDE MAX) ────────────────────────────────────────
+
+def _find_claude_bin():
+    pattern = str(Path.home() / 'Library/Application Support/Claude/claude-code/*/claude.app/Contents/MacOS/claude')
+    candidates = sorted(glob.glob(pattern))
+    if candidates:
+        return candidates[-1]
+    return shutil.which('claude')
+
+def _extract_between(text, start_marker, end_marker):
+    start_idx = text.find(start_marker)
+    end_idx   = text.find(end_marker)
+    if start_idx == -1 or end_idx == -1:
+        return None
+    return text[start_idx + len(start_marker):end_idx].strip()
+
+def run_analysis_via_claude_code(deal_name, deal_id, lead, support, docs):
+    """Run Critical Driver Framework + generate .md content via Claude Code CLI.
+    Uses Claude Max quota — no API spend. Returns (status_content, brief_content)
+    or (None, None) if claude binary not found or times out."""
+
+    claude_bin = _find_claude_bin()
+    if not claude_bin:
+        print("   ⚠️  claude CLI not found — skipping AI analysis.")
+        print("      Templates written to Drive. Run first session to fill them in.")
+        return None, None
+
+    firm_context = ""
+    if FIRM_CONTEXT_PATH.exists():
+        firm_context = FIRM_CONTEXT_PATH.read_text(encoding="utf-8")
+
+    docs_section = ""
+    if docs:
+        docs_section = "\n\nDEAL DOCUMENTS PROVIDED:\n"
+        for d in docs:
+            docs_section += f"\n--- {d['name']} ---\n{d['content']}\n"
+    else:
+        docs_section = ("\n\nNo local deal documents provided. "
+                        "Generate framework based on deal name and firm context only. "
+                        "Mark all sections as preliminary.")
+
+    support_line = f"Support: {support}" if support else "Support: none assigned"
+
+    prompt = f"""You are onboarding a new infrastructure deal for {FIRM_SHORT} ({FIRM_NAME}).
+
+Deal: {deal_name}
+Deal ID: {deal_id}
+Lead: {lead}
+{support_line}
+
+FIRM CONTEXT:
+{firm_context}
+{docs_section}
+
+Complete all three tasks in order. Be specific — use named assets, firms, dollar amounts, and dates wherever the documents support them. No generic placeholders.
+
+TASK 1 — CRITICAL DRIVER FRAMEWORK
+Output the full Critical Driver analysis for {deal_name}.
+
+Format:
+critical_driver: [single sentence — the one thing that determines whether this deal works]
+return_driver: [primary return mechanism — yield, spread, multiple, IRR]
+key_risk: [single biggest risk to the thesis]
+diligence_priority: [most important thing to verify first]
+right_to_win: [why {FIRM_SHORT} specifically, not a larger fund]
+
+TASK 2 — STATUS.MD
+Generate the complete status.md content. Wrap it exactly like this:
+
+===STATUS_START===
+# {deal_name} — Status
+Deal ID: {deal_id}
+Lead: {lead} | {support_line}
+Last updated: {TODAY}
+
+## Critical Driver
+[paste critical_driver from Task 1]
+
+## Hard Deadlines
+| Date | Item | Owner |
+|------|------|-------|
+[fill from documents or mark as TBD]
+
+## Open Items
+| # | Item | Owner | Due |
+|---|------|-------|-----|
+| 1 | Complete diligence priority | {lead} | TBD |
+
+## Counterparties
+| Name | Firm | Role |
+|------|------|------|
+[fill from documents]
+
+## Session Log
+| Date | Summary |
+|------|---------|
+| {TODAY} | Deal onboarded via {FIRM_SHORT} system. Critical Driver complete. |
+===STATUS_END===
+
+TASK 3 — MASTER_BRIEF.MD
+Generate the complete master_brief.md using the six-section memo structure. Wrap it exactly like this:
+
+===BRIEF_START===
+# {deal_name} — Master Brief
+Deal ID: {deal_id}
+Lead: {lead} | {support_line}
+Last updated: {TODAY}
+
+## THE CORE ARGUMENT
+[1-2 paragraphs. Lead with the investment thesis.]
+
+## POINTS OF CONSENSUS
+[Bullet points. Named facts with conviction.]
+
+## POINTS OF DISAGREEMENT OR TENSION
+[Bullet points. Where the thesis could break.]
+
+## OPEN QUESTIONS AND UNRESOLVED ISSUES
+[Bullet points. What is unknown or pending.]
+
+## WHAT YOU WOULD NEED TO FORM A VIEW
+[Bullet points. Specific diligence, data, expert calls needed.]
+
+## KEY NAMES AND FIRMS
+[Every person and organization named — one line each.]
+===BRIEF_END===
+"""
+
+    print("   Running Claude Code (Claude Max quota — no API cost)...")
+    try:
+        result = subprocess.run(
+            [claude_bin, '--dangerously-skip-permissions', '--print', prompt],
+            capture_output=True, text=True, timeout=300,
+        )
+        output = result.stdout or ""
+        if result.returncode != 0:
+            print(f"   ⚠️  Claude Code exited {result.returncode}. Using templates.")
+            if result.stderr:
+                print(f"      {result.stderr[:300]}")
+            return None, None
+
+        status_content = _extract_between(output, "===STATUS_START===", "===STATUS_END===")
+        brief_content  = _extract_between(output, "===BRIEF_START===",  "===BRIEF_END===")
+
+        if not status_content or not brief_content:
+            print("   ⚠️  Could not parse Claude output — marker not found. Using templates.")
+            return None, None
+
+        return status_content, brief_content
+
+    except subprocess.TimeoutExpired:
+        print("   ⚠️  Claude Code timed out (5 min). Using templates.")
+        return None, None
+    except Exception as e:
+        print(f"   ⚠️  Claude Code error: {e}. Using templates.")
+        return None, None
+
+# ── INTERACTIVE INPUT ─────────────────────────────────────────────────────────
+
+def prompt_interactive():
+    print("\n" + "═" * 60)
+    print("  {FIRM_SHORT} NEW DEAL SETUP")
+    print("═" * 60)
+
+    deal_name = input("\nDeal name (e.g. 'Black Bayou Energy Hub'): ").strip()
+    deal_id = input("Deal ID (e.g. 'black_bayou', lowercase, underscores): ").strip()
+    _default_lead = PRINCIPAL_NAME
+    _default_support = TEAM_NAMES[0] if TEAM_NAMES else ""
+    lead = input(f"Lead principal [{_default_lead}]: ").strip() or _default_lead
+    support_default = _default_support if lead != _default_support else (TEAM_NAMES[1] if len(TEAM_NAMES) > 1 else "")
+    support = input(f"Support principal [{support_default}]: ").strip() or support_default
+    docs_folder = input("Path to deal documents folder (or press Enter to skip): ").strip()
+    drive_folder_id = input("Existing Drive folder ID (or press Enter to create new): ").strip()
+
+    print("\nTriggers to add (comma-separated, or press Enter for none):")
+    print("  Options: cash_runway, regulatory_vote, disintermediation,")
+    print("           process_deadline, relationship_tension, market_news")
+    triggers_input = input("Triggers: ").strip()
+    triggers = [t.strip() for t in triggers_input.split(",") if t.strip()] if triggers_input else []
+
+    print("\nRules to add (comma-separated, or press Enter for none):")
+    print("  Options: regulated_asset, development_asset, relationship_sensitive")
+    rules_input = input("Rules: ").strip()
+    rules = [r.strip() for r in rules_input.split(",") if r.strip()] if rules_input else []
+
+    return {
+        "deal_name": deal_name,
+        "deal_id": deal_id,
+        "lead": lead,
+        "support": support,
+        "docs_folder": docs_folder or None,
+        "drive_folder_id": drive_folder_id or None,
+        "triggers": triggers,
+        "rules": rules,
+    }
+
+# ── MAIN ──────────────────────────────────────────────────────────────────────
+
+def main():
+    parser = argparse.ArgumentParser(description=f"{FIRM_SHORT} New Deal Setup")
+    parser.add_argument("--deal-name", help="Full deal name")
+    parser.add_argument("--deal-id", help="Short deal ID (lowercase, underscores)")
+    parser.add_argument("--lead", help="Lead principal")
+    parser.add_argument("--support", help="Support principal")
+    parser.add_argument("--docs-folder", help="Path to deal documents")
+    parser.add_argument("--drive-folder-id", help="Existing Drive folder ID")
+    parser.add_argument("--triggers", nargs="*", default=[])
+    parser.add_argument("--rules", nargs="*", default=[])
+    args = parser.parse_args()
+
+    # Get inputs
+    if args.deal_name and args.deal_id:
+        config = {
+            "deal_name": args.deal_name,
+            "deal_id": args.deal_id,
+            "lead": args.lead or PRINCIPAL_NAME,
+            "support": args.support or "",
+            "docs_folder": args.docs_folder,
+            "drive_folder_id": args.drive_folder_id,
+            "triggers": args.triggers,
+            "rules": args.rules,
+        }
+    else:
+        config = prompt_interactive()
+
+    deal_name = config["deal_name"]
+    deal_id = config["deal_id"]
+    lead = config["lead"]
+    support = config["support"]
+    docs_folder = config.get("docs_folder")
+    existing_drive_folder_id = config.get("drive_folder_id")
+    triggers = config.get("triggers", [])
+    rules = config.get("rules", [])
+
+    print(f"\n{'═' * 60}")
+    print(f"  Setting up: {deal_name} ({deal_id})")
+    print(f"  Lead: {lead} | Support: {support}")
+    print(f"{'═' * 60}\n")
+
+    # Init services
+    print("📡 Connecting to Google Drive...")
+    drive = get_drive_service()
+
+    # ── PHASE 1: DRIVE FOLDER STRUCTURE ──────────────────────────────────────
+    print("\n─────────────────────────────────")
+    print("PHASE 1 — Google Drive Setup")
+    print("─────────────────────────────────")
+
+    if existing_drive_folder_id:
+        drive_folder_id = existing_drive_folder_id
+        drive_folder_name = deal_name
+        print(f"   ✓ Using existing folder: {drive_folder_id}")
+    else:
+        print(f"   Creating folder: {deal_name}")
+        drive_folder_id = create_drive_folder(drive, deal_name)
+        drive_folder_name = deal_name
+        print(f"   ✓ Created: {drive_folder_id}")
+
+    for subfolder in DEAL_SUBFOLDERS:
+        create_drive_folder(drive, subfolder, drive_folder_id)
+        print(f"   ✓ Subfolder: {subfolder}/")
+
+    # ── PHASE 2: CREATE TEMPLATE .md FILES IN DRIVE ──────────────────────────
+    print("\n─────────────────────────────────")
+    print("PHASE 2 — Drive .md File Setup")
+    print("─────────────────────────────────")
+
+    status_content = _status_template(deal_name, deal_id, lead, support)
+    master_content = _master_brief_template(deal_name, deal_id, lead, support)
+
+    status_title = f"{deal_id}_status.md"
+    brief_title  = f"{deal_id}_master_brief.md"
+
+    status_id, status_url = create_drive_doc(drive, status_title, status_content, drive_folder_id)
+    brief_id, brief_url   = create_drive_doc(drive, brief_title, master_content, drive_folder_id)
+
+    print(f"   ✓ Status file created — ID: {status_id}")
+    print(f"     URL: {status_url}")
+    print(f"   ✓ Master brief created — ID: {brief_id}")
+    print(f"     URL: {brief_url}")
+
+    # ── PHASE 3: AI ANALYSIS VIA CLAUDE CODE (CLAUDE MAX) ────────────────────
+    print("\n─────────────────────────────────")
+    print("PHASE 3 — AI Analysis (Claude Max)")
+    print("─────────────────────────────────")
+
+    docs = []
+    if docs_folder:
+        docs = read_local_docs(docs_folder)
+        print(f"   ✓ Loaded {len(docs)} local document(s)")
+
+    ai_status, ai_brief = run_analysis_via_claude_code(
+        deal_name, deal_id, lead, support, docs
+    )
+
+    if ai_status:
+        update_drive_doc(drive, status_id, ai_status)
+        print("   ✓ status.md filled with Critical Driver analysis")
+    else:
+        print("   ℹ  status.md written as template — fill in first Claude Project session")
+
+    if ai_brief:
+        update_drive_doc(drive, brief_id, ai_brief)
+        print("   ✓ master_brief.md filled with six-section memo")
+    else:
+        print("   ℹ  master_brief.md written as template — fill in first Claude Project session")
+
+    # ── PHASE 4: UPDATE COMPILE SCRIPT ───────────────────────────────────────
+    print("\n─────────────────────────────────")
+    print("PHASE 4 — Compile Script Update")
+    print("─────────────────────────────────")
+    update_compile_writeback(deal_id, status_id)
+
+    # ── PHASE 5: UPDATE DEAL SYSTEM DATA ────────────────────────────────────
+    print("\n─────────────────────────────────")
+    print("PHASE 5 — Deal Registry Update")
+    print("─────────────────────────────────")
+    update_deal_system_data(
+        deal_id, deal_name, lead, support,
+        drive_folder_id, status_id, brief_id
+    )
+    update_sync_state(deal_id, deal_name)
+
+    # ── PHASE 6: LOCAL DATA FOLDERS ──────────────────────────────────────────
+    print("\n─────────────────────────────────")
+    print("PHASE 6 — Local Data Folders")
+    print("─────────────────────────────────")
+    create_local_data_folders(deal_id)
+
+    # ── PHASE 7: GENERATE PROJECT INSTRUCTIONS ───────────────────────────────
+    print("\n─────────────────────────────────")
+    print("PHASE 7 — Project Instructions")
+    print("─────────────────────────────────")
+    instructions = generate_project_instructions(
+        deal_name, deal_id, lead, support,
+        status_id, brief_id,
+        drive_folder_name, triggers, rules
+    )
+    instructions_path = save_instructions_locally(deal_id, instructions)
+
+    # ── PHASE 8: UPDATE FIRM CONTEXT ─────────────────────────────────────────
+    print("\n─────────────────────────────────")
+    print("PHASE 8 — Firm Context Update")
+    print("─────────────────────────────────")
+    update_firm_context_pipeline(
+        drive,
+        new_deal_id=deal_id,
+        new_deal_name=deal_name,
+        new_lead=lead,
+        new_support=support,
+        new_stage="Early",
+    )
+
+    # ── PHASE 9: COMPLETION + BROWSER-STEP SIGNAL ────────────────────────────
+    print(f"\n{'=' * 60}")
+    print("  AUTOMATED SETUP COMPLETE")
+    print(f"{'=' * 60}")
+    print(f"""
+DEAL: {deal_name} ({deal_id})
+
+FILE IDs (permanent -- never change):
+  Status:       {status_id}
+  Master brief: {brief_id}
+  Drive folder: https://drive.google.com/drive/folders/{drive_folder_id}
+
+REMAINING MANUAL STEPS (~1 minute)
+-------------------------------------
+STEP 1 -- Create the Claude Project
+  -> Go to: https://claude.ai
+  -> Click Projects -> New Project
+  -> Name it exactly: {FIRM_SHORT} -- {deal_name}
+  -> Enable the Google Drive connector in Project settings
+  -> Copy the Project URL when created
+
+STEP 2 -- Give the Project URL to Claude Code
+  Claude Code will automatically:
+  - Paste the Project instructions (firm context read live
+    from Drive -- no file upload needed)
+  - Wire the Project URL to the dashboard registry
+  - Confirm setup is complete
+
+-------------------------------------
+""")
+
+    # Machine-readable signal for Claude Code to pick up
+    print(f"""---BROWSER-STEP---
+deal_id: {deal_id}
+deal_name: {deal_name}
+instructions_path: {instructions_path}
+status_id: {status_id}
+brief_id: {brief_id}
+action: paste_project_instructions_and_wire_url
+awaiting: project_url
+---END---""")
+
+
+if __name__ == "__main__":
+    main()
