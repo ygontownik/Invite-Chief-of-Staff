@@ -2085,3 +2085,93 @@ Each emitted log entry carries a `match` field (`explicit` | `token`) so analyst
 **Failure mode (the bug this rule prevents):** dashboard awaiting items showing "Send draft Uber lease for Friday 5/1" on 2026-05-05 — the user asks "is this stale or current?" and the system has no answer. After the rule: same item reads "Send draft Uber lease for 2026-05-01" — past-due is unambiguous, the 14-day cutoff fires, the item drops.
 
 [ENFORCED via tools/checks/check_relative_dates.py]
+
+---
+
+## TOPIC — HQ STAT BAR / TILE GOVERNANCE
+
+### 2026-05-07 — Stat tiles must reflect what is actually rendered on that tab
+
+A stat tile's count must use the same filter as the section it represents.
+If a tile counts "all" awaiting counterparties but the rendered section uses
+a `tc-only` filter, the tile shows a larger number than the section has rows
+— visually broken and confusing. The rule: compute the stat using the exact
+same filter logic as the rendered section, or remove the stat tile entirely.
+
+**Retired tiles (2026-05-07):**
+- Fundraising: count was premature (committed+warm numbers not yet real).
+- Priority Targets / job search: job search is not surfaced on HQ Status tab.
+- Awaiting: Awaiting External moved inside the Actions card; a separate stat
+  tile duplicated what the card header already shows.
+
+---
+
+## TOPIC — OUTBOUND EMAIL AS ACTION SOURCE
+
+### 2026-05-07 — Emails Yoni sends to Mark are not auto-ingested as actions
+
+The email pipeline processes incoming/forwarded items into the COS capture
+pipeline. Outbound emails from Yoni to Mark (or other team members) about
+deal work are NOT automatically extracted as new TOMAC_CONFIG actions,
+because they hit no ingest trigger. When Yoni says "I emailed Mark about X
+yesterday — why wasn't it picked up?", the correct answer is: outbound
+coordination emails between team members require manual entry in
+`config/tomac-config.yaml` (the `myAction` field on the relevant deal entry).
+Do not assume the email pipeline will pick them up. Offer to add the action
+manually and do so immediately.
+
+---
+
+## TOPIC — ACTIONS CARD ARCHITECTURE
+
+### 2026-05-07 — Actions card subsection IDs must not collide with old awaiting IDs
+
+The merged Actions card uses `aeid2 = 'actions-external'` for its expand-state
+keys. The standalone `buildAwaitingExternal()` (kept for Personal tab) uses
+`aeid = 'awaiting-external'`. These are intentionally different so Personal-tab
+expand state does not bleed into the Actions card External section.
+Do NOT unify them to the same key.
+Do NOT unify them to the same key.
+
+---
+
+## TOPIC — OUTBOUND EMAIL INGEST (SENT ITEMS)
+
+### 2026-05-07 — Sent items are now auto-ingested; rule on ingest lag and double-count
+
+As of 2026-05-07, the capture pipeline (`cos_capture_pipeline.py`) fetches
+`provider.search_sent()` in addition to the inbox. Both results are passed to
+Claude in separate labeled sections ("INBOX EMAILS" / "SENT EMAILS").
+
+**Updated rule on manual entry**: the "must add manually to deal-config.yaml"
+rule still applies for SAME-SESSION immediacy (sent email → show on dashboard
+within minutes). The automated pipeline has a ~24h lag (runs at 7:22am daily).
+For time-sensitive commitments Yoni made in the last hour, manual entry is
+still the right move. For yesterday's sent items, the next morning run picks
+them up automatically.
+
+**Double-count trap**: Claude now sees the same commitment twice — once in the
+inbound email (someone asked Yoni) and once in the sent email (Yoni confirmed).
+The A1b prompt rule says "emit ONE follow-up row." Watch for duplicates in the
+`follow_ups_to_add` output and prune them if they appear. If dedup fails,
+restrict sent email ingest to a shorter window (last 12h instead of 24h) to
+reduce overlap with inbox items that have already been processed.
+
+**direction field contract**: `serialize_emails_for_prompt()` emits
+`direction: sent|received` per email. If you add new fields to `EmailMessage`,
+update `serialize_emails_for_prompt()` in the same commit or Claude won't see
+the new data.
+
+---
+
+## TOPIC — CAPTURE PIPELINE PROMPT SECTIONS
+
+### 2026-05-07 — System prompt section labels must match user payload section headers
+
+The `build_system_prompt()` function names the input sections ("A1. Inbox",
+"A1b. Sent items"). The `user_payload` string in `run()` must use the same
+labels ("INBOX EMAILS", "SENT EMAILS") consistently. If a new data source is
+added, add both: (1) a named section in the system prompt explaining how to
+interpret it, (2) a matching labeled section in the user payload. Missing
+either half means Claude either sees data it wasn't told how to use, or gets
+instructions that reference data that isn't present.
