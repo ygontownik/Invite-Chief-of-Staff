@@ -961,6 +961,18 @@ if command -v claude >/dev/null 2>&1; then
   else
     warn "SKILL source missing: $SKILL_SRC — skipped"
   fi
+
+  # ── /new-deal slash command ───────────────────────────────────────────────
+  info "Installing /new-deal slash command"
+  CMD_SRC="$REPO/tools/new-deal.md"
+  CMD_DST="$HOME/.claude/commands/new-deal.md"
+  if [ -f "$CMD_SRC" ]; then
+    mkdir -p "$HOME/.claude/commands"
+    cp "$CMD_SRC" "$CMD_DST" && ok "Installed /new-deal → $CMD_DST" \
+      || warn "/new-deal copy failed"
+  else
+    warn "/new-deal source missing: $CMD_SRC — skipped"
+  fi
 else
   info "Claude Code not installed (which claude failed) — skipping SKILL copy"
 fi
