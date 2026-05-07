@@ -2116,7 +2116,7 @@ deal work are NOT automatically extracted as new TOMAC_CONFIG actions,
 because they hit no ingest trigger. When Yoni says "I emailed Mark about X
 yesterday — why wasn't it picked up?", the correct answer is: outbound
 coordination emails between team members require manual entry in
-`config/tomac-config.yaml` (the `myAction` field on the relevant deal entry).
+`config/deal-config.yaml` (the `myAction` field on the relevant deal entry).
 Do not assume the email pipeline will pick them up. Offer to add the action
 manually and do so immediately.
 
