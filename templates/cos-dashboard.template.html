@@ -1765,8 +1765,9 @@ function _isSchedulingItem(it) {
   return (it && it.category === 'scheduling');
 }
 
-function buildAwaitingExternal(filter) {
-  filter = filter || 'all';
+function buildAwaitingExternal(filter, compact) {
+  filter  = filter  || 'all';
+  compact = !!compact;
   const items = Array.isArray(DATA.awaitingExternal) ? DATA.awaitingExternal : [];
   // 2026-05-04 BUGFIX: filter against raw __DELETIONS__ set membership.
   // Previous code called __isDel('followup', k) which computes
@@ -2009,6 +2010,25 @@ function buildAwaitingExternal(filter) {
     }
   }
 
+  // Compact mode: called from buildTeamActionsCard — same dedup, no card wrapper.
+  // Returns { html, clusterCount } or null when empty.
+  if (compact) {
+    if (clusterList.length === 0) return null;
+    const capKey   = 'team-actions-await';
+    const expanded = !!state.expanded[capKey];
+    const CAP      = 5;
+    const vis      = expanded ? clusterList : clusterList.slice(0, CAP);
+    const overflow = clusterList.length - CAP;
+    const moreLink = ((overflow > 0 && !expanded) || (expanded && clusterList.length > CAP))
+      ? `<div style="padding:5px 10px;text-align:center;border-top:1px solid rgba(148,163,184,0.08)">
+           <a href="#" onclick="event.preventDefault();expandToggle('${capKey}')" style="font-size:11px;color:#a78bfa;font-weight:600;text-decoration:none">
+             ${expanded ? '▴ Show fewer' : `▾ +${overflow} more counterpart${overflow === 1 ? 'y' : 'ies'}`}
+           </a>
+         </div>`
+      : '';
+    return { html: vis.map(renderCluster).join('') + moreLink, clusterCount: clusterList.length };
+  }
+
   const titleLabel = filter === 'job-tc'
     ? 'Awaiting External · Recruiting &amp; TC'
     : filter === 'tc-only'
@@ -2194,48 +2214,10 @@ function buildTeamActionsCard() {
   }
 
   // ── Awaiting Counterparties ───────────────────────────────────────
-  // Respects tombstones and workstream filter — same rules as standalone section.
-  const dels = (typeof window.__DELETIONS__ !== 'undefined') ? window.__DELETIONS__ : new Set();
-  let awaitItems = (Array.isArray(DATA.awaitingExternal) ? DATA.awaitingExternal : []).filter(i => {
-    const k = i.id || '';
-    return k && !state.dismissedActions.includes(k) && !dels.has(k);
-  });
-  if (awaitFilter === 'tc-only') {
-    awaitItems = awaitItems.filter(i => _itemWorkstream(i) === 'tomac');
-  } else if (awaitFilter === 'job-tc') {
-    awaitItems = awaitItems.filter(i => { const ws = _itemWorkstream(i); return ws === 'tomac' || ws === 'job'; });
-  }
-  // Overdue first (H5)
-  awaitItems.sort((a, b) => {
-    const aOv = (a.due && a.due <= today) ? 1 : 0;
-    const bOv = (b.due && b.due <= today) ? 1 : 0;
-    return bOv - aOv;
-  });
-
-  const AWAIT_CAP = 5;
-  const awaitExpanded = !!state.expanded['team-actions-await'];
-  const awaitVisible  = awaitExpanded ? awaitItems : awaitItems.slice(0, AWAIT_CAP);
-  const awaitOverflow = awaitItems.length - AWAIT_CAP;
-
-  function awaitRow(i) {
-    const overdue = i.due && i.due <= today;
-    const dueColor = overdue ? '#dc2626' : '#64748b';
-    const key    = esc(i.id || '');
-    const srvKey = esc(((i.counterparty || '') + '|' + (i.content || '').slice(0, 40)).replace(/"/g, ''));
-    return `<div style="padding:5px 0 5px 6px;border-bottom:1px solid rgba(148,163,184,0.08);${overdue ? 'border-left:2px solid #dc2626;background:rgba(220,38,38,0.04);' : ''}display:flex;gap:8px;align-items:flex-start">
-      <div style="flex:1">
-        <div style="font-size:10.5px;color:#1e293b;line-height:1.35">${esc(i.content || '')}</div>
-        <div style="font-size:9px;margin-top:1px;display:flex;gap:6px;align-items:center">
-          <span style="color:#0f1e38;font-weight:600">${esc(i.counterparty || '—')}</span>
-          ${i.due ? `<span style="color:${dueColor}">${overdue ? '🔴 ' : ''}${esc(i.due)}</span>` : ''}
-        </div>
-      </div>
-      <button class="dismiss-btn" onclick="dismissAction('${key}','${srvKey}')" title="Dismiss" style="flex-shrink:0;margin-top:2px">×</button>
-    </div>`;
-  }
-
-  const awaitCount   = awaitItems.length;
-  const totalCount   = allItems.length + awaitCount;
+  // Delegate to buildAwaitingExternal(compact=true) so the same
+  // __cpClusterKey + Jaccard dedup runs — no raw-item bloat.
+  const awaitResult = buildAwaitingExternal(awaitFilter, true);
+  const awaitCount  = awaitResult ? awaitResult.clusterCount : 0;
   const taid = 'team-actions-card';
   const tac  = state.collapsed[taid];
 
@@ -2260,16 +2242,9 @@ function buildTeamActionsCard() {
           </div>`;
         }).join('')}
     <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#a78bfa;padding:10px 0 4px;border-bottom:2px solid rgba(167,139,250,0.2);margin-top:6px;margin-bottom:4px;border-top:1px solid rgba(148,163,184,0.12)">Awaiting Counterparties</div>
-    ${awaitItems.length === 0
+    ${awaitResult === null
       ? emptyStateCard('Nothing waiting on counterparties right now.')
-      : awaitVisible.map(awaitRow).join('')}
-    ${(awaitOverflow > 0 && !awaitExpanded) || (awaitExpanded && awaitItems.length > AWAIT_CAP)
-      ? `<div style="padding:5px 10px;text-align:center;border-top:1px solid rgba(148,163,184,0.08)">
-           <a href="#" onclick="event.preventDefault();expandToggle('team-actions-await')" style="font-size:11px;color:#a78bfa;font-weight:600;text-decoration:none">
-             ${awaitExpanded ? '▴ Show fewer' : `▾ +${awaitOverflow} more`}
-           </a>
-         </div>`
-      : ''}
+      : awaitResult.html}
     `}
   </div>`;
 }
