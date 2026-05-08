@@ -1552,7 +1552,7 @@ function buildStatsBar() {
     return DATA.tomac.filter(t => t.stage !== 'Closed' && t.stage !== 'Pass').length;
   })();
   const openTodos   = state.todos.filter(t => !t.done && (f === 'all' || !t.ws || t.ws === f)).length;
-  const recActive   = f === 'tomac' ? null : (() => {
+  const recActive   = (!onPersonalTab || f === 'tomac') ? null : (() => {
     const pt = RECRUIT_CONFIG.priorityTargets;
     return (pt.inDiscussion?.length||0) + (pt.waitingToHear?.length||0) + (pt.doIChase?.length||0) + (RECRUIT_CONFIG.recruiters?.length||0);
   })();
@@ -1836,6 +1836,17 @@ function buildAwaitingExternal(filter, compact) {
   // Generic counterparty names that provide no useful identity — fall back to
   // source title so at least the meeting/call context is visible.
   const _VAGUE_CP = new Set(['assistant','external','unknown','speaker','speaker 1','speaker 2','speaker 3','—','']);
+
+  // Build a set of CP keys that have at least one [RESOLVED] follow-up —
+  // used to flag awaiting items that may have been closed already.
+  const resolvedFuKeys = new Set();
+  (DATA.followUps || []).forEach(fu => {
+    if ((fu.what || '').startsWith('[RESOLVED]')) {
+      const k = __cpClusterKey(fu.who || '').toLowerCase();
+      if (k) resolvedFuKeys.add(k);
+    }
+  });
+
   const renderCluster = (c) => {
     const overdueItems = c.items.filter(i => i.due && i.due <= today);
     const earliest = c.items.map(i => i.due).filter(Boolean).sort()[0] || '';
@@ -1857,6 +1868,11 @@ function buildAwaitingExternal(filter, compact) {
     const ctx = lead.context || '';
     const showCtx = ctx && !lead.content.toLowerCase().includes(ctx.split('—')[0].trim().toLowerCase().slice(0, 15));
     const ctxLine = showCtx ? `<div style="font-size:10px;color:#94a3b8;margin-top:2px">${esc(ctx)}</div>` : '';
+    const clusterKey = __cpClusterKey(c.display).toLowerCase();
+    const fuResolved = resolvedFuKeys.has(clusterKey);
+    const fuChip = fuResolved
+      ? `<div style="font-size:10px;color:#16a34a;font-weight:600;margin-top:4px">✓ follow-up resolved — confirm closed or dismiss</div>`
+      : '';
     return `
       <div style="padding:8px 12px;border-bottom:1px solid rgba(148,163,184,0.12);display:flex;gap:8px;align-items:flex-start">
         <div style="flex:1">
@@ -1866,6 +1882,7 @@ function buildAwaitingExternal(filter, compact) {
           </div>
           <div style="font-size:11px;color:#475569;line-height:1.4">${esc(lead.content || '')}</div>
           ${ctxLine}
+          ${fuChip}
           ${(()=>{ const r=lead.source_ref; if(!r||!r.title) return ''; const t=_cleanSrcTitle(r.title); const d=r.date?` · ${esc(r.date)}`:''; if(isVague) return ''; return `<div style="font-size:10px;color:#94a3b8;margin-top:3px">${r.doc_url?`<a href="${esc(r.doc_url)}" target="_blank" rel="noopener" style="color:#94a3b8;text-decoration:none">↗ ${esc(t)}</a>`:esc(t)}${d}</div>`; })()}
           ${(()=>{ const r=lead.source_ref; if(!r||!r.doc_url||!isVague) return ''; return `<div style="font-size:10px;color:#94a3b8;margin-top:3px"><a href="${esc(r.doc_url)}" target="_blank" rel="noopener" style="color:#94a3b8;text-decoration:none">↗ view source transcript</a></div>`; })()}
         </div>
@@ -1907,6 +1924,10 @@ function buildAwaitingExternal(filter, compact) {
         const vagueNoteRow = isVagueRow && srcTitleRow ? `<span style="font-size:10px;font-weight:400;color:#94a3b8"> · unidentified counterparty</span>` : '';
         const ctxRow = lead.context || '';
         const showCtxRow = ctxRow && !lead.content.toLowerCase().includes(ctxRow.split('—')[0].trim().toLowerCase().slice(0, 15));
+        const clusterKeyRow = __cpClusterKey(c.display).toLowerCase();
+        const fuChipRow = resolvedFuKeys.has(clusterKeyRow)
+          ? `<div style="font-size:10px;color:#16a34a;font-weight:600;margin-top:4px">✓ follow-up resolved — confirm closed or dismiss</div>`
+          : '';
         return `<div style="padding:7px 12px;border-bottom:1px solid rgba(148,163,184,0.1);display:flex;gap:8px;align-items:flex-start">
           <div style="flex:1">
             <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:2px">
@@ -1915,6 +1936,7 @@ function buildAwaitingExternal(filter, compact) {
             </div>
             <div style="font-size:11px;color:#475569;line-height:1.4">${esc(lead.content||'')}</div>
             ${showCtxRow ? `<div style="font-size:10px;color:#94a3b8;margin-top:2px">${esc(ctxRow)}</div>` : ''}
+            ${fuChipRow}
             ${(()=>{ const r=lead.source_ref; if(!r||!r.title) return ''; const t=_cleanSrcTitle(r.title); const d=r.date?` · ${esc(r.date)}`:''; if(isVagueRow) return r.doc_url?`<div style="font-size:10px;color:#94a3b8;margin-top:3px"><a href="${esc(r.doc_url)}" target="_blank" rel="noopener" style="color:#94a3b8;text-decoration:none">↗ view source transcript</a></div>`:''; return `<div style="font-size:10px;color:#94a3b8;margin-top:3px">${r.doc_url?`<a href="${esc(r.doc_url)}" target="_blank" rel="noopener" style="color:#94a3b8;text-decoration:none">↗ ${esc(t)}</a>`:esc(t)}${d}</div>`; })()}
           </div>
           <button class="dismiss-btn" onclick="dismissAction('${key}','${srvKey}')" title="Dismiss" style="flex-shrink:0;margin-top:2px">×</button>
