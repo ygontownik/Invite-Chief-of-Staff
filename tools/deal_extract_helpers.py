@@ -81,15 +81,32 @@ EXCLUDED_NAME_SUFFIXES = (
     "_dashboard_entry.json",
     " -- Status.md",
     " -- Master Brief.md",
+    " -- Master Brief v2.md",
+    " -- Dashboard Entry.json",
 )
 
-# Mime types we accept as processable
+# Subfolder names we skip entirely when traversing recursively. _Ready/ holds
+# already-processed source files; the others typically contain compiled outputs
+# (decks, models) that aren't source intel.
+EXCLUDED_SUBFOLDER_NAMES = {"_Ready", "Distributed", "Presentations"}
+
+MAX_FOLDER_DEPTH = 5
+
+# Mime types we accept as processable. Office formats are text-extracted via
+# python-docx / openpyxl / python-pptx in drive_read_file_text().
+MIME_DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+MIME_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+MIME_PPTX = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+MIME_GDOC = "application/vnd.google-apps.document"
+
 PROCESSABLE_MIMES = {
     "text/plain",
     "text/markdown",
     "application/pdf",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.google-apps.document",
+    MIME_DOCX,
+    MIME_XLSX,
+    MIME_PPTX,
+    MIME_GDOC,
 }
 
 PIPELINE_MARKER_START = "<!-- AUTO-GENERATED-PIPELINE-START -->"
@@ -186,14 +203,33 @@ def log_error(deal_id, file_id, err):
 
 # ── Drive helpers ─────────────────────────────────────────────────────────────
 
-def drive_list_folder(folder_id):
+def drive_list_folder(folder_id, recursive=False, _depth=0, _path=""):
+    """List files in a Drive folder. When recursive=True, descends into
+    subfolders (skipping EXCLUDED_SUBFOLDER_NAMES) up to MAX_FOLDER_DEPTH.
+    Each returned file dict gets a synthetic '_path' field showing its
+    relative location (e.g. 'Diligence/foo.pdf')."""
     svc = get_drive()
     res = svc.files().list(
         q=f"'{folder_id}' in parents and trashed=false",
         fields="files(id,name,mimeType,modifiedTime,parents)",
         pageSize=200,
     ).execute()
-    return res.get("files", [])
+    files = res.get("files", [])
+    out = []
+    for f in files:
+        f["_path"] = (_path + "/" + f["name"]) if _path else f["name"]
+        if f["mimeType"] == "application/vnd.google-apps.folder":
+            if not recursive or _depth >= MAX_FOLDER_DEPTH:
+                out.append(f)  # surface the folder so callers can decide
+                continue
+            if f["name"] in EXCLUDED_SUBFOLDER_NAMES or f["name"].startswith("_"):
+                continue
+            out.extend(drive_list_folder(
+                f["id"], recursive=True, _depth=_depth + 1, _path=f["_path"]
+            ))
+        else:
+            out.append(f)
+    return out
 
 
 def drive_get_or_create_subfolder(parent_id, name):
@@ -213,35 +249,95 @@ def drive_get_or_create_subfolder(parent_id, name):
     return f["id"]
 
 
-def drive_read_file_text(file_id):
-    """Return file text. Handles native Docs (export to text), text/plain,
-    PDF (export not supported — return marker), .docx (export to text)."""
+def _drive_download_bytes(file_id):
     svc = get_drive()
-    meta = svc.files().get(fileId=file_id, fields="id,name,mimeType").execute()
-    mime = meta["mimeType"]
-
-    if mime == "application/vnd.google-apps.document":
-        data = svc.files().export(fileId=file_id, mimeType="text/plain").execute()
-        return data.decode("utf-8") if isinstance(data, bytes) else data
-
-    if mime == "application/pdf":
-        # PDF text extraction is out of scope here; return a marker so the
-        # session can decide whether to skip or use a separate tool.
-        return f"[BINARY PDF — file_id={file_id}, name={meta['name']}, size unknown via media get]"
-
-    if mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-        # Drive can't export non-Google docs to text/plain; the session
-        # should download it separately if it really wants the body.
-        return f"[BINARY DOCX — file_id={file_id}, name={meta['name']}]"
-
-    # text/plain, text/markdown, anything else readable
     request = svc.files().get_media(fileId=file_id)
     buf = io.BytesIO()
     downloader = MediaIoBaseDownload(buf, request)
     done = False
     while not done:
         _, done = downloader.next_chunk()
-    return buf.getvalue().decode("utf-8", errors="replace")
+    return buf.getvalue()
+
+
+def _docx_to_text(blob_bytes):
+    import docx
+    doc = docx.Document(io.BytesIO(blob_bytes))
+    parts = [p.text for p in doc.paragraphs if p.text.strip()]
+    for table in doc.tables:
+        for row in table.rows:
+            cells = [c.text.strip() for c in row.cells]
+            if any(cells):
+                parts.append(" | ".join(cells))
+    return "\n".join(parts)
+
+
+def _xlsx_to_text(blob_bytes):
+    import openpyxl
+    wb = openpyxl.load_workbook(io.BytesIO(blob_bytes), data_only=True, read_only=True)
+    out = []
+    for sheet in wb.worksheets:
+        out.append(f"### Sheet: {sheet.title}")
+        for row in sheet.iter_rows(values_only=True):
+            cells = ["" if v is None else str(v) for v in row]
+            if any(c.strip() for c in cells):
+                out.append("\t".join(cells))
+        out.append("")
+    return "\n".join(out)
+
+
+def _pptx_to_text(blob_bytes):
+    from pptx import Presentation
+    prs = Presentation(io.BytesIO(blob_bytes))
+    out = []
+    for i, slide in enumerate(prs.slides, 1):
+        out.append(f"### Slide {i}")
+        for shape in slide.shapes:
+            if shape.has_text_frame:
+                for para in shape.text_frame.paragraphs:
+                    txt = "".join(run.text for run in para.runs).strip()
+                    if txt:
+                        out.append(txt)
+        out.append("")
+    return "\n".join(out)
+
+
+def drive_read_file_text(file_id):
+    """Return file text. Handles native Docs (export), text/plain/markdown,
+    .docx/.xlsx/.pptx (parsed with python-docx/openpyxl/python-pptx). PDF
+    extraction is not implemented here — returns a marker so the caller
+    can decide whether to skip or invoke a separate tool."""
+    svc = get_drive()
+    meta = svc.files().get(fileId=file_id, fields="id,name,mimeType").execute()
+    mime = meta["mimeType"]
+
+    if mime == MIME_GDOC:
+        data = svc.files().export(fileId=file_id, mimeType="text/plain").execute()
+        return data.decode("utf-8") if isinstance(data, bytes) else data
+
+    if mime == "application/pdf":
+        return f"[BINARY PDF — file_id={file_id}, name={meta['name']}, extraction not implemented]"
+
+    if mime == MIME_DOCX:
+        try:
+            return _docx_to_text(_drive_download_bytes(file_id))
+        except Exception as e:
+            return f"[DOCX EXTRACT FAILED — {e} — file_id={file_id}, name={meta['name']}]"
+
+    if mime == MIME_XLSX:
+        try:
+            return _xlsx_to_text(_drive_download_bytes(file_id))
+        except Exception as e:
+            return f"[XLSX EXTRACT FAILED — {e} — file_id={file_id}, name={meta['name']}]"
+
+    if mime == MIME_PPTX:
+        try:
+            return _pptx_to_text(_drive_download_bytes(file_id))
+        except Exception as e:
+            return f"[PPTX EXTRACT FAILED — {e} — file_id={file_id}, name={meta['name']}]"
+
+    # text/plain, text/markdown, anything else readable as bytes
+    return _drive_download_bytes(file_id).decode("utf-8", errors="replace")
 
 
 def drive_overwrite_text_file(file_id, text):
@@ -314,11 +410,11 @@ def cmd_list_new_files(args):
     last_run = ds.get("last_run")
     processed = ds.get("processed_files", {})
 
-    files = drive_list_folder(folder_id)
+    files = drive_list_folder(folder_id, recursive=True)
     out = []
     for f in files:
         if f["mimeType"] == "application/vnd.google-apps.folder":
-            continue  # _Ready/ subfolder etc.
+            continue  # surfaced excluded folders — drop
         if f["id"] in excluded_ids:
             continue
         if any(f["name"].endswith(s) for s in EXCLUDED_NAME_SUFFIXES):
@@ -335,9 +431,12 @@ def cmd_list_new_files(args):
         out.append({
             "file_id": f["id"],
             "name": f["name"],
+            "path": f.get("_path", f["name"]),
             "mime": f["mimeType"],
             "modified": f["modifiedTime"],
         })
+    # Sort by modified time ascending so oldest-first processing is natural.
+    out.sort(key=lambda x: x["modified"])
     print(json.dumps(out, indent=2))
 
 
