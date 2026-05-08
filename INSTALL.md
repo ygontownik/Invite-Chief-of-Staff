@@ -122,6 +122,43 @@ Logs dir     : ~/cos-pipeline/logs-<slug>
 
 All schedules are config — edit `~/cos-pipeline-config-<slug>/distributions/*.yaml` to change recipients, times, or disable a flow.
 
+## Slash commands installed
+
+`setup.sh` copies these into `~/.claude/commands/` so you can invoke them in any Claude Code session by typing `/<name>`:
+
+| Slash command | What it does | When to use |
+|---|---|---|
+| `/new-deal` | End-to-end deal onboarding — creates Drive folder, status + master_brief docs, `_Claude Context/` subfolder, `dashboard_entry.json`, claude.ai project, registers in `drive-docs.yaml` | Each new deal you originate |
+| `/deal-sync` | Regenerator. Reads each deal's `log.json` + new files in the Drive folder; rewrites `<deal>_status.md`, `<deal>_master_brief.md`, `<deal>_dashboard_entry.json`; refreshes the ACTIVE DEAL PIPELINE block in the firm-context Drive doc | **Auto** — fires every 2h via the Stop hook. Manual: when you want an immediate refresh |
+| `/deal-update` | Push a `---DEAL-UPDATE---` JSON block from any Claude project session into a deal's `dashboard_entry.json` + dashboard | When a deal session produced fresh structured intel and you want it live now (vs. waiting for the 2h cycle) |
+| `/refresh-project-instructions` | Browser-automated paste (via Chrome MCP) of the current Step 0/1/2/3/4 block into each deal's claude.ai project Instructions field. Works for `<deal_id>` or `all` | **Auto** — fires every 24h via the Stop hook **only when a reference doc actually changed**. Manual: after editing firm context / Yoni context / presentation standards in Drive and wanting an immediate paste |
+| `/capture-deal-chats` | Browser-automated scrape of claude.ai deal-project chats. Pulls **only** `---DEAL-INTEL---` blocks (never full transcripts) and routes them through `intel_capture.py` into per-deal `log.json` | **Auto** — fires every 4h via the Stop hook |
+
+**Not installed by `setup.sh`** (dashboard-development-only tools used by the maintainer):
+- `/dash` — make a guided change to the `~/dashboards/` tree
+- `/dash-close` — write a state-doc summary at the end of a dashboard build session
+
+These two assume the maintainer is iterating on dashboard internals and aren't relevant for a subscriber install.
+
+## Auto-pipeline (Stop hook cadence)
+
+`setup.sh` registers a Claude Code Stop hook in `~/.claude/settings.json` pointing at `~/cos-pipeline/tools/dash-state-hook.py`. The hook fires at the end of every Claude Code turn and orchestrates these jobs by elapsed time:
+
+| Cadence | Job | What it does |
+|---|---|---|
+| Every Stop hook fire | `intel_capture scan-claude-code` | Greps Claude Code transcript JSONLs for `---DEAL-INTEL---` blocks; routes to per-deal `log.json`. Cheap (file grep, no LLM) |
+| Every Stop hook fire | `maybe_regen_system_map` | Regenerates `SYSTEM-MAP.md` if `drive-docs.yaml` / `schedule.yaml` / `dashboard-tiles.yaml` newer than the map |
+| Every 30 min | Dashboard State doc patch | Patches `Last Updated` + `RECENT CHANGES` in your Drive Dashboard State doc with fresh git commit summary |
+| Every 2h | `run_deal_entry_sync` | Pulls each deal's `dashboard_entry.json` from Drive → compiled JSON → dashboard cards |
+| Every 2h | `run_deal_extract_sync` | Spawns headless `claude -p /deal-sync` (subscription-backed). AI work happens in that session; this hook only spawns it. Skips if no deal has new files |
+| Every 2h | `run_reference_docs_sync` | Mirrors 4 reference docs (firm context, etc.) Drive → `~/cos-pipeline-config-<slug>/reference_docs/` with one auto-commit per changed doc |
+| Every 4h | `run_chat_capture` | Spawns `claude -p /capture-deal-chats all`. Block-only scrape — full chat content never leaves claude.ai |
+| Every 24h (gated by ref-doc change) | `run_project_instructions_sync` | Spawns `claude -p /refresh-project-instructions all`. Only fires if a reference doc actually changed since last sync — idle days = zero browser activity |
+
+**Recursion guard:** every spawned `claude -p` runs with `DEAL_SYNC_CHILD=1` so the child session's own Stop hook returns immediately, preventing infinite loops.
+
+**Tenant-agnostic paths:** the hook reads paths from env vars (`COS_DATA_DIR`, `COS_CONFIG_DIR`, `CLAUDE_BIN`) and glob discovery, with sane defaults — no hardcoded tenant slugs.
+
 ## Re-validating
 
 ```bash

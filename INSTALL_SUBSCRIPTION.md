@@ -215,6 +215,24 @@ python3 ~/cos-pipeline/costs.py --tenant=${SLUG} --days=1
 
 ---
 
+## Slash commands + auto-pipeline
+
+`setup.sh` (run in step 5) installs all five subscriber-facing slash commands into `~/.claude/commands/` and registers a Claude Code Stop hook that orchestrates the auto-pipeline. **The full slash-command + cadence reference is in [INSTALL.md → Slash commands installed and Auto-pipeline (Stop hook cadence)](INSTALL.md#slash-commands-installed).** Quick summary:
+
+| Slash command | Trigger |
+|---|---|
+| `/new-deal` | Manual — when you originate a new deal |
+| `/deal-sync` | Auto every 2h (regenerates each deal's status + brief + dashboard entry from `log.json`) |
+| `/deal-update` | Manual — push a `---DEAL-UPDATE---` JSON from a deal session |
+| `/refresh-project-instructions` | Auto every 24h, gated by ref-doc change |
+| `/capture-deal-chats` | Auto every 4h, block-only scrape (full chat content stays on claude.ai) |
+
+These are subscription-mode-friendly: every auto-trigger that uses Claude (`/deal-sync`, `/refresh-project-instructions`, `/capture-deal-chats`) spawns a headless `claude -p ...` against your Pro/Max account — same rate-window economics as the scheduled SKILLs, no API spend.
+
+`/dash` and `/dash-close` are **not** installed by `setup.sh` — those are dashboard-development tools used only by the maintainer of the codebase, not subscribers.
+
+---
+
 ## What happens at runtime
 
 - **Each scheduled SKILL** that has `mode: subscription` in
