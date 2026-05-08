@@ -84,6 +84,15 @@ def sync_deal(service, deal_reg, compiled_data):
 
     entry['_last_synced_from_drive'] = datetime.now().strftime('%Y-%m-%d')
 
+    # Carry registry-level fields into compiled (project_url, drive_folder_id,
+    # status_file_id, brief_file_id) so dashboards can reach them without
+    # joining against the registry. Drive entry never sets these — they belong
+    # to the registry, not the per-deal dashboard state.
+    for k in ('project_url', 'drive_folder_id', 'status_file_id', 'brief_file_id'):
+        v = deal_reg.get(k)
+        if v and not entry.get(k):
+            entry[k] = v
+
     # Merge into compiled deal-system-data.json
     compiled_deals = compiled_data.get('deals', compiled_data) if isinstance(compiled_data, dict) else compiled_data
     existing = next((d for d in compiled_deals if d.get('id') == deal_id), None)
@@ -98,29 +107,76 @@ def sync_deal(service, deal_reg, compiled_data):
         compiled_data['deals'] = compiled_deals
     return True
 
+def backfill_registry_fields(registry, compiled_data):
+    """For every deal in registry, ensure compiled has registry-level fields
+    (project_url, drive_folder_id, status_file_id, brief_file_id) even if
+    the Drive dashboard_entry.json doesn't exist yet. If a registry deal
+    has no compiled entry at all, create a minimal stub from registry data.
+    Compiled remains fully regenerable from sources (registry + Drive)."""
+    compiled_deals = compiled_data.get('deals', compiled_data) if isinstance(compiled_data, dict) else compiled_data
+    fields = ('project_url', 'drive_folder_id', 'status_file_id', 'brief_file_id')
+    touched = 0
+    for deal in registry:
+        deal_id = deal['deal_id']
+        existing = next((d for d in compiled_deals if d.get('id') == deal_id), None)
+        if not existing:
+            stub = {
+                'id': deal_id,
+                'name': deal.get('name', deal_id),
+                'stage': deal.get('stage', ''),
+                'owner': deal.get('lead', ''),
+                '_source': 'registry-only stub (no Drive dashboard_entry.json yet)',
+            }
+            for k in fields:
+                if deal.get(k):
+                    stub[k] = deal[k]
+            compiled_deals.append(stub)
+            touched += 1
+            continue
+        for k in fields:
+            v = deal.get(k)
+            if v and existing.get(k) != v:
+                existing[k] = v
+                touched += 1
+    if isinstance(compiled_data, dict) and 'deals' in compiled_data:
+        compiled_data['deals'] = compiled_deals
+    return touched
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--deal-id', help='Sync only this deal')
     args = parser.parse_args()
 
     service = get_drive_service()
-    registry = load_registry()
+    full_registry = load_registry()
     compiled = load_compiled()
 
     if args.deal_id:
-        registry = [d for d in registry if d['deal_id'] == args.deal_id]
+        registry = [d for d in full_registry if d['deal_id'] == args.deal_id]
         if not registry:
             print(f'Deal {args.deal_id} not found in registry')
             sys.exit(1)
+    else:
+        registry = full_registry
 
     done = 0
     for deal in registry:
         if sync_deal(service, deal, compiled):
             done += 1
 
-    if done:
+    # Backfill registry-level fields across every deal in compiled, regardless
+    # of whether a Drive dashboard_entry.json existed for it.
+    backfilled = backfill_registry_fields(full_registry, compiled)
+
+    if done or backfilled:
         save_compiled(compiled)
-        print(f'\n{done} deal(s) synced → compiled/deal-system-data.json')
+        msg = []
+        if done:
+            msg.append(f'{done} deal(s) synced from Drive')
+        if backfilled:
+            msg.append(f'{backfilled} registry field(s) backfilled')
+        print(f'\n{" + ".join(msg)} → compiled/deal-system-data.json')
         if warmup_dashboard():
             print('Dashboard warmed up ✓')
         else:

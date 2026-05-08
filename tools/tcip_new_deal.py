@@ -71,8 +71,12 @@ try:
     PRINCIPAL_FIRST  = PRINCIPAL_NAME.split()[0]
     _team            = _CTX.get("team", [])
     TEAM_NAMES       = [m.get("name", "") for m in _team if m.get("name")]
+    # New-style ref doc location takes precedence; fall back to legacy
+    # docs.firm_context_doc for tenants on the old config layout.
     FIRM_CONTEXT_DRIVE_ID = (
-        _DDOC.get("docs", {}).get("firm_context_doc", {}).get("doc_id") or ""
+        _DDOC.get("reference_docs", {}).get("firm_context", {}).get("doc_id")
+        or _DDOC.get("docs", {}).get("firm_context_doc", {}).get("doc_id")
+        or ""
     )
 except Exception:
     FIRM_NAME             = "the firm"
