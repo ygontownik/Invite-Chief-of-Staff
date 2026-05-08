@@ -530,6 +530,108 @@ def cmd_update_last_run(args):
     print(f"OK last_run for {args.deal_id} = {ds['last_run']}")
 
 
+def cmd_read_log_entries(args):
+    """Print new log.json entries for a deal since its last_run.
+
+    log.json is written by cos_capture_pipeline.py (Gmail/Otter/calendar/etc).
+    Each entry: {id, date, source, who, what, source_url, source_title, match}.
+    /deal-sync reads these as deal-tagged intel feeds — they don't need
+    re-extraction; they're already structured."""
+    deal_id = args.deal_id
+    log_path = os.path.expanduser(f"~/dashboards/data/deals/{deal_id}/log.json")
+    if not os.path.exists(log_path):
+        print("[]")
+        return
+    try:
+        with open(log_path) as f:
+            log = json.load(f)
+    except Exception as e:
+        die(f"cannot parse {log_path}: {e}")
+
+    entries = log if isinstance(log, list) else log.get("entries", [])
+
+    state = load_state()
+    ds = deal_state(state, deal_id)
+    last_run = ds.get("last_run")
+    captured = ds.get("captured_log_ids", {})
+
+    out = []
+    for e in entries:
+        if not isinstance(e, dict):
+            continue
+        eid = str(e.get("id", ""))
+        if eid and eid in captured:
+            continue
+        # Date filter: only entries on/after last_run date
+        if last_run and e.get("date"):
+            try:
+                last_run_date = last_run[:10]  # ISO prefix
+                if e["date"] < last_run_date:
+                    continue
+            except Exception:
+                pass
+        out.append(e)
+
+    print(json.dumps(out, indent=2))
+
+
+def cmd_mark_log_captured(args):
+    """Record that a log.json entry id has been folded into status/brief.
+    Idempotent — re-marking is a no-op."""
+    state = load_state()
+    ds = deal_state(state, args.deal_id)
+    if "captured_log_ids" not in ds:
+        ds["captured_log_ids"] = {}
+    ds["captured_log_ids"][args.entry_id] = datetime.now().isoformat()
+    save_state(state)
+    print(f"OK marked {args.entry_id} captured for {args.deal_id}")
+
+
+def cmd_append_log_entry(args):
+    """Append a new entry to a deal's log.json. Used by intel_capture
+    to route ---DEAL-INTEL--- blocks into the canonical deal feed.
+    Reads JSON object from stdin."""
+    deal_id = args.deal_id
+    log_dir = os.path.expanduser(f"~/dashboards/data/deals/{deal_id}")
+    log_path = os.path.join(log_dir, "log.json")
+    raw = sys.stdin.read()
+    try:
+        entry = json.loads(raw)
+    except Exception as e:
+        die(f"invalid JSON: {e}")
+    if not isinstance(entry, dict):
+        die("entry must be a JSON object")
+    if "id" not in entry:
+        # Synthesize a stable id from content
+        content = (entry.get("title", "") + entry.get("date", "") + entry.get("source", "intel"))
+        entry["id"] = djb2(content)
+    if "date" not in entry:
+        entry["date"] = datetime.now().strftime("%Y-%m-%d")
+    if "source" not in entry:
+        entry["source"] = "intel"
+
+    os.makedirs(log_dir, exist_ok=True)
+    if os.path.exists(log_path):
+        try:
+            with open(log_path) as f:
+                existing = json.load(f)
+        except Exception:
+            existing = []
+    else:
+        existing = []
+    if not isinstance(existing, list):
+        existing = existing.get("entries", []) if isinstance(existing, dict) else []
+
+    # Idempotent: skip if id already present
+    if any(e.get("id") == entry["id"] for e in existing):
+        print(f"SKIP {entry['id']} already in log")
+        return
+    existing.append(entry)
+    with open(log_path, "w") as f:
+        json.dump(existing, f, indent=2)
+    print(f"OK appended {entry['id']} to {deal_id}/log.json")
+
+
 def cmd_read_deal_entry(args):
     """Print the deal's current dashboard_entry.json from Drive, or {} if absent."""
     entry = get_deal_entry(args.deal_id)
@@ -642,6 +744,9 @@ def build_parser():
     s = sub.add_parser("write-deal-doc"); s.add_argument("deal_id"); s.add_argument("kind", choices=["status", "brief"])
     s = sub.add_parser("read-deal-entry"); s.add_argument("deal_id")
     s = sub.add_parser("write-deal-entry"); s.add_argument("deal_id")
+    s = sub.add_parser("read-log-entries"); s.add_argument("deal_id")
+    s = sub.add_parser("mark-log-captured"); s.add_argument("deal_id"); s.add_argument("entry_id")
+    s = sub.add_parser("append-log-entry"); s.add_argument("deal_id")
     s = sub.add_parser("move-to-ready"); s.add_argument("file_id"); s.add_argument("deal_folder_id")
     s = sub.add_parser("mark-processed"); s.add_argument("deal_id"); s.add_argument("file_id"); s.add_argument("outcome", choices=["success", "failed"])
     s = sub.add_parser("update-last-run"); s.add_argument("deal_id")
@@ -657,6 +762,9 @@ HANDLERS = {
     "write-deal-doc": cmd_write_deal_doc,
     "read-deal-entry": cmd_read_deal_entry,
     "write-deal-entry": cmd_write_deal_entry,
+    "read-log-entries": cmd_read_log_entries,
+    "mark-log-captured": cmd_mark_log_captured,
+    "append-log-entry": cmd_append_log_entry,
     "move-to-ready": cmd_move_to_ready,
     "mark-processed": cmd_mark_processed,
     "update-last-run": cmd_update_last_run,

@@ -41,11 +41,17 @@ def _score_one(log_path: Path) -> dict[str, Any] | None:
             "deal_id": log_path.parent.name,
             "error": f"unreadable log.json: {exc}",
         }
-    entries = data.get("entries") or []
+    # log.json shape varies: bare list (most deals) OR dict with "entries" key.
+    if isinstance(data, list):
+        entries = data
+    elif isinstance(data, dict):
+        entries = data.get("entries") or []
+    else:
+        entries = []
     total = len(entries)
     if total == 0:
         return {
-            "deal_id": data.get("deal_id") or log_path.parent.name,
+            "deal_id": (data.get("deal_id") if isinstance(data, dict) else None) or log_path.parent.name,
             "total": 0,
             "token": 0,
             "explicit": 0,
@@ -56,7 +62,7 @@ def _score_one(log_path: Path) -> dict[str, Any] | None:
     explicit = sum(1 for e in entries if e.get("match") == "explicit")
     other = total - token - explicit
     return {
-        "deal_id": data.get("deal_id") or log_path.parent.name,
+        "deal_id": (data.get("deal_id") if isinstance(data, dict) else None) or log_path.parent.name,
         "total": total,
         "token": token,
         "explicit": explicit,
