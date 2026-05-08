@@ -421,13 +421,17 @@ def cmd_list_new_files(args):
             continue
         if f["mimeType"] not in PROCESSABLE_MIMES:
             continue
-        # Already processed?
         h = djb2(f["id"])
-        if h in processed and processed[h].get("outcome") == "success":
-            continue
-        # If last_run set, only files modified since
-        if last_run and f["modifiedTime"] <= last_run:
-            continue
+        prior = processed.get(h)
+        if prior:
+            # Already touched: success → skip permanently; failed → retry now.
+            if prior.get("outcome") == "success":
+                continue
+            # else: fall through and re-include for retry
+        else:
+            # Never touched. Use modifiedTime to decide if it's "new since last_run".
+            if last_run and f["modifiedTime"] <= last_run:
+                continue
         out.append({
             "file_id": f["id"],
             "name": f["name"],
