@@ -37,11 +37,11 @@ These belong to your firm, not to the shared codebase:
 
 ## How to open a PR
 
-1. Fork `github.com/ygontownik/Dashboard`
+1. Fork `github.com/ygontownik/Invite-Chief-of-Staff`
 2. Create a branch in your fork: `git checkout -b fix/speaker-attribution`
 3. Make your change — keep it focused, one thing per PR
 4. Verify nothing firm-specific leaked in: `git diff --cached` — no real names, no Doc IDs, no credentials
-5. Open a PR against `ygontownik/Dashboard:main` with a short description of what changed and why it's universal
+5. Open a PR against `ygontownik/Invite-Chief-of-Staff:main` with a short description of what changed and why it's universal
 
 PRs are reviewed by the repo maintainer. A change that's useful but too firm-specific will be declined with a note — keep it in your fork.
 

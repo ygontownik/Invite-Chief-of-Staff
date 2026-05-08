@@ -11,7 +11,7 @@
 
 set -e
 
-PIPELINE_REPO="https://github.com/ygontownik/Dashboard.git"
+PIPELINE_REPO="https://github.com/ygontownik/Invite-Chief-of-Staff.git"
 CONFIG_REPO="https://github.com/ygontownik/tcip-config.git"
 PIPELINE_DIR="$HOME/cos-pipeline"
 CONFIG_DIR="$HOME/cos-pipeline-config"

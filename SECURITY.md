@@ -127,7 +127,7 @@
 
 ### 5. GitHub (where this code lives)
 
-The repo at `https://github.com/ygontownik/Dashboard` contains **only code, templates, and docs.** It NEVER receives:
+The repo at `https://github.com/ygontownik/Invite-Chief-of-Staff` contains **only code, templates, and docs.** It NEVER receives:
 - Your `firm_context.yaml` (gitignored)
 - Your `firm_config.json` (gitignored)
 - Your OAuth tokens, API keys, or any credentials (in `~/credentials/`, gitignored)
@@ -206,4 +206,4 @@ Pipeline runs log to `~/dashboards/logs/claude-tasks/` with stdout and stderr pe
 
 ## Reporting issues
 
-Found a security issue in the code? Open an issue at https://github.com/ygontownik/Dashboard/issues with `[security]` in the title. Don't include credentials, tokens, or PII in the report.
+Found a security issue in the code? Open an issue at https://github.com/ygontownik/Invite-Chief-of-Staff/issues with `[security]` in the title. Don't include credentials, tokens, or PII in the report.

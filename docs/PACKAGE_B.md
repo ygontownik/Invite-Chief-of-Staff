@@ -350,7 +350,7 @@ launchctl load ~/Library/LaunchAgents/com.cos-pipeline.dashboard-server.plist
    ```bash
    python3 cos_capture_pipeline.py --dry-run --since 24h
    ```
-4. Open an issue at https://github.com/ygontownik/Dashboard/issues with:
+4. Open an issue at https://github.com/ygontownik/Invite-Chief-of-Staff/issues with:
    - The error message
    - Last 30 lines of the relevant log
    - Your `python3 --version` and `pip3 list | grep -E 'google|anthropic|yaml'` output
