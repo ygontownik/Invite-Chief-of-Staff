@@ -632,10 +632,18 @@ def cmd_append_log_entry(args):
     print(f"OK appended {entry['id']} to {deal_id}/log.json")
 
 
+def _resolve_context_folder(entry):
+    """Return the deal's _Claude Context folder (where status/brief/entry
+    live), falling back to drive_folder_id for legacy/unmigrated tenants."""
+    return entry.get("claude_context_folder_id") or entry["drive_folder_id"]
+
+
 def cmd_read_deal_entry(args):
-    """Print the deal's current dashboard_entry.json from Drive, or {} if absent."""
+    """Print the deal's current dashboard_entry.json from Drive, or {} if absent.
+    Looks in the deal's _Claude Context/ subfolder; falls back to top-level
+    deal folder for tenants that haven't migrated yet."""
     entry = get_deal_entry(args.deal_id)
-    folder_id = entry["drive_folder_id"]
+    folder_id = _resolve_context_folder(entry)
     fname = f"{args.deal_id}_dashboard_entry.json"
     svc = get_drive()
     res = svc.files().list(
@@ -643,6 +651,13 @@ def cmd_read_deal_entry(args):
         fields="files(id,name)",
     ).execute()
     files = res.get("files", [])
+    # Backward-compat: if not found in context folder, also check top-level
+    if not files and entry.get("claude_context_folder_id"):
+        res = svc.files().list(
+            q=f"name='{fname}' and '{entry['drive_folder_id']}' in parents and trashed=false",
+            fields="files(id,name)",
+        ).execute()
+        files = res.get("files", [])
     if not files:
         print("{}")
         return
@@ -651,7 +666,8 @@ def cmd_read_deal_entry(args):
 
 
 def cmd_write_deal_entry(args):
-    """Read JSON from stdin, validate, write to deal's Drive folder, run sync."""
+    """Read JSON from stdin, validate, write to deal's _Claude Context/ folder,
+    run sync."""
     import subprocess
     raw = sys.stdin.read()
     if not raw.strip():
@@ -664,7 +680,7 @@ def cmd_write_deal_entry(args):
         die(f"dashboard_entry must be a JSON object, got {type(entry_obj).__name__}")
 
     deal_reg = get_deal_entry(args.deal_id)
-    folder_id = deal_reg["drive_folder_id"]
+    folder_id = _resolve_context_folder(deal_reg)
     fname = f"{args.deal_id}_dashboard_entry.json"
     entry_obj["_last_updated_from_session"] = datetime.now().strftime("%Y-%m-%d %H:%M")
 
