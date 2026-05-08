@@ -962,16 +962,81 @@ if command -v claude >/dev/null 2>&1; then
     warn "SKILL source missing: $SKILL_SRC — skipped"
   fi
 
-  # ── /new-deal slash command ───────────────────────────────────────────────
-  info "Installing /new-deal slash command"
-  CMD_SRC="$REPO/tools/new-deal.md"
-  CMD_DST="$HOME/.claude/commands/new-deal.md"
-  if [ -f "$CMD_SRC" ]; then
+  # ── Slash commands (all .md files in slash_commands/) ────────────────────
+  info "Installing COS pipeline slash commands"
+  CMD_SRC_DIR="$REPO/slash_commands"
+  if [ -d "$CMD_SRC_DIR" ]; then
     mkdir -p "$HOME/.claude/commands"
-    cp "$CMD_SRC" "$CMD_DST" && ok "Installed /new-deal → $CMD_DST" \
-      || warn "/new-deal copy failed"
+    for f in "$CMD_SRC_DIR"/*.md; do
+      [ -f "$f" ] || continue
+      name=$(basename "$f")
+      cp "$f" "$HOME/.claude/commands/$name" \
+        && ok "Installed /${name%.md} → $HOME/.claude/commands/$name" \
+        || warn "Failed to copy $name"
+    done
   else
-    warn "/new-deal source missing: $CMD_SRC — skipped"
+    warn "Slash-commands dir missing: $CMD_SRC_DIR — skipped"
+  fi
+
+  # ── COS pipeline rules → ~/.claude/CLAUDE.md (idempotent append) ─────────
+  info "Installing COS pipeline rules into ~/.claude/CLAUDE.md"
+  FRAG_SRC="$REPO/templates/CLAUDE.md.subscriber-fragment.md"
+  CLAUDE_MD="$HOME/.claude/CLAUDE.md"
+  if [ -f "$FRAG_SRC" ]; then
+    mkdir -p "$HOME/.claude"
+    touch "$CLAUDE_MD"
+    if grep -q "<COS-PIPELINE-RULES-START>" "$CLAUDE_MD"; then
+      # Replace existing block in place
+      python3 -c "
+import re, sys
+src = open('$FRAG_SRC').read()
+dst = open('$CLAUDE_MD').read()
+out = re.sub(
+    r'# <COS-PIPELINE-RULES-START>.*?# <COS-PIPELINE-RULES-END>',
+    re.search(r'# <COS-PIPELINE-RULES-START>.*?# <COS-PIPELINE-RULES-END>', src, re.S).group(0),
+    dst, flags=re.S)
+open('$CLAUDE_MD', 'w').write(out)
+" && ok "Updated COS pipeline rules block in ~/.claude/CLAUDE.md" \
+        || warn "Failed to update COS pipeline rules block"
+    else
+      printf "\n\n" >> "$CLAUDE_MD"
+      cat "$FRAG_SRC" >> "$CLAUDE_MD"
+      ok "Appended COS pipeline rules to ~/.claude/CLAUDE.md"
+    fi
+  else
+    warn "CLAUDE.md fragment missing: $FRAG_SRC — skipped"
+  fi
+
+  # ── Stop hook → ~/.claude/settings.json ───────────────────────────────────
+  info "Registering Stop hook in ~/.claude/settings.json"
+  HOOK_PATH="$REPO/tools/dash-state-hook.py"
+  SETTINGS="$HOME/.claude/settings.json"
+  if [ -f "$HOOK_PATH" ]; then
+    mkdir -p "$HOME/.claude"
+    [ -f "$SETTINGS" ] || echo "{}" > "$SETTINGS"
+    python3 - <<EOF && ok "Registered Stop hook → $SETTINGS" || warn "Failed to register Stop hook"
+import json
+p = "$SETTINGS"
+hook_path = "$HOOK_PATH"
+with open(p) as f:
+    s = json.load(f)
+s.setdefault("hooks", {})
+stop = s["hooks"].setdefault("Stop", [])
+# Idempotent: replace any existing dash-state-hook entry, otherwise append.
+target_cmd = f"/opt/homebrew/bin/python3 {hook_path}"
+found = False
+for entry in stop:
+    for h in entry.get("hooks", []):
+        if "dash-state-hook" in h.get("command", ""):
+            h["command"] = target_cmd
+            found = True
+if not found:
+    stop.append({"matcher": "", "hooks": [{"type": "command", "command": target_cmd}]})
+with open(p, "w") as f:
+    json.dump(s, f, indent=2)
+EOF
+  else
+    warn "Stop hook source missing: $HOOK_PATH — skipped"
   fi
 else
   info "Claude Code not installed (which claude failed) — skipping SKILL copy"
