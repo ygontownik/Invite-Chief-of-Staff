@@ -4,8 +4,9 @@ End-to-end checklist for what **you** (the platform owner) do when someone signs
 
 ## Architecture context
 
-- **OAuth model:** all subscribers use a shared OAuth client owned by your Google Cloud project (`decoded-badge-387412`). You add each subscriber as a **Test User** in the consent screen. Tokens are issued to your OAuth client but stored in the subscriber's local Keychain — their data stays in their Google account, not yours.
-- **Why shared client (not per-subscriber):** each subscriber would need to set up their own Google Cloud project — 15+ min of console clicks, foreign UX. Shared client is one-click for the subscriber. Cap is 100 test users in Testing mode; revisit verification at ~50 active subscribers.
+- **OAuth model:** all subscribers use a shared OAuth client owned by your Google Cloud project (`decoded-badge-387412`). The app is in **Production mode** (not Testing mode), so the test-user list mechanism does NOT apply — there's nothing to add a subscriber to. Tokens are issued to your OAuth client but stored in the subscriber's local Keychain — their data stays in their Google account, not yours.
+- **Production-mode + unverified scopes:** subscribers will see "Google hasn't verified this app" during OAuth. They click **Advanced → Go to TCIP (unsafe)** to proceed. The user cap is 100 (current usage shown at https://console.cloud.google.com/auth/audience?project=decoded-badge-387412); submit for verification when you approach the cap.
+- **Why shared client (not per-subscriber):** each subscriber would need to set up their own Google Cloud project — 15+ min of console clicks, foreign UX. Shared client is one-click for the subscriber.
 - **Remote access:** Tailscale (already wired into onboarding flow Step 3). Subscribers install Tailscale on Mac + iPhone, log in with their own Tailscale account (free tier, separate from yours). The dashboard URL becomes `http://<their-mac-tailscale-name>:7777`.
 - **Phone bookmark:** standard Safari "Add to Home Screen" — already covered in Step 3 of the onboarding HTML.
 
@@ -13,30 +14,21 @@ End-to-end checklist for what **you** (the platform owner) do when someone signs
 
 ### 1. Collect from them (one email)
 - GitHub username
-- **Gmail address** they'll use for the dashboard ← critical, controls OAuth access
-- Preferred firm slug (lowercase, e.g. `acme`, `peakcap`)
+- **Gmail address** they'll use for the dashboard
+- Preferred firm slug (lowercase, e.g. `acme`, `peakcap`) — optional; bootstrap defaults are fine
 - Anthropic-tier preference: subscription (Tier 1, requires Claude Code) or BYO API key (Tier 2a)
 
-### 2. Add them as Google OAuth test user (2 min) ← THIS IS THE BLOCKER
-1. Open https://console.cloud.google.com/apis/credentials/consent?project=decoded-badge-387412
-2. Scroll to **Test users**
-3. **+ Add users** → enter their Gmail → Save
-
-Without this, their OAuth flow will fail with "This app isn't verified" and **no "Advanced → unsafe" escape hatch** (Google removed that for non-test users in 2024).
-
-### 3. Grant GitHub access (1 min)
-- Add them as a collaborator to `ygontownik/Invite-Chief-of-Staff` (public — no-op, but confirms repo)
-- Add them as a collaborator to whatever private config repo they get (or fork-and-grant)
-
-### 4. Send them `gdrive_credentials.json` (secure channel)
+### 2. Send them `gdrive_credentials.json` (secure channel) — your only manual step
 - The file lives at `~/credentials/gdrive_credentials.json` on your machine
 - Send via 1Password, Signal, or encrypted email — **not** plain Gmail
-- This is your OAuth client config; it's not a secret per se but treat it as one
+- This is your OAuth client config; treat as sensitive
+- They save it to `~/Downloads/`; the installer auto-finds it from there
 
-### 5. Send them the onboarding link
-- `https://ygontownik.github.io/Invite-Chief-of-Staff/onboard.html`
-- They run the bootstrap installer, walk through the 3 steps, done
-- Total time on their side: ~15 min
+### 3. Send them the onboarding link
+- New firm (no existing private config repo): `https://ygontownik.github.io/Invite-Chief-of-Staff/onboard-new-firm.html`
+- Subscriber-with-existing-private-config-repo: `https://ygontownik.github.io/Invite-Chief-of-Staff/onboard.html`
+- They run the bootstrap installer (one curl command, no flags), walk through ~15 min
+- During Google sign-in: they click **Advanced → Go to TCIP (unsafe)** when they see the unverified-app warning. This is normal and expected — not an error.
 
 ### 6. Confirm with them when they're done
 - Ask them to send you a screenshot of the dashboard chip showing 🟢 green
@@ -46,7 +38,7 @@ Without this, their OAuth flow will fail with "This app isn't verified" and **no
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| "This app isn't verified" + no Advanced link | You haven't added them as test user | Step 2 above; ask them to retry installer |
+| "This app isn't verified" warning during install | Normal — app is Production-mode + unverified scopes | Tell them to click **Advanced → Go to TCIP (unsafe)** to proceed |
 | "redirect_uri_mismatch" | They have a stale OAuth client | Re-send fresh `gdrive_credentials.json` |
 | "Calendar fetch failed: 403" | Old token without calendar.readonly scope | Have them delete `~/credentials/gdrive_token.pickle` and re-run installer |
 | Dashboard loads but is empty | Capture pipeline hasn't run yet | Manually trigger: `~/dashboards/scripts/cos-capture-pipeline-runner.sh` |
