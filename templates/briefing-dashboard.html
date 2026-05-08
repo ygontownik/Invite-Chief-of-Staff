@@ -306,6 +306,7 @@
     <!-- ===== DAILY BRIEFING ===== -->
     <section class="tc-view is-active" id="view-intel">
       <div class="tc-section-label" id="intel-label">DAILY BRIEFING LOG</div>
+      <div id="capture-staleness-chip"></div>
       <div id="intel-list">
         <div class="tc-card"><div class="brief-placeholder">Loading&hellip;</div></div>
       </div>
@@ -755,6 +756,28 @@ function briefSyncAll() {
     const mc = data.marketCommentary || null;
     const synopsis = data.synopsis || {};
     $('#intel-label').textContent = `DAILY BRIEFING${date ? ' · ' + date : ''}`;
+
+    // I4 — Capture-staleness chip (severity from server; never re-derived client-side)
+    const cs = data.captureStaleness || {};
+    const chipEl = document.getElementById('capture-staleness-chip');
+    if (chipEl) {
+      if (!cs.severity || cs.severity === 'fresh') {
+        chipEl.innerHTML = '';
+      } else {
+        const styles = {
+          warn:    'border:1px solid #d4a017;background:#fef9e7;color:#7a5b00;',
+          stale:   'border:1px solid #dc2626;background:#fef2f2;color:#7a1a1a;font-weight:600;',
+          unknown: 'border:1px solid #94a3b8;background:#f8fafc;color:#475569;',
+        };
+        const icons  = { warn: '⚠ ', stale: '⛔ ', unknown: '⚠ ' };
+        const style  = styles[cs.severity] || styles.unknown;
+        const icon   = icons[cs.severity]  || '';
+        const blocker = cs.blocker
+          ? ` <span style="font-size:11px;opacity:0.8">(${esc(cs.blocker)})</span>`
+          : '';
+        chipEl.innerHTML = `<a href="/admin/#tab-routines" style="display:block;text-decoration:none;padding:6px 12px;border-radius:4px;font-size:12px;margin-bottom:14px;${style}">${icon}${esc(cs.message || '')}${blocker}</a>`;
+      }
+    }
 
     const parts = [];
 

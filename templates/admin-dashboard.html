@@ -1963,8 +1963,22 @@ function renderRoutinesTable(rows) {
     return;
   }
   meta.textContent = rows.length + ' tasks · auto-refresh every 60s';
-  tbody.innerHTML = rows.map(function(r){
+  // 5a: sort rows with launchctl_loaded === false to top (broken pipelines first)
+  var sorted = rows.slice().sort(function(a, b) {
+    var aUnloaded = a.launchctl_loaded === false ? 0 : 1;
+    var bUnloaded = b.launchctl_loaded === false ? 0 : 1;
+    return aUnloaded - bUnloaded;
+  });
+  tbody.innerHTML = sorted.map(function(r){
     var tier2lbl = r.tier === 2 ? '<span class="rt-task-tier2">tier 2</span>' : '';
+    // 5a: launchctl_loaded chip
+    var launchChip = '';
+    if (r.launchctl_loaded === false) {
+      var warnTitle = r.warning ? rtEsc(r.warning) : 'Run: launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/<label>.plist';
+      launchChip = '<span style="display:inline-block;margin-left:5px;padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;background:#fef2f2;color:#991b1b;border:1px solid #fca5a5;cursor:help" title="' + warnTitle + '">NOT LOADED</span>';
+    } else if (r.launchctl_loaded === null) {
+      launchChip = '<span style="display:inline-block;margin-left:5px;padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;background:#f8fafc;color:#64748b;border:1px solid #cbd5e1;cursor:help" title="launchctl status unavailable">UNKNOWN</span>';
+    }
     // Sparkline of last 7 runs (oldest left, newest right)
     var sparkDots = '';
     for (var i = 0; i < 7; i++) {
@@ -1986,13 +2000,13 @@ function renderRoutinesTable(rows) {
       '<button class="rt-btn" onclick="event.stopPropagation();kickstartRoutine(\'' +
         rtEsc(r.task) + '\',this)" ' + (locked ? 'disabled' : '') + ' type="button">Run now</button>';
     return (
-      '<tr class="rt-row rt-status-' + r.status + '" data-task="' + rtEsc(r.task) +
+      '<tr class="rt-row rt-status-' + r.status + (r.launchctl_loaded === false ? ' rt-unloaded' : '') + '" data-task="' + rtEsc(r.task) +
         '" onclick="toggleRoutineDetail(\'' + rtEsc(r.task) + '\')">' +
         '<td class="rt-cell-name" data-label="Task"><span class="rt-task-name">' + rtEsc(r.label || r.task) + '</span>' + tier2lbl + '</td>' +
         '<td data-label="Schedule"><span class="rt-sched">' + rtEsc(r.schedule_human) + '</span></td>' +
         '<td data-label="Last run"><span class="rt-when">' + rtEsc(rtFmtRelative(r.last_run)) + '</span></td>' +
         '<td data-label="Runtime"><span class="rt-runtime">' + rtEsc(rtFmtRuntime(r.last_runtime_s)) + '</span></td>' +
-        '<td data-label="Status"><span class="rt-status-pill ' + r.status + '">' + r.status.replace('_',' ') + '</span></td>' +
+        '<td data-label="Status"><span class="rt-status-pill ' + r.status + '">' + r.status.replace('_',' ') + '</span>' + launchChip + '</td>' +
         '<td data-label="Last 7"><span class="rt-spark">' + sparkDots + '</span></td>' +
         '<td data-label="Next"><span class="rt-when">' + rtEsc(rtFmtRelative(r.next_run)) + '</span></td>' +
         '<td data-label=""><div class="rt-actions">' + actionsHtml + '</div></td>' +
