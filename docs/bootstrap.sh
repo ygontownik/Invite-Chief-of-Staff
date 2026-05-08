@@ -155,11 +155,22 @@ fi
 
 # Strip our own flags before forwarding to setup.sh
 SETUP_ARGS=()
+HAS_DOMAIN=false
 for arg in "$@"; do
   case "$arg" in
     --shared-keys*) ;;
+    --domain=*|--domain) HAS_DOMAIN=true; SETUP_ARGS+=("$arg") ;;
     *) SETUP_ARGS+=("$arg") ;;
   esac
 done
+
+# Default to a generic domain bundle if none was passed. setup.sh requires a
+# domain bundle for firm_context.yaml validation; without this default a fresh
+# install with no flags fails the principal-keys gate. Users who want infra-PE
+# or real-estate sector defaults can pass --domain=infra-pe (or --domain=real-estate).
+if ! $HAS_DOMAIN; then
+  SETUP_ARGS+=("--domain=generic-dealmaker")
+  info "No --domain= specified; defaulting to generic-dealmaker (override with --domain=infra-pe or --domain=real-estate)"
+fi
 
 exec bash setup.sh "${SETUP_ARGS[@]+"${SETUP_ARGS[@]}"}"
