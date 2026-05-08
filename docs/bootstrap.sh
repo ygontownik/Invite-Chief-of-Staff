@@ -119,23 +119,11 @@ if [ -d "$DEST/.git" ]; then
   warn "~/cos-pipeline already exists — pulling latest instead of cloning"
   git -C "$DEST" pull --ff-only 2>&1 | tail -3
 else
-  echo ""
-  echo "  The pipeline repo is private. You need a GitHub Personal Access Token."
-  echo "  Get one at: https://github.com/settings/tokens/new"
-  echo "    Note: TCIP pipeline   Expiration: 1 year   Scope: repo (top checkbox)"
-  echo ""
-  printf "  GitHub username: "
-  read -r GH_USER
-  printf "  GitHub token (ghp_…): "
-  read -rs GH_TOKEN
-  echo ""
-
-  GH_TOKEN="$GH_TOKEN"
-  CLONE_URL="https://${GH_USER}:${GH_TOKEN}@github.com/ygontownik/Invite-Chief-of-Staff.git"
+  CLONE_URL="https://github.com/ygontownik/Invite-Chief-of-Staff.git"
   info "Cloning pipeline repo → ~/cos-pipeline ..."
-  if git clone "$CLONE_URL" "$DEST" 2>&1 | grep -v "Cloning\|remote:\|Receiving\|Resolving\|Unpacking" || true; then
-    [ -d "$DEST/.git" ] && ok "Cloned → $DEST" || die "git clone failed — check your token and try again"
-  fi
+  git clone "$CLONE_URL" "$DEST" 2>&1 | grep -v "Cloning\|remote:\|Receiving\|Resolving\|Unpacking" || true
+  [ -d "$DEST/.git" ] || die "git clone failed — check your network connection and try again"
+  ok "Cloned → $DEST"
 fi
 
 # ── Hand off to setup.sh ─────────────────────────────────────────────────────

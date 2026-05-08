@@ -302,6 +302,23 @@ def _pptx_to_text(blob_bytes):
     return "\n".join(out)
 
 
+def _pdf_to_text(blob_bytes):
+    """Extract text from PDF using pypdf. Page-aware output."""
+    import pypdf
+    reader = pypdf.PdfReader(io.BytesIO(blob_bytes))
+    out = []
+    for i, page in enumerate(reader.pages, 1):
+        try:
+            txt = page.extract_text() or ""
+        except Exception:
+            txt = ""
+        if txt.strip():
+            out.append(f"### Page {i}")
+            out.append(txt.strip())
+            out.append("")
+    return "\n".join(out) if out else "[PDF had no extractable text — likely scanned image]"
+
+
 def drive_read_file_text(file_id):
     """Return file text. Handles native Docs (export), text/plain/markdown,
     .docx/.xlsx/.pptx (parsed with python-docx/openpyxl/python-pptx). PDF
@@ -316,7 +333,10 @@ def drive_read_file_text(file_id):
         return data.decode("utf-8") if isinstance(data, bytes) else data
 
     if mime == "application/pdf":
-        return f"[BINARY PDF — file_id={file_id}, name={meta['name']}, extraction not implemented]"
+        try:
+            return _pdf_to_text(_drive_download_bytes(file_id))
+        except Exception as e:
+            return f"[PDF EXTRACT FAILED — {e} — file_id={file_id}, name={meta['name']}]"
 
     if mime == MIME_DOCX:
         try:
@@ -510,6 +530,76 @@ def cmd_update_last_run(args):
     print(f"OK last_run for {args.deal_id} = {ds['last_run']}")
 
 
+def cmd_read_deal_entry(args):
+    """Print the deal's current dashboard_entry.json from Drive, or {} if absent."""
+    entry = get_deal_entry(args.deal_id)
+    folder_id = entry["drive_folder_id"]
+    fname = f"{args.deal_id}_dashboard_entry.json"
+    svc = get_drive()
+    res = svc.files().list(
+        q=f"name='{fname}' and '{folder_id}' in parents and trashed=false",
+        fields="files(id,name)",
+    ).execute()
+    files = res.get("files", [])
+    if not files:
+        print("{}")
+        return
+    text = drive_read_file_text(files[0]["id"])
+    print(text)
+
+
+def cmd_write_deal_entry(args):
+    """Read JSON from stdin, validate, write to deal's Drive folder, run sync."""
+    import subprocess
+    raw = sys.stdin.read()
+    if not raw.strip():
+        die("empty stdin — refusing to write empty dashboard_entry")
+    try:
+        entry_obj = json.loads(raw)
+    except Exception as e:
+        die(f"invalid JSON on stdin: {e}")
+    if not isinstance(entry_obj, dict):
+        die(f"dashboard_entry must be a JSON object, got {type(entry_obj).__name__}")
+
+    deal_reg = get_deal_entry(args.deal_id)
+    folder_id = deal_reg["drive_folder_id"]
+    fname = f"{args.deal_id}_dashboard_entry.json"
+    entry_obj["_last_updated_from_session"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    if args.dry_run:
+        print(f"[DRY-RUN] would write {fname} ({len(raw)} chars) to folder {folder_id}")
+        return
+
+    svc = get_drive()
+    res = svc.files().list(
+        q=f"name='{fname}' and '{folder_id}' in parents and trashed=false",
+        fields="files(id)",
+    ).execute()
+    files = res.get("files", [])
+    body_bytes = json.dumps(entry_obj, indent=2).encode("utf-8")
+    media = MediaInMemoryUpload(body_bytes, mimetype="application/json")
+    if files:
+        svc.files().update(fileId=files[0]["id"], media_body=media).execute()
+        action = "updated"
+    else:
+        svc.files().create(
+            body={"name": fname, "parents": [folder_id]},
+            media_body=media, fields="id",
+        ).execute()
+        action = "created"
+    print(f"OK {action} {fname} in Drive")
+
+    # Trigger sync to compiled
+    sync_script = os.path.expanduser("~/cos-pipeline/tools/sync_deals_from_drive.py")
+    try:
+        subprocess.run(
+            ["/opt/homebrew/bin/python3", sync_script, "--deal-id", args.deal_id],
+            timeout=60, check=False,
+        )
+    except Exception as e:
+        print(f"  warning: sync failed (non-fatal): {e}", file=sys.stderr)
+
+
 def cmd_regenerate_pipeline_section(args):
     cfg = load_drive_docs()
     firm_id = cfg["reference_docs"]["firm_context"]["doc_id"]
@@ -550,6 +640,8 @@ def build_parser():
     s = sub.add_parser("read-file"); s.add_argument("file_id")
     s = sub.add_parser("read-deal-doc"); s.add_argument("deal_id"); s.add_argument("kind", choices=["status", "brief"])
     s = sub.add_parser("write-deal-doc"); s.add_argument("deal_id"); s.add_argument("kind", choices=["status", "brief"])
+    s = sub.add_parser("read-deal-entry"); s.add_argument("deal_id")
+    s = sub.add_parser("write-deal-entry"); s.add_argument("deal_id")
     s = sub.add_parser("move-to-ready"); s.add_argument("file_id"); s.add_argument("deal_folder_id")
     s = sub.add_parser("mark-processed"); s.add_argument("deal_id"); s.add_argument("file_id"); s.add_argument("outcome", choices=["success", "failed"])
     s = sub.add_parser("update-last-run"); s.add_argument("deal_id")
@@ -563,6 +655,8 @@ HANDLERS = {
     "read-file": cmd_read_file,
     "read-deal-doc": cmd_read_deal_doc,
     "write-deal-doc": cmd_write_deal_doc,
+    "read-deal-entry": cmd_read_deal_entry,
+    "write-deal-entry": cmd_write_deal_entry,
     "move-to-ready": cmd_move_to_ready,
     "mark-processed": cmd_mark_processed,
     "update-last-run": cmd_update_last_run,
