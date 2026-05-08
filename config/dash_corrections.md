@@ -2175,3 +2175,29 @@ added, add both: (1) a named section in the system prompt explaining how to
 interpret it, (2) a matching labeled section in the user payload. Missing
 either half means Claude either sees data it wasn't told how to use, or gets
 instructions that reference data that isn't present.
+
+---
+
+## TOPIC — DASHBOARD WORKSTREAM / TAB SCOPING
+
+### 2026-05-08 — Job search content must be scoped to /personal only
+
+`recActive` (the "Priority Targets / job search" stat tile) was set to null
+only when `filter === 'tomac'`, so it appeared on the main Status (HQ) route
+for all other filters. The fix: `recActive = (!onPersonalTab || f === 'tomac') ? null : ...`.
+Rule: anything job-search related — stat tiles, panels, focused layouts —
+must check `!onPersonalTab` as the gate, not just the workstream filter.
+
+---
+
+## TOPIC — AWAITING EXTERNAL CROSS-REFERENCE
+
+### 2026-05-08 — Resolved follow-ups are the cheapest signal for closed awaiting items
+
+When an awaiting item should have been closed by a call/action that happened,
+the most reliable in-data signal is a `[RESOLVED]` prefix on a follow-up entry
+with the same counterparty. Build `resolvedFuKeys` (Set of normalized CP keys)
+from `DATA.followUps.filter(fu => fu.what.startsWith('[RESOLVED]'))` and
+cross-reference it in cluster rendering. Compute it inside `buildAwaitingExternal()`
+where `__cpClusterKey` is in scope. Do NOT try to derive it from call history —
+`upcomingCalls` only covers the next 7 days and has no historical records.
