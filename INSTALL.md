@@ -32,7 +32,7 @@ You'll need to have ready:
 
 ```bash
 # 1. Clone the public code repo
-git clone <your-public-cos-pipeline-url> ~/cos-pipeline
+git clone https://github.com/ygontownik/Invite-Chief-of-Staff ~/cos-pipeline
 cd ~/cos-pipeline
 
 # 2. Run the bootstrap. Replace `<slug>` with a short ID for yourself

@@ -1187,9 +1187,9 @@ When the tenant repo path exists, the dashboards-path file is silently ignored. 
 
 **Rule (codified 2026-05-04)**: any config file that has a tenant-repo equivalent (`~/cos-pipeline-config-<slug>/config/<name>.yaml` or similar) MUST be symlinked from the dashboards path to the tenant-repo path. This makes the dashboards-path edit-target visibly the SAME file the server reads. No silent precedence inversion possible.
 
-**Detection**: `for f in ~/dashboards/config/*.yaml ~/dashboards/config/*.json; do tenant=~/cos-pipeline-config-tomac/config/$(basename "$f"); if [ -f "$tenant" ] && [ ! -L "$f" ]; then echo "DRIFT: $f is a regular file but tenant copy exists at $tenant"; fi; done`
+**Detection**: `for f in ~/dashboards/config/*.yaml ~/dashboards/config/*.json; do tenant=~/cos-pipeline-config-<slug>/config/$(basename "$f"); if [ -f "$tenant" ] && [ ! -L "$f" ]; then echo "DRIFT: $f is a regular file but tenant copy exists at $tenant"; fi; done`
 
-**This session's fix**: `~/dashboards/config/deal-config.yaml` symlinked to `~/cos-pipeline-config-tomac/config/deal-config.yaml`. Same fix recommended for `recruit-config.yaml`, `email-capture.yaml`, `strings.yaml`, `user-tasks.yaml`, `users.json`, `deal_buckets.json` if/when the tenant-repo migration completes for those files.
+**This session's fix**: `~/dashboards/config/deal-config.yaml` symlinked to `~/cos-pipeline-config-<slug>/config/deal-config.yaml`. Same fix recommended for `recruit-config.yaml`, `email-capture.yaml`, `strings.yaml`, `user-tasks.yaml`, `users.json`, `deal_buckets.json` if/when the tenant-repo migration completes for those files.
 
 ---
 
@@ -1501,7 +1501,7 @@ A `/dash` audit that finds the stage label inconsistent with the deal's actions.
 
 ```
 last_activity = max(
-    dashboard-data.json > tomac[].latestUpdate.date,    # tomac doc parse
+    dashboard-data.json > <slug>[].latestUpdate.date,   # tenant doc parse
     max(addedDate of followUps[] mentioning the deal),
     max(addedDate of awaitingExternal[] mentioning the deal),
     deal.md hand-edited last_activity
@@ -2183,8 +2183,8 @@ instructions that reference data that isn't present.
 ### 2026-05-08 — Job search content must be scoped to /personal only
 
 `recActive` (the "Priority Targets / job search" stat tile) was set to null
-only when `filter === 'tomac'`, so it appeared on the main Status (HQ) route
-for all other filters. The fix: `recActive = (!onPersonalTab || f === 'tomac') ? null : ...`.
+only when `filter === '<slug>'` (the active tenant), so it appeared on the main Status (HQ) route
+for all other filters. The fix: `recActive = (!onPersonalTab || f === '<slug>') ? null : ...`.
 Rule: anything job-search related — stat tiles, panels, focused layouts —
 must check `!onPersonalTab` as the gate, not just the workstream filter.
 

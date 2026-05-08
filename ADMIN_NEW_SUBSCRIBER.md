@@ -25,7 +25,7 @@ End-to-end checklist for what **you** (the platform owner) do when someone signs
 Without this, their OAuth flow will fail with "This app isn't verified" and **no "Advanced → unsafe" escape hatch** (Google removed that for non-test users in 2024).
 
 ### 3. Grant GitHub access (1 min)
-- Add them as a collaborator to `ygontownik/Dashboard` (public — no-op, but confirms repo)
+- Add them as a collaborator to `ygontownik/Invite-Chief-of-Staff` (public — no-op, but confirms repo)
 - Add them as a collaborator to whatever private config repo they get (or fork-and-grant)
 
 ### 4. Send them `gdrive_credentials.json` (secure channel)
@@ -34,7 +34,7 @@ Without this, their OAuth flow will fail with "This app isn't verified" and **no
 - This is your OAuth client config; it's not a secret per se but treat it as one
 
 ### 5. Send them the onboarding link
-- `https://ygontownik.github.io/Dashboard/onboard.html`
+- `https://ygontownik.github.io/Invite-Chief-of-Staff/onboard.html`
 - They run the bootstrap installer, walk through the 3 steps, done
 - Total time on their side: ~15 min
 

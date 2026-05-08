@@ -1,6 +1,6 @@
 # COS Pipeline — Chief of Staff AI System
 
-> **Repo:** https://github.com/ygontownik/Dashboard
+> **Repo:** https://github.com/ygontownik/Invite-Chief-of-Staff
 > **Per-package docs:** [Package A — Market Intelligence](docs/PACKAGE_A.md) · [Package B — Operations](docs/PACKAGE_B.md)
 
 A local AI pipeline that processes emails, call transcripts, and market research into structured action items, deal intelligence, and daily briefings — all routed to Google Docs and a local dashboard.
@@ -21,7 +21,7 @@ The dashboard (always full) shows all tiles. Tabs without an active package disp
 > **For end-to-end install instructions see [INSTALL.md](INSTALL.md).** It covers prereqs, the install command, the 8 setup steps, first-run, daily/weekly cadence, re-validation, uninstall, and troubleshooting. The summary below is the 30-second version.
 
 ```bash
-git clone <your-public-cos-pipeline-url> ~/cos-pipeline
+git clone https://github.com/ygontownik/Invite-Chief-of-Staff ~/cos-pipeline
 cd ~/cos-pipeline
 ./setup.sh --instance=<slug> --domain=<infra-pe|real-estate|generic-dealmaker>
 ```
@@ -274,7 +274,7 @@ Multiple people at the same firm can share one dashboard. The pipeline runs on o
 
 ```
 Public repo (this one)              Private config repo (you create)
-github.com/ygontownik/Dashboard     github.com/yourfirm/your-firm-config
+github.com/ygontownik/Invite-...    github.com/yourfirm/your-firm-config
 ────────────────────────────        ───────────────────────────────────
 Universal code — anyone can use     Firm identity — your team only
 
@@ -315,7 +315,7 @@ source ~/.zshrc
 
 ```bash
 git clone https://github.com/yourfirm/your-firm-config ~/cos-pipeline-config
-git clone https://github.com/ygontownik/Dashboard ~/cos-pipeline
+git clone https://github.com/ygontownik/Invite-Chief-of-Staff ~/cos-pipeline
 echo 'export COS_CONFIG_DIR="$HOME/cos-pipeline-config"' >> ~/.zshrc
 source ~/.zshrc
 cd ~/cos-pipeline && ./setup.sh   # OAuth + LaunchAgents on their machine

@@ -69,6 +69,7 @@ tools/deal-system-data.json
 tools/sync-state.json
 tools/credentials.json
 tools/token.json
+tools/compile_drive_writeback.py
 # Per-deal project-sync folders contain real Drive IDs and deal-specific data.
 # Commit only tools/data/project-sync/_template/ (the generic scaffold).
 tools/data/project-sync/*/
