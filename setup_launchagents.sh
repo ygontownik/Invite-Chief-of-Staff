@@ -27,18 +27,22 @@ SECRETS_HELPER="$HOME/.cos-pipeline-load-secrets.sh"
 
 # B6 (ID excision): keychain_service_prefix is REQUIRED in firm_config.json.
 # Per DECISIONS.md C11, the canonical format is `cos-pipeline-<slug>` (e.g.
-# cos-pipeline-tomac, cos-pipeline-re-dev). Search order matches setup_keychain.sh:
-#   1. $COS_CONFIG_DIR/firm_config.json
-#   2. ~/cos-pipeline-config/firm_config.json
-#   3. ~/cos-pipeline-config-tomac/firm_config.json (default tenant)
-#   4. ~/cos-pipeline/firm_config.json (legacy)
+# cos-pipeline-config-tomac, cos-pipeline-config-re-dev). Search order:
+#   1. $COS_CONFIG_DIR/firm_config.json (preferred — set by setup.sh)
+#   2. ~/cos-pipeline-config/firm_config.json (legacy single-tenant)
+#   3. ~/cos-pipeline-config-*/firm_config.json (any per-tenant dir)
+#   4. $REPO/firm_config.json (legacy: alongside code)
 # Falls back to "cos-pipeline" with a stderr warning so installers don't blow up.
 KCS_PREFIX=""
-for _KCS_CFG in \
-    "${COS_CONFIG_DIR:+$COS_CONFIG_DIR/firm_config.json}" \
-    "$HOME/cos-pipeline-config/firm_config.json" \
-    "$HOME/cos-pipeline-config-tomac/firm_config.json" \
-    "$REPO/firm_config.json"; do
+_KCS_CANDIDATES=(
+  "${COS_CONFIG_DIR:+$COS_CONFIG_DIR/firm_config.json}"
+  "$HOME/cos-pipeline-config/firm_config.json"
+)
+for _d in "$HOME"/cos-pipeline-config-*; do
+  [ -d "$_d" ] && _KCS_CANDIDATES+=("$_d/firm_config.json")
+done
+_KCS_CANDIDATES+=("$REPO/firm_config.json")
+for _KCS_CFG in "${_KCS_CANDIDATES[@]}"; do
   if [ -n "$_KCS_CFG" ] && [ -f "$_KCS_CFG" ]; then
     _p=$(python3 -c "import json; d=json.load(open('$_KCS_CFG')); print(d.get('keychain_service_prefix',''))" 2>/dev/null)
     if [ -n "$_p" ]; then

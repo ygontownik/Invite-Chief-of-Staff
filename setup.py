@@ -59,9 +59,10 @@ def _config_target_dir() -> Path:
         p = Path(env).expanduser()
         if p.is_dir():
             return p
-    canonical = Path.home() / "cos-pipeline-config-tomac"
-    if canonical.is_dir():
-        return canonical
+    # Discover first per-tenant dir matching cos-pipeline-config-*.
+    for cand in sorted(Path.home().glob("cos-pipeline-config-*")):
+        if cand.is_dir():
+            return cand
     legacy = Path.home() / "cos-pipeline-config"
     if legacy.is_dir():
         return legacy
@@ -227,18 +228,22 @@ def _check_schema():
         print(f"  {FAIL}  PyYAML not installed — run: pip3 install pyyaml")
         return
 
-    # Find config dir (per DECISIONS C3: prefer -tomac/ over /, both fall back to here)
+    # Find config dir: COS_CONFIG_DIR > any cos-pipeline-config-<slug>/ > legacy cos-pipeline-config/ > here
     import os
     config_dir = None
     env = os.environ.get("COS_CONFIG_DIR")
     if env and Path(env).expanduser().is_dir():
         config_dir = Path(env).expanduser()
-    elif (Path.home() / "cos-pipeline-config-tomac" / "firm_context.yaml").exists():
-        config_dir = Path.home() / "cos-pipeline-config-tomac"
-    elif (Path.home() / "cos-pipeline-config" / "firm_context.yaml").exists():
-        config_dir = Path.home() / "cos-pipeline-config"
     else:
-        config_dir = _HERE
+        for cand in sorted(Path.home().glob("cos-pipeline-config-*")):
+            if (cand / "firm_context.yaml").exists():
+                config_dir = cand
+                break
+        if config_dir is None:
+            if (Path.home() / "cos-pipeline-config" / "firm_context.yaml").exists():
+                config_dir = Path.home() / "cos-pipeline-config"
+            else:
+                config_dir = _HERE
 
     ctx_path = config_dir / "firm_context.yaml"
     tmpl_path = _HERE / "firm_context.template.yaml"

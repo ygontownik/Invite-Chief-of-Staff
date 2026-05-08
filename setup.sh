@@ -84,12 +84,12 @@ done
 # tomac is the primary tenant. Any other tenant (re-dev, test, …) MUST pass it.
 if [ -z "$INSTANCE" ]; then
   if $VALIDATE_ONLY; then
-    err "--validate requires --instance=<short> (tomac, re-dev, …)"; exit 1
+    err "--validate requires --instance=<short> (e.g. acme, peakcap)"; exit 1
   fi
   if $UNINSTALL; then
     err "--uninstall requires --instance=<short> (no default — too dangerous)"; exit 1
   fi
-  INSTANCE=$(ask "Instance slug (tomac, re-dev, …)" "tomac")
+  INSTANCE=$(ask "Instance slug (e.g. acme, peakcap)" "acme")
 fi
 
 # Slug sanitation: lowercase, hyphenated, no spaces.

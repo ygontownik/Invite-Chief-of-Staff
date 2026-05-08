@@ -82,10 +82,11 @@ def _resolve_auth_mode() -> str:
     except Exception:
         pass
     # Direct fallback — scan a few standard paths.
-    for p in (
-        Path.home() / "cos-pipeline-config-tomac" / "firm_context.yaml",
-        Path.home() / "cos-pipeline" / "firm_context.yaml",
-    ):
+    _candidates = []
+    for cand in sorted(Path.home().glob("cos-pipeline-config-*")):
+        _candidates.append(cand / "firm_context.yaml")
+    _candidates.append(Path.home() / "cos-pipeline" / "firm_context.yaml")
+    for p in _candidates:
         try:
             if not p.is_file():
                 continue

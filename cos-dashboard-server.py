@@ -5262,11 +5262,23 @@ function copyInstructions() {{
 
         # Write a launchd plist that fires join_webinar.sh at start_dt - 2min
         launch_dt  = start_dt - timedelta(minutes=2)
-        plist_name = f'com.yoni.webinar.{meeting_id}.plist'
+        plist_name = f'com.cos.webinar.{meeting_id}.plist'
         plist_path = Path.home() / 'Library' / 'LaunchAgents' / plist_name
 
         join_script    = str(Path.home() / 'scripts' / 'join_webinar.applescript')
-        recorder       = str(Path.home() / 'tomac-cove-pipeline' / 'call_recorder.py')
+        # Path to call_recorder.py — configurable via CALL_RECORDER_PATH env var.
+        # Default search order: $CALL_RECORDER_PATH > ~/scripts/call_recorder.py >
+        # ~/cos-pipeline/tools/call_recorder.py. If none found, webinar feature
+        # writes a plist that no-ops the record step (logs and exits) so Robert /
+        # any tenant without the separate call-recorder repo isn't blocked.
+        import os as _os
+        _recorder_env = _os.environ.get('CALL_RECORDER_PATH', '')
+        _recorder_candidates = [
+            _recorder_env,
+            str(Path.home() / 'scripts' / 'call_recorder.py'),
+            str(Path.home() / 'cos-pipeline' / 'tools' / 'call_recorder.py'),
+        ]
+        recorder = next((c for c in _recorder_candidates if c and Path(c).exists()), '')
         reg_extractor  = str(Path.home() / 'scripts' / 'extract_webinar_registration.py')
         rec_log        = str(Path.home() / 'recordings' / 'calls' / f'webinar_{meeting_id}.log')
 
@@ -5291,7 +5303,12 @@ osascript "{join_script}" "{webinar_url}" "$REG_INFO" >> "$LOG" 2>&1 &
 
 # Start recording (give Chrome 15s to fully load and join)
 sleep 15
-python3 "{recorder}" start --title "{title}" >> "$LOG" 2>&1 &
+RECORDER="{recorder}"
+if [ -n "$RECORDER" ] && [ -f "$RECORDER" ]; then
+  python3 "$RECORDER" start --title "{title}" >> "$LOG" 2>&1 &
+else
+  echo "[$(date)] No call_recorder.py configured — skipping record step." >> "$LOG"
+fi
 
 echo "[$(date)] Join and record launched." >> "$LOG"
 '''
@@ -5299,7 +5316,7 @@ echo "[$(date)] Join and record launched." >> "$LOG"
         wrapper_path.chmod(0o755)
 
         # Stop-recording plist fires at end_dt
-        stop_plist_name = f'com.yoni.webinar.{meeting_id}.stop.plist'
+        stop_plist_name = f'com.cos.webinar.{meeting_id}.stop.plist'
         stop_plist_path = Path.home() / 'Library' / 'LaunchAgents' / stop_plist_name
 
         def _plist(label, hour, minute, second, program_args):
@@ -5314,14 +5331,14 @@ echo "[$(date)] Join and record launched." >> "$LOG"
 
         import plistlib
         plist_data = _plist(
-            f'com.yoni.webinar.{meeting_id}',
+            f'com.cos.webinar.{meeting_id}',
             launch_dt.hour, launch_dt.minute, 0,
             ['/bin/bash', str(wrapper_path)],
         )
         plist_path.write_bytes(plistlib.dumps(plist_data))
 
         stop_plist_data = _plist(
-            f'com.yoni.webinar.{meeting_id}.stop',
+            f'com.cos.webinar.{meeting_id}.stop',
             end_dt.hour, end_dt.minute, 0,
             [sys.executable, recorder, 'stop'],
         )

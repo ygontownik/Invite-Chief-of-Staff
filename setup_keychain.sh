@@ -27,11 +27,13 @@ _resolve_service_prefix() {
     return
   fi
   local _cfg
-  for _cfg in \
-      "${COS_CONFIG_DIR:+$COS_CONFIG_DIR/firm_config.json}" \
-      "$HOME/cos-pipeline-config-tomac/firm_config.json" \
-      "$HOME/cos-pipeline-config/firm_config.json" \
-      "$HOME/cos-pipeline/firm_config.json"; do
+  local _candidates=()
+  _candidates+=("${COS_CONFIG_DIR:+$COS_CONFIG_DIR/firm_config.json}")
+  for _d in "$HOME"/cos-pipeline-config-*; do
+    [ -d "$_d" ] && _candidates+=("$_d/firm_config.json")
+  done
+  _candidates+=("$HOME/cos-pipeline-config/firm_config.json" "$HOME/cos-pipeline/firm_config.json")
+  for _cfg in "${_candidates[@]}"; do
     if [ -n "$_cfg" ] && [ -f "$_cfg" ]; then
       local _val
       _val=$(python3 -c "import json; d=json.load(open('$_cfg')); print(d.get('keychain_service_prefix',''))" 2>/dev/null)
@@ -159,7 +161,16 @@ DUSER=$(security find-generic-password -s "$SERVICE_PREFIX/DASHBOARD_USERNAME" -
 DPASS=$(security find-generic-password -s "$SERVICE_PREFIX/DASHBOARD_PASSWORD" -a "$USER_ACCOUNT" -w 2>/dev/null || echo "")
 
 if [ -n "$DUSER" ] && [ -n "$DPASS" ]; then
-  CFG_DIR="${COS_CONFIG_DIR:-$HOME/cos-pipeline-config-tomac}"
+  # Prefer explicit COS_CONFIG_DIR; otherwise discover the first cos-pipeline-config-* dir.
+  if [ -n "${COS_CONFIG_DIR:-}" ]; then
+    CFG_DIR="$COS_CONFIG_DIR"
+  else
+    CFG_DIR=""
+    for _d in "$HOME"/cos-pipeline-config-*; do
+      [ -d "$_d" ] && { CFG_DIR="$_d"; break; }
+    done
+    [ -z "$CFG_DIR" ] && CFG_DIR="$HOME/cos-pipeline-config"
+  fi
   USERS_JSON="$CFG_DIR/config/users.json"
   mkdir -p "$(dirname "$USERS_JSON")"
   if [ -f "$USERS_JSON" ]; then
