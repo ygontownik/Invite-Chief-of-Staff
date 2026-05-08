@@ -468,11 +468,27 @@ def cmd_read_file(args):
     print(drive_read_file_text(args.file_id))
 
 
+_DEAL_DOC_FIELDS = {
+    "status":  "status",
+    "brief":   "master_brief",
+    "lps":     "lps",
+    "terms":   "terms",
+    "actions": "actions",
+}
+
+
 def cmd_read_deal_doc(args):
     entry = get_deal_entry(args.deal_id)
-    field = "status" if args.kind == "status" else "master_brief"
-    doc_id = entry[field]["doc_id"]
-    # Native Doc vs text/plain — try text/plain media get first
+    field = _DEAL_DOC_FIELDS.get(args.kind)
+    if not field:
+        die(f"unknown kind '{args.kind}' (expected: {','.join(_DEAL_DOC_FIELDS)})")
+    sub = entry.get(field)
+    if not sub:
+        # File not yet registered for this deal — silent empty, not an error.
+        # (e.g. lps/terms/actions may be absent for newly-onboarded deals.)
+        print("")
+        return
+    doc_id = sub["doc_id"]
     svc = get_drive()
     meta = svc.files().get(fileId=doc_id, fields="mimeType").execute()
     if meta["mimeType"] == "application/vnd.google-apps.document":
@@ -756,7 +772,7 @@ def build_parser():
     s = sub.add_parser("list-deals"); s.add_argument("--filter")
     s = sub.add_parser("list-new-files"); s.add_argument("deal_id")
     s = sub.add_parser("read-file"); s.add_argument("file_id")
-    s = sub.add_parser("read-deal-doc"); s.add_argument("deal_id"); s.add_argument("kind", choices=["status", "brief"])
+    s = sub.add_parser("read-deal-doc"); s.add_argument("deal_id"); s.add_argument("kind", choices=["status", "brief", "lps", "terms", "actions"])
     s = sub.add_parser("write-deal-doc"); s.add_argument("deal_id"); s.add_argument("kind", choices=["status", "brief"])
     s = sub.add_parser("read-deal-entry"); s.add_argument("deal_id")
     s = sub.add_parser("write-deal-entry"); s.add_argument("deal_id")

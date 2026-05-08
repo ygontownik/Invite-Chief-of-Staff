@@ -100,18 +100,35 @@ Do not read content, do not write docs.
 
 ## STEP 3 — Read current state for the deal
 
-Once, per deal, before processing files:
+Once, per deal, before processing files. Each deal's `_Claude Context/`
+subfolder in Drive contains five Claude-readable artifacts:
 
 ```bash
-python3 ~/cos-pipeline/tools/deal_extract_helpers.py read-deal-doc <deal_id> status > /tmp/<deal_id>_status_current.md
-python3 ~/cos-pipeline/tools/deal_extract_helpers.py read-deal-doc <deal_id> brief  > /tmp/<deal_id>_brief_current.md
+python3 ~/cos-pipeline/tools/deal_extract_helpers.py read-deal-doc <deal_id> status  > /tmp/<deal_id>_status_current.md
+python3 ~/cos-pipeline/tools/deal_extract_helpers.py read-deal-doc <deal_id> brief   > /tmp/<deal_id>_brief_current.md
+python3 ~/cos-pipeline/tools/deal_extract_helpers.py read-deal-doc <deal_id> lps     > /tmp/<deal_id>_lps_current.md
+python3 ~/cos-pipeline/tools/deal_extract_helpers.py read-deal-doc <deal_id> terms   > /tmp/<deal_id>_terms_current.md
+python3 ~/cos-pipeline/tools/deal_extract_helpers.py read-deal-doc <deal_id> actions > /tmp/<deal_id>_actions_current.md
 ```
 
-Read both files into your context.
+Read all five into your context:
 
-If a deal has no fully populated status/brief yet (e.g. it was just
-scaffolded — a stub), use `pngts_status.md` and `pngts_master_brief.md`
-as your structural template.
+| Doc | Captures | Maintained by |
+|---|---|---|
+| status.md | Critical Driver, deadlines, open items, counterparties | /deal-sync rewrites + manual edits |
+| master_brief.md | Long-form deal narrative — thesis, history | /deal-sync rewrites + manual edits |
+| lps.md | LP / customer pipeline (status, last touch, bite, next action) | Manual (informs status/brief regen) |
+| terms.md | Economics log — fees, hurdle, carry, capital stack | Manual (informs status/brief regen) |
+| actions.md | Open / awaiting / closed actions | Local copy is canonical (compile-dashboard.py reads it); Drive copy is a mirror |
+
+**Use LPs + TERMS + actions as read-only context** when synthesizing the
+new status/brief — they ground deal economics + pipeline state. Don't
+rewrite them in this step (LPs and TERMS are manually maintained;
+actions.md is structured local input for the dashboard).
+
+If a deal has no fully populated status/brief yet (just scaffolded — a
+stub), use `pngts_status.md` and `pngts_master_brief.md` as your
+structural template.
 
 ---
 

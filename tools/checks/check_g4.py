@@ -30,7 +30,18 @@ from typing import Any
 HOME = Path.home()
 DEALS_ROOT = HOME / "dashboards" / "data" / "deals"
 
-REQUIRED = ("deal.md", "actions.md", "LPs.md", "TERMS.md")
+# Required local files per deal directory.
+#
+# As of 2026-05-08 LPs.md and TERMS.md migrated to Drive _Claude Context/
+# (canonical there; nothing local consumes them). G4 now requires only the
+# two files actually consumed by compile-dashboard.py:
+#   - deal.md    (YAML frontmatter)
+#   - actions.md (parsed by parse_actions() into deal['actions'])
+#
+# actions.md is also mirrored to Drive _Claude Context/ for Claude-session
+# read access, but the local copy stays canonical (compile-dashboard.py is
+# the active writer).
+REQUIRED = ("deal.md", "actions.md")
 
 
 def run() -> dict[str, Any]:
