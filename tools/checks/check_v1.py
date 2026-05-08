@@ -73,10 +73,17 @@ def run() -> dict[str, Any]:
         except Exception as exc:
             missing_logs.append(f"deal={child.name!r} log.json unreadable: {exc}")
             continue
-        entries = (log or {}).get("entries") if isinstance(log, dict) else None
-        if not isinstance(entries, list):
+        # log.json shape varies: bare list (most deals, written by
+        # cos_capture_pipeline) OR dict with "entries" key. Tolerate both.
+        if isinstance(log, list):
+            entries = log
+        elif isinstance(log, dict):
+            entries = log.get("entries") or []
+            if not isinstance(entries, list):
+                entries = []
+        else:
             missing_logs.append(
-                f"deal={child.name!r} log.json missing entries[]"
+                f"deal={child.name!r} log.json unexpected shape: {type(log).__name__}"
             )
             continue
         if len(entries) > 10:
