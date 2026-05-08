@@ -63,6 +63,16 @@ def _resolve_own_host_ips() -> set:
             pass
     except Exception:
         pass
+    # Enumerate ALL interface IPs via ifconfig (catches Tailscale, VPN, etc.)
+    try:
+        import subprocess as _sp, re as _re
+        out = _sp.run(['ifconfig'], capture_output=True, text=True, timeout=3).stdout
+        for match in _re.finditer(r'inet6?\s+([\da-f:.]+)', out):
+            ip = match.group(1).lower().split('%')[0]  # strip interface suffix from IPv6
+            if ip:
+                ips.add(ip)
+    except Exception:
+        pass
     return ips
 
 _OWN_HOST_IPS = _resolve_own_host_ips()
@@ -1518,6 +1528,32 @@ _pipeline_completed_at  = None   # ISO string
 _sse_lock    = threading.Lock()
 _sse_queues: list = []
 
+# ── TCIP onboarding job state ───────────────────────────────────────────────
+_tcip_lock      = threading.Lock()
+_tcip_running   = False
+_tcip_lines: list = []          # accumulated output lines for late-joining SSE clients
+_tcip_exit_code = None          # None = not yet finished
+_tcip_started_at = None
+_tcip_sse_lock  = threading.Lock()
+_tcip_sse_queues: list = []
+
+TCIP_SCRIPT = Path(__file__).parent.parent / 'cos-pipeline' / 'tools' / 'tcip_new_deal.py'
+# Resolve relative to this file's actual location
+_here_dir = Path(__file__).resolve().parent
+TCIP_SCRIPT = (_here_dir / 'tools' / 'tcip_new_deal.py').resolve()
+
+def _tcip_broadcast(line: str):
+    """Push one output line to all connected TCIP SSE clients."""
+    with _tcip_sse_lock:
+        dead = []
+        for q in _tcip_sse_queues:
+            try:
+                q.put_nowait(line)
+            except Exception:
+                dead.append(q)
+        for q in dead:
+            _tcip_sse_queues.remove(q)
+
 def _broadcast_refresh():
     """Notify all connected SSE clients that new data is ready."""
     with _sse_lock:
@@ -2482,6 +2518,21 @@ class Handler(BaseHTTPRequestHandler):
             # which broadens to {job, personal, untagged} workstreams and
             # adds the priority-targets panel.
             self._serve_html_template(COS_DASHBOARD, user)
+        elif self.path in ('/tcip', '/tcip/'):
+            self._handle_tcip_form(user)
+        elif self.path == '/tcip/stream':
+            self._handle_tcip_stream()
+        elif self.path.startswith('/tcip/result/'):
+            deal_id = self.path[len('/tcip/result/'):].strip('/')
+            self._handle_tcip_result(deal_id, user)
+        elif self.path == '/tcip/status':
+            with _tcip_lock:
+                self.send_json(200, {
+                    'running':   _tcip_running,
+                    'exitCode':  _tcip_exit_code,
+                    'startedAt': _tcip_started_at,
+                    'lines':     _tcip_lines[-200:],
+                })
         elif self.path == '/deals':
             self.send_response(301)
             self.send_header('Location', '/deals/')
@@ -3960,10 +4011,639 @@ class Handler(BaseHTTPRequestHandler):
                 if user != 'owner':
                     self._send_403(); return
             self._handle_admin_schedule_dial_in()
+        elif self.path == '/admin/schedule-webinar':
+            if not self._is_localhost():
+                user = self._authenticate()
+                if user != 'owner':
+                    self._send_403(); return
+            self._handle_admin_schedule_webinar()
         elif self.path == '/project-sync/update':
             self._handle_project_sync_update()
+        elif self.path == '/tcip/onboard':
+            self._handle_tcip_onboard()
         else:
             self.send_json(404, {'ok': False, 'error': 'not found'})
+
+    # ── TCIP Deal Onboarding ────────────────────────────────────────────────────
+
+    def _handle_tcip_form(self, user='owner'):
+        """GET /tcip/ — render the deal onboarding form."""
+        html = r"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TCIP — New Deal Onboarding</title>
+<link rel="stylesheet" href="/static/design-system.css">
+<style>
+  body { background: var(--bg); color: var(--ink); font-family: var(--font-body); margin: 0; }
+  .tcip-wrap { max-width: 740px; margin: 0 auto; padding: 36px 24px 80px; }
+  h1 { font-family: var(--font-display); font-size: 22px; font-weight: 700;
+       color: var(--navy); margin: 0 0 4px; }
+  .tcip-sub { font-size: 13px; color: var(--ink-faint); margin-bottom: 28px; }
+  .tcip-card { background: var(--paper); border: 1px solid var(--rule);
+               border-radius: var(--radius-md); padding: 24px 28px; margin-bottom: 20px;
+               box-shadow: var(--shadow-card); }
+  .tcip-card h2 { font-family: var(--font-display); font-size: 13px; font-weight: 700;
+                  color: var(--navy); text-transform: uppercase; letter-spacing: .06em;
+                  margin: 0 0 18px; border-bottom: 1px solid var(--rule-light); padding-bottom: 10px; }
+  .field { margin-bottom: 16px; }
+  .field label { display: block; font-size: 12px; font-weight: 600; color: var(--ink-mid);
+                 text-transform: uppercase; letter-spacing: .05em; margin-bottom: 5px; }
+  .field input, .field select {
+    width: 100%; box-sizing: border-box;
+    background: var(--white); border: 1px solid var(--rule);
+    border-radius: var(--radius-sm); padding: 8px 10px;
+    font-family: var(--font-body); font-size: 14px; color: var(--ink);
+    outline: none; transition: border-color .15s;
+  }
+  .field input:focus, .field select:focus { border-color: var(--navy-mid); }
+  .field .hint { font-size: 11px; color: var(--ink-ghost); margin-top: 4px; }
+  .check-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .check-item { display: flex; align-items: flex-start; gap: 8px; font-size: 13px;
+                color: var(--ink-mid); }
+  .check-item input[type=checkbox] { margin-top: 2px; accent-color: var(--navy); flex-shrink: 0; }
+  .check-item .ci-label { font-weight: 600; color: var(--ink); font-size: 12px; }
+  .check-item .ci-desc  { font-size: 11px; color: var(--ink-ghost); }
+  .tcip-run-btn {
+    background: var(--navy); color: var(--white);
+    border: none; border-radius: var(--radius-md);
+    padding: 11px 28px; font-size: 14px; font-weight: 600;
+    font-family: var(--font-body); cursor: pointer; letter-spacing: .03em;
+    transition: background .15s;
+  }
+  .tcip-run-btn:hover:not(:disabled) { background: var(--navy-mid); }
+  .tcip-run-btn:disabled { opacity: .5; cursor: not-allowed; }
+  #tcip-terminal {
+    display: none; margin-top: 24px;
+    background: #0f1e38; border-radius: var(--radius-md);
+    border: 1px solid var(--navy-mid); overflow: hidden;
+  }
+  #tcip-term-header {
+    background: #162d4a; padding: 8px 14px;
+    font-family: var(--font-data); font-size: 11px; color: #7a9bbc;
+    display: flex; align-items: center; gap: 8px;
+  }
+  #tcip-term-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--gold-mid); }
+  #tcip-term-body {
+    padding: 14px; font-family: var(--font-data); font-size: 12px;
+    line-height: 1.6; color: #c8d8e8; max-height: 480px; overflow-y: auto;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .term-ok   { color: #6bffb0; }
+  .term-err  { color: #ff6b6b; }
+  .term-head { color: var(--gold-mid); font-weight: 700; }
+  #tcip-result { display: none; margin-top: 16px; padding: 14px 18px;
+                 border-radius: var(--radius-md); font-size: 13px; font-weight: 600; }
+  .result-ok  { background: var(--green-bg); border: 1px solid var(--green-bd); color: var(--green); }
+  .result-err { background: var(--red-bg);   border: 1px solid var(--red-bd);   color: var(--red); }
+</style>
+</head>
+<body>
+{{TOPNAV}}
+<div class="tcip-wrap">
+  <h1>New Deal Onboarding</h1>
+  <p class="tcip-sub">Fills Drive folders, generates status.md and master_brief.md, updates deal-system-data.json, and prints project instructions.</p>
+
+  <div class="tcip-card">
+    <h2>Deal Identity</h2>
+    <div class="field">
+      <label>Deal Name</label>
+      <input id="f-name" type="text" placeholder="e.g. Black Bayou Energy Hub" autocomplete="off">
+    </div>
+    <div class="field">
+      <label>Deal ID <span style="font-weight:400;text-transform:none;letter-spacing:0">(auto-generated — edit if needed)</span></label>
+      <input id="f-id" type="text" placeholder="e.g. black_bayou" autocomplete="off" style="font-family:var(--font-data)">
+      <div class="hint">Lowercase, underscores only. Used as the key in deal-system-data.json.</div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div class="field">
+        <label>Lead Principal</label>
+        <select id="f-lead">
+          <option value="Yoni Gontownik">Yoni Gontownik</option>
+          <option value="Mark Saxe">Mark Saxe</option>
+          <option value="Nikola Trkulja">Nikola Trkulja</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Support Principal</label>
+        <select id="f-support">
+          <option value="">— none —</option>
+          <option value="Mark Saxe">Mark Saxe</option>
+          <option value="Yoni Gontownik">Yoni Gontownik</option>
+          <option value="Nikola Trkulja">Nikola Trkulja</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="tcip-card">
+    <h2>Drive Setup</h2>
+    <div class="field">
+      <label>Dataroom Folder ID or URL</label>
+      <input id="f-drive" type="text" placeholder="Paste Drive folder URL or bare folder ID"
+             style="font-family:var(--font-data);font-size:12px" autocomplete="off">
+      <div class="hint">Leave blank to have the script create a new folder automatically.</div>
+    </div>
+    <div class="field">
+      <label>Local Documents Path <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
+      <input id="f-docs" type="text" placeholder="/path/to/deal/docs — leave blank to skip">
+      <div class="hint">If you have deal docs locally, the script will read and analyse them via Claude API.</div>
+    </div>
+  </div>
+
+  <div class="tcip-card">
+    <h2>Triggers <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;color:var(--ink-ghost)">(optional — adds urgency flags to project instructions)</span></h2>
+    <div class="check-grid">
+      <label class="check-item"><input type="checkbox" name="trigger" value="cash_runway">
+        <span><div class="ci-label">Cash Runway</div><div class="ci-desc">Refi or runway deadline risk</div></span></label>
+      <label class="check-item"><input type="checkbox" name="trigger" value="regulatory_vote">
+        <span><div class="ci-label">Regulatory Vote</div><div class="ci-desc">Board or commission ruling upcoming</div></span></label>
+      <label class="check-item"><input type="checkbox" name="trigger" value="disintermediation">
+        <span><div class="ci-label">Disintermediation</div><div class="ci-desc">Introducer bypassing TCIP risk</div></span></label>
+      <label class="check-item"><input type="checkbox" name="trigger" value="process_deadline">
+        <span><div class="ci-label">Process Deadline</div><div class="ci-desc">Bake-off or bid deadline</div></span></label>
+      <label class="check-item"><input type="checkbox" name="trigger" value="relationship_tension">
+        <span><div class="ci-label">Relationship Tension</div><div class="ci-desc">Key counterparty tension</div></span></label>
+      <label class="check-item"><input type="checkbox" name="trigger" value="market_news">
+        <span><div class="ci-label">Market News</div><div class="ci-desc">News affecting the thesis</div></span></label>
+    </div>
+  </div>
+
+  <div class="tcip-card">
+    <h2>Rules <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:11px;color:var(--ink-ghost)">(optional — shapes how Claude analyses the deal)</span></h2>
+    <div class="check-grid">
+      <label class="check-item"><input type="checkbox" name="rule" value="regulated_asset">
+        <span><div class="ci-label">Regulated Asset</div><div class="ci-desc">Rate cases, FERC/state regulation governs returns</div></span></label>
+      <label class="check-item"><input type="checkbox" name="rule" value="development_asset">
+        <span><div class="ci-label">Development Asset</div><div class="ci-desc">Permits, timelines, probabilistic approvals</div></span></label>
+      <label class="check-item"><input type="checkbox" name="rule" value="relationship_sensitive">
+        <span><div class="ci-label">Relationship Sensitive</div><div class="ci-desc">Fee confidentiality, attribution flags</div></span></label>
+    </div>
+  </div>
+
+  <button class="tcip-run-btn" id="tcip-run-btn" onclick="tcipRun()">Run Onboarding</button>
+
+  <div id="tcip-terminal">
+    <div id="tcip-term-header">
+      <div id="tcip-term-dot"></div>
+      <span id="tcip-term-label">tcip_new_deal.py</span>
+    </div>
+    <div id="tcip-term-body"></div>
+  </div>
+  <div id="tcip-result"></div>
+</div>
+
+<script>
+const nameEl    = document.getElementById('f-name');
+const idEl      = document.getElementById('f-id');
+const leadEl    = document.getElementById('f-lead');
+const supportEl = document.getElementById('f-support');
+
+// Auto-generate deal ID from name
+nameEl.addEventListener('input', () => {
+  const slug = nameEl.value.trim()
+    .toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+  idEl.value = slug;
+});
+
+// Keep lead/support in sync
+leadEl.addEventListener('change', () => {
+  supportEl.value = '';
+});
+
+function extractDriveFolderId(raw) {
+  raw = raw.trim();
+  const m = raw.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+  if (m) return m[1];
+  if (/^[a-zA-Z0-9_-]{20,}$/.test(raw)) return raw;
+  return raw;
+}
+
+let evtSource = null;
+
+function tcipRun() {
+  const dealName = nameEl.value.trim();
+  const dealId   = idEl.value.trim();
+  if (!dealName || !dealId) { alert('Deal name and Deal ID are required.'); return; }
+
+  const triggers = [...document.querySelectorAll('input[name=trigger]:checked')].map(e => e.value);
+  const rules    = [...document.querySelectorAll('input[name=rule]:checked')].map(e => e.value);
+  const driveRaw = document.getElementById('f-drive').value.trim();
+  const driveId  = driveRaw ? extractDriveFolderId(driveRaw) : '';
+  const docsPath = document.getElementById('f-docs').value.trim();
+
+  const btn = document.getElementById('tcip-run-btn');
+  btn.disabled = true;
+  btn.textContent = 'Running…';
+
+  const term     = document.getElementById('tcip-terminal');
+  const termBody = document.getElementById('tcip-term-body');
+  const result   = document.getElementById('tcip-result');
+  term.style.display  = 'block';
+  result.style.display = 'none';
+  termBody.textContent = '';
+
+  // Open SSE stream first so we don't miss early lines
+  if (evtSource) { evtSource.close(); evtSource = null; }
+  evtSource = new EventSource('/tcip/stream');
+  evtSource.onmessage = (e) => {
+    if (e.data === '__DONE__') {
+      evtSource.close(); evtSource = null;
+      return;
+    }
+    const line = e.data;
+    const span = document.createElement('span');
+    if (line.startsWith('✓') || line.startsWith('SUCCESS') || line.includes('✅'))
+      span.className = 'term-ok';
+    else if (line.startsWith('❌') || line.startsWith('Error') || line.toLowerCase().includes('error'))
+      span.className = 'term-err';
+    else if (line.startsWith('═') || line.startsWith('─') || line.startsWith('PHASE') || line.startsWith('Phase'))
+      span.className = 'term-head';
+    span.textContent = line + '\n';
+    termBody.appendChild(span);
+    termBody.scrollTop = termBody.scrollHeight;
+  };
+  evtSource.onerror = () => { evtSource.close(); evtSource = null; };
+
+  // POST to kick off the job
+  fetch('/tcip/onboard', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ dealName, dealId,
+      lead: leadEl.value, support: supportEl.value,
+      driveId, docsPath, triggers, rules })
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (!data.ok) {
+      btn.disabled = false; btn.textContent = 'Run Onboarding';
+      result.className = 'result-err'; result.style.display = 'block';
+      result.textContent = data.error || 'Failed to start job.';
+    }
+    // SSE handles the rest; poll /tcip/status for final exit code
+    pollResult();
+  })
+  .catch(err => {
+    btn.disabled = false; btn.textContent = 'Run Onboarding';
+    result.className = 'result-err'; result.style.display = 'block';
+    result.textContent = 'Request failed: ' + err;
+  });
+}
+
+function pollResult() {
+  setTimeout(() => {
+    fetch('/tcip/status').then(r => r.json()).then(s => {
+      if (s.running) { pollResult(); return; }
+      const btn    = document.getElementById('tcip-run-btn');
+      const result = document.getElementById('tcip-result');
+      btn.disabled = false;
+      btn.textContent = 'Run Onboarding';
+      if (s.exitCode === 0) {
+        const dealId = document.getElementById('f-id').value.trim();
+        result.className = 'result-ok'; result.style.display = 'block';
+        result.innerHTML = '✓ Onboarding complete. <a href="/tcip/result/' + dealId + '" style="color:var(--navy);font-weight:700">View next steps & project instructions →</a>';
+      } else if (s.exitCode !== null) {
+        result.className = 'result-err'; result.style.display = 'block';
+        result.textContent = '✗ Script exited with errors (code ' + s.exitCode + '). Review terminal output above.';
+      } else {
+        pollResult();
+      }
+    }).catch(() => pollResult());
+  }, 2000);
+}
+</script>
+</body>
+</html>"""
+        self._serve_html(html, inject_chrome=True, user=user)
+
+    def _handle_tcip_stream(self):
+        """GET /tcip/stream — SSE: streams stdout lines from the running tcip job.
+        Late-joining clients receive buffered lines already captured, then live ones."""
+        global _tcip_lines
+        q = queue.Queue(maxsize=500)
+        with _tcip_sse_lock:
+            _tcip_sse_queues.append(q)
+
+        self.send_response(200)
+        self.send_header('Content-Type',  'text/event-stream')
+        self.send_header('Cache-Control', 'no-cache')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Connection',    'keep-alive')
+        self.end_headers()
+
+        # Replay already-captured lines for late joiners
+        with _tcip_lock:
+            replay = list(_tcip_lines)
+            finished = not _tcip_running and _tcip_exit_code is not None
+        try:
+            for line in replay:
+                self.wfile.write(f'data: {line}\n\n'.encode())
+            if finished:
+                self.wfile.write(b'data: __DONE__\n\n')
+            self.wfile.flush()
+
+            if not finished:
+                while True:
+                    try:
+                        msg = q.get(timeout=25)
+                        self.wfile.write(f'data: {msg}\n\n'.encode())
+                        self.wfile.flush()
+                        if msg == '__DONE__':
+                            break
+                    except queue.Empty:
+                        self.wfile.write(b': heartbeat\n\n')
+                        self.wfile.flush()
+        except Exception:
+            pass
+        finally:
+            with _tcip_sse_lock:
+                if q in _tcip_sse_queues:
+                    _tcip_sse_queues.remove(q)
+
+    def _handle_tcip_result(self, deal_id: str, user: str = 'owner'):
+        """GET /tcip/result/<deal_id> — show Drive IDs, copyable instructions, manual steps."""
+        import re as _re
+        if not _re.match(r'^[a-z][a-z0-9_]*$', deal_id):
+            self.send_json(400, {'error': 'invalid deal_id'}); return
+
+        tcip_data_dir = TCIP_SCRIPT.parent / 'data' / 'project-sync' / deal_id
+        instr_path    = tcip_data_dir / 'project_instructions.txt'
+        sync_path     = TCIP_SCRIPT.parent / 'sync-state.json'
+
+        instructions = ''
+        if instr_path.exists():
+            instructions = instr_path.read_text(encoding='utf-8')
+
+        # Pull Drive IDs from sync-state.json if present
+        status_id = brief_id = drive_url = ''
+        if sync_path.exists():
+            try:
+                ss = json.loads(sync_path.read_text())
+                deals = ss if isinstance(ss, dict) else {}
+                d = deals.get(deal_id) or deals.get('deals', {}).get(deal_id, {})
+                status_id = d.get('status_file_id', '')
+                brief_id  = d.get('brief_file_id', d.get('master_brief_id', ''))
+                drive_url = d.get('drive_folder_url', d.get('drive_folder_id', ''))
+            except Exception:
+                pass
+
+        # Also try deal-system-data.json
+        dsd_path = TCIP_SCRIPT.parent / 'deal-system-data.json'
+        if (not status_id) and dsd_path.exists():
+            try:
+                dsd = json.loads(dsd_path.read_text())
+                for d in dsd.get('deals', []):
+                    if d.get('deal_id') == deal_id:
+                        status_id = d.get('status_file_id', '')
+                        brief_id  = d.get('brief_file_id', d.get('master_brief_id', ''))
+                        drive_url = d.get('drive_folder_url', d.get('drive_folder_id', ''))
+                        break
+            except Exception:
+                pass
+
+        def drive_link(fid, label):
+            if not fid: return f'<span style="color:var(--ink-ghost)">not found</span>'
+            url = f'https://docs.google.com/document/d/{fid}/edit'
+            return f'<a href="{url}" target="_blank" style="color:var(--navy);font-family:var(--font-data);font-size:12px">{fid}</a> <span style="color:var(--ink-ghost);font-size:11px">({label})</span>'
+
+        drive_folder_html = ''
+        if drive_url:
+            if not drive_url.startswith('http'):
+                drive_url = f'https://drive.google.com/drive/folders/{drive_url}'
+            drive_folder_html = f'<a href="{drive_url}" target="_blank" style="color:var(--navy)">Open Drive folder →</a>'
+
+        instr_escaped = instructions.replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')
+        instr_block = (f'<pre id="instr-text" style="margin:0;white-space:pre-wrap;word-break:break-word;'
+                       f'font-size:12px;line-height:1.6;color:var(--ink)">{instr_escaped}</pre>'
+                       if instructions else
+                       '<p style="color:var(--ink-faint);font-size:13px">project_instructions.txt not found — '
+                       'check that the onboarding script completed Phase 7 successfully.</p>')
+
+        html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TCIP — {deal_id} — Next Steps</title>
+<link rel="stylesheet" href="/static/design-system.css">
+<style>
+  body {{ background:var(--bg); color:var(--ink); font-family:var(--font-body); margin:0; }}
+  .wrap {{ max-width:780px; margin:0 auto; padding:36px 24px 80px; }}
+  h1 {{ font-family:var(--font-display); font-size:22px; font-weight:700; color:var(--navy); margin:0 0 4px; }}
+  .sub {{ font-size:13px; color:var(--ink-faint); margin-bottom:28px; }}
+  .card {{ background:var(--paper); border:1px solid var(--rule); border-radius:var(--radius-md);
+           padding:24px 28px; margin-bottom:20px; box-shadow:var(--shadow-card); }}
+  .card h2 {{ font-family:var(--font-display); font-size:13px; font-weight:700; color:var(--navy);
+              text-transform:uppercase; letter-spacing:.06em; margin:0 0 16px;
+              border-bottom:1px solid var(--rule-light); padding-bottom:10px; }}
+  .id-row {{ display:flex; align-items:center; gap:10px; margin-bottom:10px; }}
+  .id-label {{ font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.05em;
+               color:var(--ink-mid); min-width:100px; }}
+  .step {{ display:flex; gap:14px; margin-bottom:18px; }}
+  .step-num {{ flex-shrink:0; width:26px; height:26px; border-radius:50%;
+               background:var(--navy); color:var(--white); font-size:12px; font-weight:700;
+               display:flex; align-items:center; justify-content:center; margin-top:1px; }}
+  .step-body {{ flex:1; }}
+  .step-body strong {{ font-size:14px; color:var(--ink); display:block; margin-bottom:4px; }}
+  .step-body p {{ font-size:13px; color:var(--ink-mid); margin:0 0 6px; line-height:1.5; }}
+  .step-body a {{ color:var(--navy); font-weight:600; }}
+  .instr-box {{ background:var(--white); border:1px solid var(--rule); border-radius:var(--radius-sm);
+                padding:16px; max-height:380px; overflow-y:auto; position:relative; }}
+  .copy-btn {{ background:var(--navy); color:var(--white); border:none; border-radius:var(--radius-sm);
+               padding:7px 16px; font-size:12px; font-weight:600; font-family:var(--font-body);
+               cursor:pointer; letter-spacing:.03em; }}
+  .copy-btn:hover {{ background:var(--navy-mid); }}
+  .copied {{ background:var(--green) !important; }}
+  .success-banner {{ background:var(--green-bg); border:1px solid var(--green-bd); color:var(--green);
+                     border-radius:var(--radius-md); padding:12px 18px; font-size:13px;
+                     font-weight:600; margin-bottom:20px; }}
+</style>
+</head>
+<body>
+{{{{TOPNAV}}}}
+<div class="wrap">
+  <div class="success-banner">✓ Onboarding complete for <strong>{deal_id}</strong>. Four manual steps remain — all browser-only, ~10 minutes.</div>
+  <h1>Next Steps</h1>
+  <p class="sub">Automated phases 1–7 are done. Complete the steps below to finish wiring the deal.</p>
+
+  <div class="card">
+    <h2>Files Created</h2>
+    <div class="id-row"><span class="id-label">Status.md</span>{drive_link(status_id, 'status file')}</div>
+    <div class="id-row"><span class="id-label">Master Brief</span>{drive_link(brief_id, 'master brief')}</div>
+    <div class="id-row"><span class="id-label">Drive Folder</span>{drive_folder_html or '<span style=\"color:var(--ink-ghost)\">see terminal output</span>'}</div>
+  </div>
+
+  <div class="card">
+    <h2>Step 1 — Create the Claude Project</h2>
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-body">
+        <strong>Open Claude → Projects → New Project</strong>
+        <p>Name it exactly: <code style="background:var(--navy-light);padding:2px 6px;border-radius:2px;font-family:var(--font-data)">TCIP — {deal_id}</code></p>
+        <a href="https://claude.ai/projects" target="_blank">claude.ai/projects →</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Step 2 — Upload Knowledge Base File</h2>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-body">
+        <strong>In the new Project → Files → click +</strong>
+        <p>Upload <code style="background:var(--navy-light);padding:2px 6px;border-radius:2px;font-family:var(--font-data)">tcip_firm_context.md</code> — one file only.</p>
+        <p style="font-size:12px;color:var(--ink-ghost)">File is at: ~/Downloads/tcip_firm_context.md (or ~/Downloads/files/tcip_firm_context.md)</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Step 3 — Paste Project Instructions</h2>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-body">
+        <strong>In the Project → Instructions → click + → paste everything below → Save</strong>
+        <p style="margin-bottom:12px">Copy the full block, then paste into the Claude Project instructions field.</p>
+        <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+          <button class="copy-btn" id="copy-btn" onclick="copyInstructions()">Copy Instructions</button>
+        </div>
+        <div class="instr-box">{instr_block}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Step 4 — Wire Project to Dashboard</h2>
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-body">
+        <strong>Grab the Project URL from claude.ai after Step 1</strong>
+        <p>Copy the project ID from the URL (the part after <code style="font-family:var(--font-data)">/project/</code>), then run this in Terminal:</p>
+        <div style="background:#0f1e38;border-radius:var(--radius-sm);padding:12px 14px;margin-top:8px;font-family:var(--font-data);font-size:11px;color:#c8d8e8;white-space:pre-wrap">curl -X POST http://localhost:7777/project-sync/update \\
+  -H "Content-Type: application/json" \\
+  -d '{{{{
+    "deal_id": "{deal_id}",
+    "project_url": "https://claude.ai/project/YOUR-PROJECT-ID",
+    "last_session_date": "{datetime.now().strftime('%Y-%m-%d')}",
+    "session_summary": "Initial setup complete"
+  }}}}'</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Step 5 — First Session</h2>
+    <div class="step">
+      <div class="step-num">5</div>
+      <div class="step-body">
+        <strong>Open the new Project in Claude</strong>
+        <p>Drop in any deal documents. Say: <em>"New deal document. Run the critical driver framework."</em></p>
+        <p>Review and confirm the output. Say <em>"session close"</em> at end of session.</p>
+      </div>
+    </div>
+  </div>
+
+  <p style="margin-top:8px"><a href="/tcip/" style="color:var(--navy);font-size:13px">← Onboard another deal</a></p>
+</div>
+<script>
+function copyInstructions() {{
+  const text = document.getElementById('instr-text');
+  if (!text) return;
+  navigator.clipboard.writeText(text.textContent).then(() => {{
+    const btn = document.getElementById('copy-btn');
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => {{ btn.textContent = 'Copy Instructions'; btn.classList.remove('copied'); }}, 2000);
+  }});
+}}
+</script>
+</body>
+</html>"""
+        self._serve_html(html, inject_chrome=True, user=user)
+
+    def _handle_tcip_onboard(self):
+        """POST /tcip/onboard — validate form JSON, spawn tcip_new_deal.py, stream output via SSE."""
+        global _tcip_running, _tcip_lines, _tcip_exit_code, _tcip_started_at
+
+        body = self._read_json_body() or {}
+        deal_name = str(body.get('dealName') or '').strip()
+        deal_id   = str(body.get('dealId')   or '').strip()
+        lead      = str(body.get('lead')      or 'Yoni Gontownik').strip()
+        support   = str(body.get('support')   or '').strip()
+        drive_id  = str(body.get('driveId')   or '').strip()
+        docs_path = str(body.get('docsPath')  or '').strip()
+        triggers  = [str(t) for t in (body.get('triggers') or []) if t]
+        rules     = [str(r) for r in (body.get('rules')    or []) if r]
+
+        if not deal_name or not deal_id:
+            self.send_json(400, {'ok': False, 'error': 'dealName and dealId are required'}); return
+
+        import re as _re
+        if not _re.match(r'^[a-z][a-z0-9_]*$', deal_id):
+            self.send_json(400, {'ok': False, 'error': 'dealId must be lowercase letters, digits, underscores'}); return
+
+        if not TCIP_SCRIPT.exists():
+            self.send_json(503, {'ok': False, 'error': f'tcip_new_deal.py not found at {TCIP_SCRIPT}'}); return
+
+        with _tcip_lock:
+            if _tcip_running:
+                self.send_json(409, {'ok': False, 'error': 'An onboarding job is already running'}); return
+            _tcip_running   = True
+            _tcip_lines     = []
+            _tcip_exit_code = None
+            _tcip_started_at = datetime.now().isoformat()
+
+        self.send_json(202, {'ok': True, 'status': 'started', 'dealId': deal_id})
+
+        def _run():
+            global _tcip_running, _tcip_exit_code
+            cmd = [sys.executable, str(TCIP_SCRIPT), '--deal-name', deal_name,
+                   '--deal-id', deal_id, '--lead', lead]
+            if support:
+                cmd += ['--support', support]
+            if drive_id:
+                cmd += ['--drive-folder-id', drive_id]
+            if docs_path:
+                cmd += ['--docs-folder', docs_path]
+            if triggers:
+                cmd += ['--triggers'] + triggers
+            if rules:
+                cmd += ['--rules'] + rules
+
+            env = os.environ.copy()
+            env['PYTHONUNBUFFERED'] = '1'
+            cred_link = TCIP_SCRIPT.parent / 'credentials.json'
+            cred_src  = Path.home() / 'credentials' / 'gdrive_credentials.json'
+            if not cred_link.exists() and cred_src.exists():
+                try: cred_link.symlink_to(cred_src)
+                except Exception: pass
+
+            try:
+                proc = subprocess.Popen(
+                    cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    env=env, cwd=str(TCIP_SCRIPT.parent), text=True, bufsize=1,
+                )
+                for line in proc.stdout:
+                    line = line.rstrip('\n')
+                    with _tcip_lock:
+                        _tcip_lines.append(line)
+                    _tcip_broadcast(line)
+                proc.wait()
+                exit_code = proc.returncode
+            except Exception as e:
+                err = f'❌ Failed to start script: {e}'
+                with _tcip_lock:
+                    _tcip_lines.append(err)
+                _tcip_broadcast(err)
+                exit_code = 1
+
+            with _tcip_lock:
+                _tcip_running   = False
+                _tcip_exit_code = exit_code
+            _tcip_broadcast('__DONE__')
+
+        threading.Thread(target=_run, daemon=True, name='tcip-onboard').start()
 
     def _parse_form(self):
         length = int(self.headers.get('Content-Length', 0))
@@ -4527,6 +5207,137 @@ class Handler(BaseHTTPRequestHandler):
             detail += f' · dial {phone}' + (f' PIN {pin}' if pin else '')
         _pipeline_note = ' Twilio recording pipeline armed.' if _railway_registered else (' (Railway pipeline not reached — check internet)' if (phone and _call_recording_enabled) else '')
         self._redirect_admin(('ok', f'Scheduled "{title}" for {detail}. Recording will start automatically.{_pipeline_note}'))
+
+    def _handle_admin_schedule_webinar(self):
+        import uuid, subprocess as _sp
+        from datetime import datetime, timedelta
+        form = self._parse_form()
+        title       = (form.get('title')               or '').strip()
+        webinar_url = (form.get('webinar_url')         or '').strip()
+        reg_number  = (form.get('registration_number') or '').strip()
+        date_str    = (form.get('date')                or '').strip()
+        time_str    = (form.get('start_time')          or '').strip()
+        dur_min     = int(form.get('duration_min')     or 60)
+        category    = (form.get('category')            or 'Other').strip()
+
+        if not title or not webinar_url or not date_str or not time_str:
+            self._redirect_admin(('err', 'Title, webinar URL, date, and start time are required.'))
+            return
+
+        try:
+            start_dt = datetime.fromisoformat(f'{date_str}T{time_str}:00')
+            end_dt   = start_dt + timedelta(minutes=dur_min)
+        except Exception:
+            self._redirect_admin(('err', 'Invalid date or time format.'))
+            return
+
+        if start_dt < datetime.now():
+            self._redirect_admin(('err', 'Start time is in the past.'))
+            return
+
+        meeting_id = str(uuid.uuid4())
+        meeting = {
+            'id':           meeting_id,
+            'title':        title,
+            'type':         'webinar',
+            'webinar_url':  webinar_url,
+            'reg_number':   reg_number,
+            'category':     category,
+            'source':       'admin-schedule',
+            'start':        start_dt.isoformat(),
+            'end':          end_dt.isoformat(),
+            'scheduled_at': datetime.now().isoformat(),
+        }
+
+        # Persist to .scheduled_meetings.json
+        sched_path = Path.home() / 'recordings' / 'calls' / '.scheduled_meetings.json'
+        try:
+            (Path.home() / 'recordings' / 'calls').mkdir(parents=True, exist_ok=True)
+            sched = json.loads(sched_path.read_text()) if sched_path.exists() else {}
+            sched[meeting_id] = meeting
+            sched_path.write_text(json.dumps(sched, indent=2))
+        except Exception as e:
+            self._redirect_admin(('err', f'Failed to save schedule: {e}'))
+            return
+
+        # Write a launchd plist that fires join_webinar.sh at start_dt - 2min
+        launch_dt  = start_dt - timedelta(minutes=2)
+        plist_name = f'com.yoni.webinar.{meeting_id}.plist'
+        plist_path = Path.home() / 'Library' / 'LaunchAgents' / plist_name
+
+        join_script    = str(Path.home() / 'scripts' / 'join_webinar.applescript')
+        recorder       = str(Path.home() / 'tomac-cove-pipeline' / 'call_recorder.py')
+        reg_extractor  = str(Path.home() / 'scripts' / 'extract_webinar_registration.py')
+        rec_log        = str(Path.home() / 'recordings' / 'calls' / f'webinar_{meeting_id}.log')
+
+        # Shell wrapper: extract registration info → open Chrome → start recorder
+        wrapper_path = Path.home() / 'recordings' / 'calls' / f'join_{meeting_id}.sh'
+        reg_arg = f'number:{reg_number}' if reg_number else ''
+        wrapper_content = f'''#!/bin/bash
+# Auto-generated webinar join script for: {title}
+# Scheduled: {start_dt.isoformat()}
+LOG="{rec_log}"
+echo "[$(date)] Starting webinar join for: {title}" >> "$LOG"
+
+# Extract registration info from Gmail if not manually provided
+REG_INFO="{reg_arg}"
+if [ -z "$REG_INFO" ]; then
+    REG_INFO=$(python3 "{reg_extractor}" "{title}" 2>>"$LOG" || echo "none:")
+fi
+echo "[$(date)] Registration info: $REG_INFO" >> "$LOG"
+
+# Open Chrome and join
+osascript "{join_script}" "{webinar_url}" "$REG_INFO" >> "$LOG" 2>&1 &
+
+# Start recording (give Chrome 15s to fully load and join)
+sleep 15
+python3 "{recorder}" start --title "{title}" >> "$LOG" 2>&1 &
+
+echo "[$(date)] Join and record launched." >> "$LOG"
+'''
+        wrapper_path.write_text(wrapper_content)
+        wrapper_path.chmod(0o755)
+
+        # Stop-recording plist fires at end_dt
+        stop_plist_name = f'com.yoni.webinar.{meeting_id}.stop.plist'
+        stop_plist_path = Path.home() / 'Library' / 'LaunchAgents' / stop_plist_name
+
+        def _plist(label, hour, minute, second, program_args):
+            return {
+                'Label':           label,
+                'ProgramArguments': program_args,
+                'StartCalendarInterval': {'Hour': hour, 'Minute': minute, 'Second': second},
+                'RunAtLoad':       False,
+                'StandardOutPath': rec_log,
+                'StandardErrorPath': rec_log,
+            }
+
+        import plistlib
+        plist_data = _plist(
+            f'com.yoni.webinar.{meeting_id}',
+            launch_dt.hour, launch_dt.minute, 0,
+            ['/bin/bash', str(wrapper_path)],
+        )
+        plist_path.write_bytes(plistlib.dumps(plist_data))
+
+        stop_plist_data = _plist(
+            f'com.yoni.webinar.{meeting_id}.stop',
+            end_dt.hour, end_dt.minute, 0,
+            [sys.executable, recorder, 'stop'],
+        )
+        stop_plist_path.write_bytes(plistlib.dumps(stop_plist_data))
+
+        # Load both plists
+        for p in [plist_path, stop_plist_path]:
+            try:
+                _sp.run(['launchctl', 'load', str(p)], check=True, capture_output=True)
+            except Exception as e:
+                self._redirect_admin(('err', f'Failed to load launchd job: {e}'))
+                return
+
+        detail = f'{date_str} at {time_str} ({dur_min} min) · {webinar_url}'
+        reg_note = f' Registration {"manually set" if reg_number else "will be extracted from Gmail"}.'
+        self._redirect_admin(('ok', f'Webinar "{title}" scheduled for {detail}.{reg_note} Chrome will open automatically at {launch_dt.strftime("%-I:%M %p")}.'))
 
     def _redirect_admin(self, flash):
         # POST → redirect → GET pattern; encode flash in query string

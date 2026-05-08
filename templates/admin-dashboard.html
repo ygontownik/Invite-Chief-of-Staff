@@ -451,6 +451,8 @@
         <button class="adm-tab" onclick="switchTab('auth-health',this)" id="auth-health-tab-btn">
           Auth Health <span class="rt-tab-badge" id="auth-tab-badge"></span>
         </button>
+        <button class="adm-tab" onclick="switchTab('recover',this)">Recover Deleted</button>
+        <button class="adm-tab" onclick="switchTab('tcip-onboard',this);document.getElementById('tab-tcip-onboard').scrollIntoView({behavior:'smooth',block:'start'})">New Deal</button>
       </div>
 
       <!-- ══ TAB 1: Access Management ══════════════════════════ -->
@@ -507,10 +509,14 @@
 
         <div class="tc-card" style="margin-bottom:28px">
           <div class="adm-section-label" style="margin-bottom:4px">Schedule a dial-in recording</div>
-          <p style="font-family:var(--font-body);font-size:.825rem;color:var(--ink-mid);margin:0 0 20px">
-            The recorder dials in and captures audio automatically at the scheduled time.
-            Leave phone blank for computer-audio recording (Teams / Zoom / Meet).
+          <p style="font-family:var(--font-body);font-size:.825rem;color:var(--ink-mid);margin:0 0 12px">
+            For calls with a <strong>phone number + PIN</strong> (Teams bridge, Zoom dial-in, any conference bridge).
+            Twilio dials in and records automatically at the scheduled time.
           </p>
+          <div style="background:#fef9ec;border:1px solid #e8d98a;border-radius:6px;padding:10px 14px;margin-bottom:20px;font-family:var(--font-body);font-size:.8rem;color:#7a6200">
+            <strong>Webinar or browser-based link?</strong> This form does not support Cvent, Zoom webinar URLs, Google Meet links, or any URL-based join.
+            Use the <strong>Schedule a Webinar Recording</strong> form below instead.
+          </div>
           <form method="POST" action="/admin/schedule-dial-in" id="schedule-form">
             <div class="adm-row">
               <div class="adm-field" style="flex:1;min-width:100%">
@@ -573,9 +579,9 @@
             </div>
             <div class="adm-row">
               <div class="adm-field">
-                <label>Dial-in number</label>
+                <label>Dial-in number <span style="color:var(--red)">*</span></label>
                 <input type="tel" name="phone" placeholder="+1 (555) 000-0000">
-                <span class="adm-hint">Leave blank for computer audio only</span>
+                <span class="adm-hint">Required — for webinar URLs use the form below</span>
               </div>
               <div class="adm-field">
                 <label>Access code</label>
@@ -590,6 +596,68 @@
               Schedule Recording
             </button>
           </form>
+        </div>
+
+        <div class="tc-card" style="margin-bottom:28px">
+          <div class="adm-section-label" style="margin-bottom:4px">Schedule a webinar recording</div>
+          <p style="font-family:var(--font-body);font-size:.825rem;color:var(--ink-mid);margin:0 0 12px">
+            For <strong>browser-based events</strong>: Cvent, Zoom webinar links, Google Meet, Teams meeting URLs.
+            Chrome opens the URL automatically; BlackHole captures audio. Twilio is not used.
+          </p>
+          <form method="POST" action="/admin/schedule-webinar" id="webinar-form">
+            <div class="adm-row">
+              <div class="adm-field" style="flex:1;min-width:240px">
+                <label>Event title <span style="color:var(--red)">*</span></label>
+                <input type="text" name="title" placeholder="e.g. ERCOT Workshop 9" required>
+              </div>
+              <div class="adm-field">
+                <label>Category</label>
+                <select name="category">
+                  <option value="Tomac Cove">Tomac Cove</option>
+                  <option value="Recruiting">Recruiting</option>
+                  <option value="Other" selected>Other</option>
+                </select>
+              </div>
+            </div>
+            <div class="adm-row">
+              <div class="adm-field" style="flex:1;min-width:100%">
+                <label>Webinar URL <span style="color:var(--red)">*</span></label>
+                <input type="url" name="webinar_url" placeholder="https://web.cvent.com/... or https://zoom.us/..." required style="width:100%">
+                <span class="adm-hint">Paste the event or join link — registration URL from confirmation email is used automatically if found in Gmail</span>
+              </div>
+            </div>
+            <div class="adm-row">
+              <div class="adm-field">
+                <label>Registration / confirmation number</label>
+                <input type="text" name="registration_number" placeholder="Auto-extracted from Gmail — override here if needed">
+                <span class="adm-hint">Leave blank to pull from confirmation email automatically</span>
+              </div>
+            </div>
+            <div class="adm-row">
+              <div class="adm-field">
+                <label>Date (ET) <span style="color:var(--red)">*</span></label>
+                <input type="date" name="date" required>
+              </div>
+              <div class="adm-field">
+                <label>Start time (ET) <span style="color:var(--red)">*</span></label>
+                <input type="time" name="start_time" required>
+              </div>
+              <div class="adm-field">
+                <label>Duration</label>
+                <select name="duration_min">
+                  <option value="30">30 min</option>
+                  <option value="45">45 min</option>
+                  <option value="60" selected>1 hour</option>
+                  <option value="90">90 min</option>
+                  <option value="120">2 hours</option>
+                </select>
+              </div>
+            </div>
+            <button type="submit" class="tc-btn tc-btn--gold" style="margin-top:4px">
+              Schedule Webinar Recording
+            </button>
+          </form>
+        </div>
           <script>
           function parseInvite() {
             const txt = document.getElementById('invite-parser').value || '';
@@ -869,14 +937,17 @@
         </div>
       </div>
       <div class="rt-toast" id="rt-toast"></div>
+      </div><!-- /tab-routines -->
 
-      <div class="tc-card" style="margin-top:24px">
-        <div class="adm-section-label" style="margin-bottom:14px">Recover Deleted</div>
-        <div style="font-size:.825rem;color:var(--ink-mid);margin-bottom:10px">
-          Items deleted from the Status dashboard. Last 50 shown. Restore to make the item reappear on the next render.
+      <div id="tab-recover" class="adm-tab-panel">
+        <div class="tc-card">
+          <div class="adm-section-label" style="margin-bottom:14px">Recover Deleted</div>
+          <div style="font-size:.825rem;color:var(--ink-mid);margin-bottom:10px">
+            Items deleted from the Status dashboard. Last 50 shown. Restore to make the item reappear on the next render.
+          </div>
+          {{DELETIONS_PANEL}}
         </div>
-        {{DELETIONS_PANEL}}
-      </div>
+      </div><!-- /tab-recover -->
 
       <!-- ══ TAB 6: Setup & Repos ══════════════════════════════ -->
       <div id="tab-setup" class="adm-tab-panel">
@@ -1138,6 +1209,87 @@
           </p>
         </div>
       </div><!-- /tab-auth-health -->
+
+      <!-- ══ TAB: New Deal Onboarding ══════════════════════════ -->
+      <div id="tab-tcip-onboard" class="adm-tab-panel">
+        <div class="tc-card" style="margin-bottom:20px">
+          <div class="adm-section-label" style="margin-bottom:16px">Deal Identity</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+            <div>
+              <label class="adm-label">Deal Name</label>
+              <input id="tc-f-name" class="adm-input" type="text" placeholder="e.g. Black Bayou Energy Hub" autocomplete="off">
+            </div>
+            <div>
+              <label class="adm-label">Deal ID <span style="font-weight:400;text-transform:none;letter-spacing:0">(auto-generated)</span></label>
+              <input id="tc-f-id" class="adm-input" type="text" placeholder="black_bayou" autocomplete="off" style="font-family:var(--font-data)">
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div>
+              <label class="adm-label">Lead Principal</label>
+              <select id="tc-f-lead" class="adm-input">
+                <option value="Yoni Gontownik">Yoni Gontownik</option>
+                <option value="Mark Saxe">Mark Saxe</option>
+                <option value="Nikola Trkulja">Nikola Trkulja</option>
+              </select>
+            </div>
+            <div>
+              <label class="adm-label">Support Principal</label>
+              <select id="tc-f-support" class="adm-input">
+                <option value="">— none —</option>
+                <option value="Mark Saxe">Mark Saxe</option>
+                <option value="Yoni Gontownik">Yoni Gontownik</option>
+                <option value="Nikola Trkulja">Nikola Trkulja</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="tc-card" style="margin-bottom:20px">
+          <div class="adm-section-label" style="margin-bottom:16px">Drive Setup</div>
+          <div style="margin-bottom:14px">
+            <label class="adm-label">Dataroom Folder ID or URL</label>
+            <input id="tc-f-drive" class="adm-input" type="text" placeholder="Paste Drive folder URL or bare folder ID — leave blank to auto-create" style="font-family:var(--font-data);font-size:12px" autocomplete="off">
+          </div>
+          <div>
+            <label class="adm-label">Local Documents Path <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
+            <input id="tc-f-docs" class="adm-input" type="text" placeholder="/path/to/deal/docs">
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
+          <div class="tc-card">
+            <div class="adm-section-label" style="margin-bottom:12px">Triggers <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--ink-ghost)">(optional)</span></div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;cursor:pointer"><input type="checkbox" name="tc-trigger" value="cash_runway" style="margin-top:2px;accent-color:var(--navy)"><span><strong>Cash Runway</strong><br><span style="color:var(--ink-ghost);font-size:11px">Refi or runway deadline risk</span></span></label>
+              <label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;cursor:pointer"><input type="checkbox" name="tc-trigger" value="regulatory_vote" style="margin-top:2px;accent-color:var(--navy)"><span><strong>Regulatory Vote</strong><br><span style="color:var(--ink-ghost);font-size:11px">Board or commission ruling upcoming</span></span></label>
+              <label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;cursor:pointer"><input type="checkbox" name="tc-trigger" value="disintermediation" style="margin-top:2px;accent-color:var(--navy)"><span><strong>Disintermediation</strong><br><span style="color:var(--ink-ghost);font-size:11px">Introducer bypassing TCIP risk</span></span></label>
+              <label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;cursor:pointer"><input type="checkbox" name="tc-trigger" value="process_deadline" style="margin-top:2px;accent-color:var(--navy)"><span><strong>Process Deadline</strong><br><span style="color:var(--ink-ghost);font-size:11px">Bake-off or bid deadline</span></span></label>
+              <label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;cursor:pointer"><input type="checkbox" name="tc-trigger" value="relationship_tension" style="margin-top:2px;accent-color:var(--navy)"><span><strong>Relationship Tension</strong><br><span style="color:var(--ink-ghost);font-size:11px">Key counterparty tension</span></span></label>
+              <label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;cursor:pointer"><input type="checkbox" name="tc-trigger" value="market_news" style="margin-top:2px;accent-color:var(--navy)"><span><strong>Market News</strong><br><span style="color:var(--ink-ghost);font-size:11px">News affecting the thesis</span></span></label>
+            </div>
+          </div>
+          <div class="tc-card">
+            <div class="adm-section-label" style="margin-bottom:12px">Rules <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:10px;color:var(--ink-ghost)">(optional)</span></div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;cursor:pointer"><input type="checkbox" name="tc-rule" value="regulated_asset" style="margin-top:2px;accent-color:var(--navy)"><span><strong>Regulated Asset</strong><br><span style="color:var(--ink-ghost);font-size:11px">Rate cases, FERC/state regulation governs returns</span></span></label>
+              <label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;cursor:pointer"><input type="checkbox" name="tc-rule" value="development_asset" style="margin-top:2px;accent-color:var(--navy)"><span><strong>Development Asset</strong><br><span style="color:var(--ink-ghost);font-size:11px">Permits, timelines, probabilistic approvals</span></span></label>
+              <label style="display:flex;align-items:flex-start;gap:8px;font-size:12px;cursor:pointer"><input type="checkbox" name="tc-rule" value="relationship_sensitive" style="margin-top:2px;accent-color:var(--navy)"><span><strong>Relationship Sensitive</strong><br><span style="color:var(--ink-ghost);font-size:11px">Fee confidentiality, attribution flags</span></span></label>
+            </div>
+          </div>
+        </div>
+
+        <button class="btn-primary" id="tc-run-btn" onclick="tcipAdminRun()" style="margin-bottom:20px">Run Onboarding</button>
+
+        <div id="tc-terminal" style="display:none;background:#0f1e38;border-radius:var(--radius-md);border:1px solid #2d4a6b;overflow:hidden;margin-bottom:16px">
+          <div style="background:#162d4a;padding:7px 14px;font-family:var(--font-data);font-size:11px;color:#7a9bbc;display:flex;align-items:center;gap:8px">
+            <span style="width:7px;height:7px;border-radius:50%;background:#c48c2a;display:inline-block"></span>
+            <span id="tc-term-label">tcip_new_deal.py</span>
+          </div>
+          <div id="tc-term-body" style="padding:14px;font-family:var(--font-data);font-size:12px;line-height:1.6;color:#c8d8e8;max-height:400px;overflow-y:auto;white-space:pre-wrap;word-break:break-word"></div>
+        </div>
+        <div id="tc-result" style="display:none;padding:12px 16px;border-radius:var(--radius-md);font-size:13px;font-weight:600;margin-bottom:8px"></div>
+      </div><!-- /tab-tcip-onboard -->
 
     </div><!-- /adm-wrap -->
   </main>
@@ -2352,6 +2504,99 @@ document.addEventListener('DOMContentLoaded', function() {
     if (panel && panel.classList.contains('visible')) loadAuthHealth();
   }, 60 * 1000);
 });
+
+// ── TCIP New Deal Onboarding ─────────────────────────────────────────────────
+(function() {
+  var nameEl = document.getElementById('tc-f-name');
+  var idEl   = document.getElementById('tc-f-id');
+  var leadEl = document.getElementById('tc-f-lead');
+  var suppEl = document.getElementById('tc-f-support');
+
+  if (nameEl) nameEl.addEventListener('input', function() {
+    idEl.value = nameEl.value.trim()
+      .toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+  });
+  if (leadEl) leadEl.addEventListener('change', function() {
+    suppEl.value = '';
+  });
+})();
+
+var _tcipEvtSource = null;
+
+function tcipAdminRun() {
+  var dealName = document.getElementById('tc-f-name').value.trim();
+  var dealId   = document.getElementById('tc-f-id').value.trim();
+  if (!dealName || !dealId) { alert('Deal name and Deal ID are required.'); return; }
+
+  var driveRaw = document.getElementById('tc-f-drive').value.trim();
+  var driveId  = driveRaw ? (driveRaw.match(/\/folders\/([a-zA-Z0-9_-]+)/) || [,''])[1] || driveRaw : '';
+  var docsPath = document.getElementById('tc-f-docs').value.trim();
+  var triggers = Array.from(document.querySelectorAll('input[name="tc-trigger"]:checked')).map(function(e){ return e.value; });
+  var rules    = Array.from(document.querySelectorAll('input[name="tc-rule"]:checked')).map(function(e){ return e.value; });
+
+  var btn     = document.getElementById('tc-run-btn');
+  var term    = document.getElementById('tc-terminal');
+  var termBody= document.getElementById('tc-term-body');
+  var result  = document.getElementById('tc-result');
+
+  btn.disabled = true; btn.textContent = 'Running…';
+  term.style.display = 'block'; result.style.display = 'none'; termBody.textContent = '';
+
+  if (_tcipEvtSource) { _tcipEvtSource.close(); _tcipEvtSource = null; }
+  _tcipEvtSource = new EventSource('/tcip/stream');
+  _tcipEvtSource.onmessage = function(e) {
+    if (e.data === '__DONE__') { _tcipEvtSource.close(); _tcipEvtSource = null; return; }
+    var span = document.createElement('span');
+    var line = e.data;
+    if (line.indexOf('✓') === 0 || line.indexOf('SUCCESS') === 0 || line.indexOf('✅') !== -1)
+      span.style.color = '#6bffb0';
+    else if (line.indexOf('❌') === 0 || line.toLowerCase().indexOf('error') === 0)
+      span.style.color = '#ff6b6b';
+    else if (line.indexOf('═') === 0 || line.indexOf('─') === 0 || line.indexOf('PHASE') === 0 || line.indexOf('Phase') === 0)
+      span.style.color = '#c48c2a';
+    span.textContent = line + '\n';
+    termBody.appendChild(span);
+    termBody.scrollTop = termBody.scrollHeight;
+  };
+
+  fetch('/tcip/onboard', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ dealName: dealName, dealId: dealId,
+      lead: document.getElementById('tc-f-lead').value,
+      support: document.getElementById('tc-f-support').value,
+      driveId: driveId, docsPath: docsPath, triggers: triggers, rules: rules })
+  }).then(function(r){ return r.json(); }).then(function(data) {
+    if (!data.ok) {
+      btn.disabled = false; btn.textContent = 'Run Onboarding';
+      result.style.cssText = 'display:block;padding:12px 16px;border-radius:4px;font-size:13px;font-weight:600;background:#FAF0F0;border:1px solid #D4A0A0;color:#7A2020;margin-bottom:8px';
+      result.textContent = data.error || 'Failed to start.';
+    }
+    tcipPollResult(dealId);
+  }).catch(function(err) {
+    btn.disabled = false; btn.textContent = 'Run Onboarding';
+    result.style.cssText = 'display:block;padding:12px 16px;border-radius:4px;font-size:13px;font-weight:600;background:#FAF0F0;border:1px solid #D4A0A0;color:#7A2020;margin-bottom:8px';
+    result.textContent = 'Request failed: ' + err;
+  });
+}
+
+function tcipPollResult(dealId) {
+  setTimeout(function() {
+    fetch('/tcip/status').then(function(r){ return r.json(); }).then(function(s) {
+      if (s.running) { tcipPollResult(dealId); return; }
+      var btn    = document.getElementById('tc-run-btn');
+      var result = document.getElementById('tc-result');
+      btn.disabled = false; btn.textContent = 'Run Onboarding';
+      if (s.exitCode === 0) {
+        result.style.cssText = 'display:block;padding:12px 16px;border-radius:4px;font-size:13px;font-weight:600;background:#EBF4EE;border:1px solid #9ECDB0;color:#2B5E3A;margin-bottom:8px';
+        result.innerHTML = '✓ Onboarding complete. <a href="/tcip/result/' + dealId + '" target="_blank" style="color:#1B2D45;font-weight:700">View next steps & project instructions →</a>';
+      } else if (s.exitCode !== null) {
+        result.style.cssText = 'display:block;padding:12px 16px;border-radius:4px;font-size:13px;font-weight:600;background:#FAF0F0;border:1px solid #D4A0A0;color:#7A2020;margin-bottom:8px';
+        result.textContent = '✗ Script exited with errors (code ' + s.exitCode + '). Review terminal output above.';
+      } else { tcipPollResult(dealId); }
+    }).catch(function(){ tcipPollResult(dealId); });
+  }, 2000);
+}
 </script>
 </body>
 </html>

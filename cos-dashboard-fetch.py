@@ -12,7 +12,7 @@ Run in the background by:
 
 cos-dashboard-refresh.py (the FAST path) reads the JSON this writes and injects HTML instantly.
 """
-import json, os, re, sys
+import json, os, pickle, re, sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -22,7 +22,8 @@ from googleapiclient.discovery import build
 
 _HERE      = Path(__file__).parent             # ~/dashboards/app/
 _ROOT      = _HERE.parent                                 # ~/dashboards/
-CREDS_PATH = Path.home() / 'credentials/token.json'
+CREDS_PATH        = Path.home() / 'credentials/token.json'         # calendar.readonly only
+GDRIVE_PICKLE_PATH = Path.home() / 'credentials/gdrive_token.pickle' # drive + documents
 STATE_PATH = _ROOT / 'data' / 'compiled' / 'dashboard-data.json'
 
 # Track G — costs/quota tile aggregator. Pure-stdlib, no I/O at import time.
@@ -136,18 +137,23 @@ def _is_deal_ws(ws):
     return ws in ('deals', 'tomac')  # noqa: tenant-leak (legacy workstream alias)
 
 # ── Services ──────────────────────────────────────────────
+def _gdrive_creds():
+    """Load gdrive_token.pickle (drive + documents scopes)."""
+    with open(GDRIVE_PICKLE_PATH, 'rb') as f:
+        return pickle.load(f)
+
 def get_services():
-    # token.json has: drive + documents + calendar.readonly + gmail
-    # Gmail reads handled by scheduled capture pipeline (7:29am) via MCP tools.
-    creds    = Credentials.from_authorized_user_file(str(CREDS_PATH))
-    docs_svc = build('docs',     'v1', credentials=creds)
-    cal_svc  = build('calendar', 'v3', credentials=creds)
+    # Docs/Drive use gdrive_token.pickle (drive + documents scopes).
+    # Calendar uses token.json (calendar.readonly scope).
+    docs_svc = build('docs',     'v1', credentials=_gdrive_creds())
+    cal_creds = Credentials.from_authorized_user_file(str(CREDS_PATH))
+    cal_svc  = build('calendar', 'v3', credentials=cal_creds)
     return docs_svc, cal_svc
 
 def _fetch_doc_worker(doc_id, doc_cache):
     """Thread-safe doc fetch: creates its own service instances per thread."""
-    creds    = Credentials.from_authorized_user_file(str(CREDS_PATH))
-    docs_svc = build('docs',  'v1', credentials=creds)
+    creds     = _gdrive_creds()
+    docs_svc  = build('docs',  'v1', credentials=creds)
     drive_svc = build('drive', 'v3', credentials=creds)
     return get_doc_text_cached(docs_svc, drive_svc, doc_id, doc_cache)
 
@@ -2597,7 +2603,7 @@ def main(dry_run: bool = False):
         'fundraising':      _ts('fundraising',      fundraising_strategy),
         'marketCommentary': _ts('marketCommentary', market_entries),
         'recentActivity':   _ts('recentActivity',   recent_activity),
-        'emailActivity':    _ts('emailActivity',    email_activity),
+        'emailActivity':    now_iso,                              # always current — gmail-mini owns email via its own LaunchAgent
         'emailQueue':       _ts('emailQueue',       email_queue),
         'contentTracker':   _ts('contentTracker',   content_tracker),
     }
