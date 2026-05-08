@@ -77,11 +77,13 @@ Step 0b. Read Yoni Personal Context from Google Drive:
     Personal analytical defaults: investor frame, six-section memo
     structure, action-tail rules.
 
-Step 0c. Read TCIP Deal Presentation Standards from Google Drive:
+Step 0c. (LAZY-LOAD) TCIP Deal Presentation Standards lives at:
     File ID: 1kb_Uwt6G_F-VuzLsLTyTZcO8ZNPJfFuLWre-W3FIlek
-    Folder:  _Claude Context
-    Visual + structural standards for deal decks, pitch materials,
-    JSX briefs. Apply to any presentation output for this deal.
+    Folder:  _Claude Context (root)
+    DO NOT load at session start. Read this ONLY when producing a deck,
+    JSX brief, pitch artifact, or other formal presentation output for
+    this deal. For status updates, narrative analysis, or tactical
+    discussion, skip -- it's 17KB of style guidance you don't need.
 
 Step 1. Read this deal's status doc from Google Drive:
     File ID: {STATUS_FILE_ID}
@@ -92,14 +94,14 @@ Step 2. Read this deal's master brief from Google Drive:
     File ID: {BRIEF_FILE_ID}
     Long-form deal narrative — thesis, counterparty maps, history.
 
-Step 3. Read this deal's dashboard_entry.json from Google Drive folder:
+Step 3. (LAZY-LOAD) {DEAL_ID}_dashboard_entry.json lives at:
     Folder ID: {CLAUDE_CONTEXT_FOLDER_ID}
     Filename:  {DEAL_ID}_dashboard_entry.json
     Lives inside this deal's _Claude Context/ subfolder (alongside
-    status + master_brief). Structured deal card consumed by the
-    TCIP dashboard. /deal-sync auto-derives this from the status
-    doc on a 2h cadence; sessions can update it via a ---DEAL-UPDATE---
-    block + /deal-update.
+    status + master_brief). DO NOT load at session start. Its content
+    overlaps with status.md for read purposes. Fetch it ONLY when
+    about to emit a ---DEAL-UPDATE--- block (in which case read the
+    current entry first so you can produce a complete updated entry).
 
 Step 4. Scan the deal's top-level Drive folder ({DRIVE_FOLDER_ID})
     for new transcripts/memos not yet in `_Ready/`. Open with a
