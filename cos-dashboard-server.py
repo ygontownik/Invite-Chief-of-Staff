@@ -5275,6 +5275,7 @@ function copyInstructions() {{
         _recorder_env = _os.environ.get('CALL_RECORDER_PATH', '')
         _recorder_candidates = [
             _recorder_env,
+            str(Path.home() / 'cos-pipeline' / 'call_recorder.py'),
             str(Path.home() / 'scripts' / 'call_recorder.py'),
             str(Path.home() / 'cos-pipeline' / 'tools' / 'call_recorder.py'),
         ]
