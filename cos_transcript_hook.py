@@ -841,6 +841,17 @@ def main():
         print(f"[hook] warning  Could not move to _Ready/ (non-critical): {e}", file=sys.stderr)
 
     warmup()
+
+    # Signal /deal-sync to fire on the next Stop hook turn — the just-routed
+    # transcript will be in a deal folder shortly (via Drive organizer), and
+    # we want it folded into status/brief without waiting for the 10-min poll.
+    # The Stop hook checks for this flag on every fire and clears it.
+    try:
+        from pathlib import Path as _P
+        _P("/tmp/dash-state-hook-extract.trigger").touch()
+    except Exception:
+        pass
+
     print(f"[hook] Done. {added} follow-ups | {len(contacts)} contacts | dashboard pinged.", flush=True)
 
 

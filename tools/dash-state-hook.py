@@ -68,7 +68,8 @@ DEAL_ENTRY_SYNC_SCRIPT = str(COS_PIPELINE_DIR / "tools" / "sync_deals_from_drive
 
 # /deal-sync extraction (Claude Code session — subscription-backed, never raw API)
 DEAL_EXTRACT_SYNC_LOCK = Path("/tmp/dash-state-hook-extract.last")
-DEAL_EXTRACT_SYNC_INTERVAL = 7200  # 2 hours; revisit if cost analysis says otherwise
+DEAL_EXTRACT_SYNC_INTERVAL = 600   # 10 min minimum gap between spawns
+DEAL_EXTRACT_TRIGGER_FLAG = Path("/tmp/dash-state-hook-extract.trigger")
 DEAL_EXTRACT_LOG = str(COS_DATA_DIR / "logs" / "deal_sync.log")
 
 # Reference-doc mirror (Drive -> tenant config repo, git-tracked)
@@ -98,6 +99,9 @@ SYSTEM_MAP_INPUTS = [
 
 # DEAL-INTEL block scan from Claude Code transcripts (cheap; runs every fire)
 INTEL_CAPTURE_SCRIPT = str(COS_PIPELINE_DIR / "tools" / "intel_capture.py")
+
+# actions.md local→Drive mirror state tracker
+ACTIONS_MIRROR_STATE_PATH = COS_DATA_DIR / "data" / "actions_mirror_state.json"
 
 # claude.ai project chat scrape — runs /capture-deal-chats headless every 4h
 CHAT_CAPTURE_LOCK = Path("/tmp/dash-state-hook-chat-capture.last")
@@ -612,6 +616,56 @@ def run_chat_capture():
         return False
 
 
+def maybe_mirror_actions_to_drive():
+    """For each registered deal, if its local data/deals/<deal>/actions.md is
+    newer than the tracker, push the content to the Drive actions doc
+    (deal_docs.<deal>.actions.doc_id in drive-docs.yaml). Cheap: only fires
+    on real local edits. Idempotent."""
+    try:
+        import yaml as _yaml, json as _json
+        cfg = _yaml.safe_load(open(DRIVE_DOCS_YAML))
+    except Exception:
+        return False
+    deal_docs = (cfg or {}).get("deal_docs") or {}
+    if not deal_docs:
+        return False
+
+    state = {}
+    if ACTIONS_MIRROR_STATE_PATH.exists():
+        try:
+            state = _json.loads(ACTIONS_MIRROR_STATE_PATH.read_text())
+        except Exception:
+            state = {}
+
+    pushed = 0
+    for deal_id, entry in deal_docs.items():
+        actions_id = (entry.get("actions") or {}).get("doc_id")
+        if not actions_id:
+            continue
+        local_path = COS_DATA_DIR / "data" / "deals" / deal_id / "actions.md"
+        if not local_path.exists():
+            continue
+        mtime = local_path.stat().st_mtime
+        if state.get(deal_id) == mtime:
+            continue  # no change since last mirror
+        try:
+            from googleapiclient.http import MediaInMemoryUpload
+            svc = get_drive_service_for_refsync()
+            content = local_path.read_text()
+            media = MediaInMemoryUpload(content.encode("utf-8"), mimetype="text/plain")
+            svc.files().update(fileId=actions_id, media_body=media).execute()
+            state[deal_id] = mtime
+            pushed += 1
+        except Exception as e:
+            print(f"[dash-state-hook] actions.md mirror failed for {deal_id}: {e}", file=sys.stderr)
+
+    if pushed:
+        ACTIONS_MIRROR_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        ACTIONS_MIRROR_STATE_PATH.write_text(_json.dumps(state, indent=2))
+        print(f"[dash-state-hook] mirrored {pushed} actions.md → Drive")
+    return pushed > 0
+
+
 def maybe_regen_system_map():
     """Regenerate SYSTEM-MAP.md if any of its source configs are newer than
     the map. Cheap (no LLM, no network). Runs at end of every hook fire."""
@@ -664,9 +718,17 @@ def main():
         run_deal_entry_sync()
 
     # Deal extract sync — runs /deal-sync slash command in a headless Claude
-    # Code session (every 2h). AI work happens in that session; this hook only
-    # spawns it.
-    if seconds_since_deal_extract_sync() >= DEAL_EXTRACT_SYNC_INTERVAL:
+    # Code session. Reactive: fires whenever any deal has new files OR another
+    # pipeline drops a trigger flag (e.g. transcript hook routing a new file
+    # into a deal folder). 10 min minimum gap between spawns to avoid
+    # thrashing during bursts. The any_deal_has_new_files() short-circuit
+    # makes idle cycles cost ~0.
+    if seconds_since_deal_extract_sync() >= DEAL_EXTRACT_SYNC_INTERVAL or DEAL_EXTRACT_TRIGGER_FLAG.exists():
+        if DEAL_EXTRACT_TRIGGER_FLAG.exists():
+            try:
+                DEAL_EXTRACT_TRIGGER_FLAG.unlink()
+            except Exception:
+                pass
         run_deal_extract_sync()
 
     # Reference-docs Drive → git mirror — snapshots TCIP firm/personal context
@@ -691,6 +753,12 @@ def main():
     # Routes any ---DEAL-INTEL--- blocks emitted during CC sessions into the
     # corresponding deal's log.json before next /deal-sync cycle.
     run_intel_capture_scan()
+
+    # actions.md local→Drive mirror — pushes per-deal actions.md to its Drive
+    # _Claude Context/ doc whenever the local file mtime is newer than the
+    # tracker. Local is canonical (compile-dashboard reads it); Drive copy is
+    # the Claude-readable mirror.
+    maybe_mirror_actions_to_drive()
 
     # SYSTEM-MAP.md regen — cheap; only runs when source configs newer than map.
     maybe_regen_system_map()
