@@ -272,6 +272,32 @@ def move_file_to_folder(token, file_id, new_folder_id, old_folder_id):
         return json.loads(r.read())
 
 
+def create_shortcut_in_folder(token, target_file_id, target_name, folder_id):
+    """Create a Drive shortcut to target_file_id inside folder_id.
+
+    Drive dropped multi-parent support in 2020. Shortcuts are the correct
+    way to make one file appear in multiple deal Transcripts folders — they
+    open the original doc, share its edit history, and cost no extra storage.
+    """
+    body = json.dumps({
+        "name": target_name,
+        "mimeType": "application/vnd.google-apps.shortcut",
+        "parents": [folder_id],
+        "shortcutDetails": {"targetId": target_file_id},
+    }).encode()
+    req = urllib.request.Request(
+        "https://www.googleapis.com/drive/v3/files?fields=id,name",
+        data=body,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=15) as r:
+        return json.loads(r.read())
+
+
 # Legacy category→folder map. Only used if a GoogleDriveFolderSource has no
 # category_folders configured and we need a fallback for root-file moving.
 _LEGACY_CATEGORY_FOLDER = {
@@ -1867,7 +1893,12 @@ def process_transcript(token, file_id, file_name, hint_category, source_label, s
             print(f"    ⚠️   Rename failed (non-critical): {e}", file=sys.stderr)
 
     stats["processed"] += 1
-    return {"category": category, "summary": summary, "call_date": call_date}
+    deal_log_entries = data.get("deal_log_entries", []) or []
+    mentioned_deal_ids = list(dict.fromkeys(
+        e["deal_id"] for e in deal_log_entries if e.get("deal_id")
+    ))
+    return {"category": category, "summary": summary, "call_date": call_date,
+            "deal_ids": mentioned_deal_ids, "renamed_to": new_name}
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -1927,6 +1958,19 @@ def main():
         print(f"✅  Pipeline context loaded ({len(pipeline_context)} chars)\n", flush=True)
     else:
         print("⚠️   No pipeline context found (deal-pipeline-data.json missing)\n", flush=True)
+
+    # Build deal_id → transcripts_folder_id lookup for post-processing routing
+    _deal_data_path = Path.home() / "cos-pipeline" / "tools" / "deal-system-data.json"
+    deal_transcripts_map: dict[str, str] = {}
+    try:
+        _dd = json.loads(_deal_data_path.read_text())
+        for _d in _dd.get("deals", []):
+            if _d.get("deal_id") and _d.get("transcripts_folder_id"):
+                deal_transcripts_map[_d["deal_id"]] = _d["transcripts_folder_id"]
+        if deal_transcripts_map:
+            print(f"✅  Deal transcripts map: {len(deal_transcripts_map)} deals\n", flush=True)
+    except Exception as _de:
+        print(f"⚠️   Could not load deal transcripts map: {_de}\n", flush=True)
 
     # Load dedup tracker
     tracker = load_dedup()
@@ -2064,6 +2108,17 @@ def main():
                                     print(f"    📁  Moved to {cat} folder", flush=True)
                                 except Exception as e:
                                     print(f"    ⚠️   Could not move to {cat} folder: {e}", file=sys.stderr)
+                        # Create shortcuts in deal Transcripts subfolders
+                        # (Drive dropped multi-parent in 2020; shortcuts open the original)
+                        _sc_name = result.get("renamed_to") or fname
+                        for deal_id in (result.get("deal_ids") or []):
+                            tf_id = deal_transcripts_map.get(deal_id)
+                            if tf_id:
+                                try:
+                                    create_shortcut_in_folder(token, fid, _sc_name, tf_id)
+                                    print(f"    📂  Shortcut → {deal_id} Transcripts", flush=True)
+                                except Exception as e:
+                                    print(f"    ⚠️   Could not shortcut to {deal_id} Transcripts: {e}", file=sys.stderr)
                     save_dedup(tracker)
 
         # ── Local folder source ────────────────────────────────────────────────
