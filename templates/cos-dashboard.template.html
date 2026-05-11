@@ -2177,12 +2177,17 @@ function buildTeamActionsCard() {
   const awaitFilter = location.pathname.indexOf('/personal') === 0 ? 'job-tc' : 'tc-only';
 
   // ── My Team actions ───────────────────────────────────────────────
-  const allItems = [
+  let allItems = [
     ...(tc.liveDeals             || []).map(t => ({ ...t, category: 'Live Deal' })),
     ...(tc.dealOrigination       || []).map(t => ({ ...t, category: 'Origination' })),
     ...(tc.capitalRaisingAdvisors|| []).map(t => ({ ...t, category: 'Fundraising' })),
     ...(tc.prospectiveInvestors  || []).map(t => ({ ...t, category: 'LP' })),
   ].filter(t => (t.myAction && t.myAction.trim()) || (t.nextStep && t.nextStep.trim()));
+  const _taKey = t => 'ta:' + (t.name || '') + '|' + (t.myAction || t.nextStep || '').slice(0, 60);
+  allItems = allItems.filter(t => {
+    const k = _taKey(t);
+    return !state.dismissedActions.includes(k) && !__isDel('team-action', k);
+  });
 
   // Overdue first within each section (H5)
   allItems.sort((a, b) => {
@@ -2223,6 +2228,7 @@ function buildTeamActionsCard() {
     const urgPrompt = urgCls === 'overdue'
       ? `<span class="overdue-prompt" title="Overdue — click to classify">URGENT</span>`
       : '';
+    const taKey = _taKey(t);
     return `
     <div style="padding:5px 0 5px 6px;border-bottom:1px solid rgba(148,163,184,0.1);${overdueStyle}display:flex;gap:8px;align-items:flex-start">
       ${dot}
@@ -2232,6 +2238,7 @@ function buildTeamActionsCard() {
       </div>
       ${urgPrompt}
       ${urgLbl ? `<span style="font-size:9px;font-weight:700;color:${urgColor};white-space:nowrap;letter-spacing:0.05em;text-transform:uppercase;flex-shrink:0">${esc(urgLbl)}</span>` : ''}
+      <button class="dismiss-btn" onclick="event.stopPropagation();dismissAction('${taKey}','${taKey}')" title="Dismiss" style="flex-shrink:0;margin-top:2px">×</button>
     </div>`;
   }
 
