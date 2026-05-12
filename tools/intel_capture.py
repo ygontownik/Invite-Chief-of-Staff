@@ -13,6 +13,10 @@ Sub-commands:
                         blocks since last scan; route each to log.json
   parse-stdin           read text from stdin, extract any DEAL-INTEL blocks,
                         route them. Used for ad-hoc piping and testing.
+  route-transcript      read a call/meeting transcript (local file or Drive
+                        file ID), identify all registered deals mentioned,
+                        extract per-deal intel, write to each deal's log.json.
+                        Uses Claude API — model claude-sonnet-4-6.
   scan-claude-ai        TODO: Chrome MCP scrape of claude.ai project chats.
                         Requires running inside a Claude Code session that
                         has Chrome MCP loaded — invoked via /deal-sync child.
@@ -41,6 +45,7 @@ case-insensitive section names. Required: `deal:` line. If `deal:` doesn't
 match a registered deal_id, the block is logged to errors and skipped.
 """
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -304,6 +309,263 @@ def cmd_parse_stdin(args):
     print(f"parse-stdin: routed={routed}, errors={errors}")
 
 
+def _load_deal_registry_full():
+    """Return list of {deal_id, name, keywords} for the extraction prompt."""
+    try:
+        data = json.loads(DEAL_REGISTRY.read_text())
+        return [
+            {"deal_id": d["deal_id"], "name": d.get("name", d["deal_id"]),
+             "keywords": d.get("keywords", [])}
+            for d in data.get("deals", [])
+        ]
+    except Exception:
+        return []
+
+
+def _read_local_transcript(path):
+    """Read a local transcript file."""
+    return Path(path).read_text(errors="replace")
+
+
+def _read_drive_transcript(file_id):
+    """Read a Drive file via deal_extract_helpers.py read-file."""
+    result = subprocess.run(
+        ["/opt/homebrew/bin/python3", str(HELPER_BIN), "read-file", file_id],
+        capture_output=True, text=True, timeout=60,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"read-file failed: {result.stderr.strip()}")
+    return result.stdout
+
+
+def _extract_intel_from_transcript(transcript_text, deals, explicit_date=None):
+    """Call Claude Sonnet to extract per-deal intel AND workstream envelope items.
+
+    Returns {
+      call_date,
+      deals: [{deal_id, title, summary, facts, counterparties, actions}],
+      envelope_items: [{content_type, content, ...}]  # LP intel, new deals, actions, themes
+    }
+    """
+    try:
+        import anthropic
+    except ImportError:
+        raise RuntimeError("anthropic package not installed — pip3 install anthropic")
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise RuntimeError("ANTHROPIC_API_KEY not set")
+
+    deal_list = "\n".join(
+        f"  - {d['deal_id']}: {d['name']}"
+        + (f" (keywords: {', '.join(d['keywords'])})" if d.get('keywords') else "")
+        for d in deals
+    )
+    date_hint = f"\nThe call date is known to be {explicit_date}." if explicit_date else \
+        "\nInfer the call date from the transcript (look for timestamps, date mentions, recording headers). If not found, use today's date."
+
+    MAX_CHARS = 120_000
+    if len(transcript_text) > MAX_CHARS:
+        transcript_text = transcript_text[:MAX_CHARS] + "\n\n[transcript truncated]"
+
+    prompt = f"""You are processing a call/meeting transcript for an infrastructure investment firm (Tomac Cove Infrastructure Partners).
+
+Extract ALL intelligence from this transcript across two layers:
+
+LAYER 1 — Registered deal intel (for deal narrative synthesis):
+REGISTERED DEALS:
+{deal_list}
+
+LAYER 2 — Workstream items (for operational dashboard):
+Content types:
+- my_action: concrete follow-up action Yoni or the team must take
+- awaiting_external: commitment or deliverable owed by a third party
+- lp_intel: intelligence about an LP, capital partner, or fundraising counterparty
+- origination_idea: a new deal/asset/company not in the registered deal list above
+- deal_takeaway: intel about a registered deal that doesn't need full narrative synthesis
+- theme_note: a market theme or thesis observation not tied to a specific deal
+
+{date_hint}
+
+TRANSCRIPT:
+{transcript_text}
+
+Return a JSON object with EXACTLY this structure:
+{{
+  "call_date": "YYYY-MM-DD",
+  "deals": [
+    {{
+      "deal_id": "<must match a registered deal_id exactly>",
+      "title": "<one-line>",
+      "summary": "<1-2 sentences of most important new info>",
+      "facts": ["<specific fact with numbers/names>"],
+      "counterparties": ["<name (firm)> — <new info>"],
+      "actions": ["<YYYY-MM-DD>: <verb-first action> [@owner]"]
+    }}
+  ],
+  "envelope_items": [
+    {{
+      "content_type": "<one of the types above>",
+      "content": "<the intel, action, or idea — specific, verb-first for actions>",
+      "counterparty": "<Firm — Person if relevant>",
+      "parent_id": "<deal_id or lp-slug if applicable, else omit>",
+      "due": "<YYYY-MM-DD if action has deadline, else omit>",
+      "owner": "<Yoni|Mark|external — omit if unclear>"
+    }}
+  ]
+}}
+
+Rules:
+- deals[]: only registered deals with MEANINGFUL new intel; omit brief mentions
+- envelope_items[]: capture everything else — LP mentions, new deal ideas, action items, themes
+- For actions from the call: include as my_action (owner=Yoni/Mark) or awaiting_external (owner=external)
+- For new companies/assets discussed as potential deals: use origination_idea
+- For LP or investor mentions with new intel: use lp_intel
+- If neither layer has anything meaningful, return {{"call_date": "...", "deals": [], "envelope_items": []}}
+- Return ONLY the JSON object, no other text"""
+
+    client = anthropic.Anthropic(api_key=api_key)
+    response = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=4096,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    text = response.content[0].text.strip()
+    text = re.sub(r'^```(?:json)?\s*', '', text)
+    text = re.sub(r'\s*```$', '', text)
+    return json.loads(text)
+
+
+def cmd_route_transcript(args):
+    """Read a transcript, identify deals mentioned, write per-deal log.json entries."""
+    # Read the transcript
+    if args.drive_file_id:
+        print(f"Reading Drive file {args.drive_file_id}...")
+        try:
+            transcript_text = _read_drive_transcript(args.drive_file_id)
+            source_label = f"drive:{args.drive_file_id}"
+        except Exception as e:
+            print(f"ERROR reading Drive file: {e}", file=sys.stderr)
+            sys.exit(1)
+    elif args.file:
+        print(f"Reading {args.file}...")
+        try:
+            transcript_text = _read_local_transcript(args.file)
+            source_label = f"file:{Path(args.file).name}"
+        except Exception as e:
+            print(f"ERROR reading file: {e}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        print("Reading transcript from stdin...")
+        transcript_text = sys.stdin.read()
+        source_label = "stdin"
+
+    if not transcript_text.strip():
+        print("ERROR: empty transcript", file=sys.stderr)
+        sys.exit(1)
+
+    # Dedup: skip if already processed (keyed by SHA256 of content)
+    content_hash = hashlib.sha256(transcript_text.encode()).hexdigest()[:16]
+    state = load_state()
+    rt_state = state.setdefault("route-transcript", {})
+    if content_hash in rt_state and not getattr(args, 'force', False):
+        print(f"SKIP: transcript already processed (hash {content_hash}). Use --force to reprocess.")
+        return
+
+    # Load deal registry
+    deals = _load_deal_registry_full()
+    if not deals:
+        print("ERROR: could not load deal registry", file=sys.stderr)
+        sys.exit(1)
+
+    # Extract intel via Claude
+    print(f"Extracting intel for {len(deals)} registered deals...")
+    try:
+        result = _extract_intel_from_transcript(transcript_text, deals, args.date)
+    except Exception as e:
+        print(f"ERROR during extraction: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    call_date = result.get("call_date", datetime.now().strftime("%Y-%m-%d"))
+    deal_hits = result.get("deals", [])
+    envelope_hits = result.get("envelope_items", [])
+    print(f"Call date: {call_date} | Deals with intel: {len(deal_hits)} | Envelope items: {len(envelope_hits)}")
+
+    registered = load_registered_deal_ids()
+    deal_routed = 0
+    deal_errors = 0
+    envelope_routed = 0
+
+    # Phase 1: route to per-deal log.json for registered deals
+    for hit in deal_hits:
+        deal_id = hit.get("deal_id", "").lower().strip()
+        if not deal_id or deal_id not in registered:
+            # Unknown deal → emit as origination_idea so it surfaces in CoS inbox
+            envelope_hits.append({
+                "content_type": "origination_idea",
+                "content": f"[{hit.get('deal_id', 'unknown')}] {hit.get('summary') or hit.get('title', '')}",
+                "counterparty": ", ".join(str(c) for c in hit.get("counterparties", []))[:120] or None,
+            })
+            print(f"  unregistered deal {hit.get('deal_id')!r} → origination_idea")
+            continue
+
+        block_data = {
+            "deal": deal_id,
+            "date": call_date,
+            "title": hit.get("title", "Transcript intel"),
+            "summary": hit.get("summary", ""),
+            "facts": hit.get("facts", []),
+            "counterparties": hit.get("counterparties", []),
+            "actions": hit.get("actions", []),
+        }
+        _, entry_id, status = route_block(block_data, f"transcript:{source_label}")
+        if status == "ok":
+            print(f"  log.json ok: {deal_id} <- {entry_id[:8]} ({hit.get('title', '')[:50]})")
+            deal_routed += 1
+        else:
+            print(f"  log.json error: {deal_id}", file=sys.stderr)
+            deal_errors += 1
+
+    # Phase 2: route envelope items (LP intel, actions, new deals, themes) → dashboard-data.json
+    if envelope_hits:
+        try:
+            _pipeline = Path(__file__).resolve().parent.parent
+            if str(_pipeline) not in sys.path:
+                sys.path.insert(0, str(_pipeline))
+            from _envelope_writer import append_items  # noqa: PLC0415
+
+            stamped = []
+            for item in envelope_hits:
+                e = {k: v for k, v in item.items() if v is not None}
+                e.setdefault("source_ref", {
+                    "type": "call",
+                    "title": source_label,
+                    "date": call_date,
+                })
+                stamped.append(e)
+
+            summary = append_items(stamped)
+            envelope_routed = sum(summary.get("routed", {}).values())
+            exceptions = summary.get("exceptions", 0)
+            print(f"  envelope ok: {envelope_routed} routed, {exceptions} exceptions")
+        except Exception as e:
+            print(f"  envelope error: {e}", file=sys.stderr)
+
+    if not deal_hits and not envelope_hits:
+        print("No intel found in transcript.")
+
+    # Mark processed
+    rt_state[content_hash] = {
+        "processed_at": datetime.now().isoformat(),
+        "source": source_label,
+        "call_date": call_date,
+        "deals": [h.get("deal_id") for h in deal_hits],
+        "envelope_items": envelope_routed,
+    }
+    save_state(state)
+    print(f"\nroute-transcript: deals={deal_routed} log entries, envelope={envelope_routed} items, errors={deal_errors}, call_date={call_date}")
+
+
 def cmd_scan_claude_ai(args):
     """Stub: Chrome MCP scrape of claude.ai project chats. Requires running
     inside a Claude Code session that has Chrome MCP loaded — typically
@@ -320,11 +582,19 @@ def main():
     sub.add_parser("scan-claude-code")
     sub.add_parser("parse-stdin")
     sub.add_parser("scan-claude-ai")
+    rt = sub.add_parser("route-transcript",
+        help="Extract per-deal intel from a call transcript and route to log.json")
+    src = rt.add_mutually_exclusive_group()
+    src.add_argument("file", nargs="?", help="Local transcript file path")
+    src.add_argument("--drive-file-id", help="Drive file ID to read via deal_extract_helpers")
+    rt.add_argument("--date", help="Override call date (YYYY-MM-DD); inferred from content if omitted")
+    rt.add_argument("--force", action="store_true", help="Reprocess even if already in dedup state")
     args = p.parse_args()
     handlers = {
         "scan-claude-code": cmd_scan_claude_code,
         "parse-stdin": cmd_parse_stdin,
         "scan-claude-ai": cmd_scan_claude_ai,
+        "route-transcript": cmd_route_transcript,
     }
     handlers[args.cmd](args)
 

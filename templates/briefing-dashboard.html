@@ -271,6 +271,7 @@
     <div class="tc-subtabs tc-no-print" role="tablist">
       <button class="tc-subtab is-active" data-view="intel" role="tab">Daily Briefing</button>
       <button class="tc-subtab" data-view="deal" role="tab">Deal Flash</button>
+      <button class="tc-subtab" data-view="digest" role="tab">Intel Digest</button>
     </div>
 
     <!-- ===== DEAL FLASH ===== -->
@@ -301,6 +302,17 @@
         <div id="flash-capital"><div class="brief-placeholder">Loading&hellip;</div></div>
       </div>
 
+    </section>
+
+    <!-- ===== INTEL DIGEST ===== -->
+    <section class="tc-view" id="view-digest">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+        <div class="tc-section-label" id="digest-label" style="margin-bottom:0">WEEKLY INTEL DIGEST</div>
+        <div id="digest-week-nav" style="display:flex;gap:6px;margin-left:auto"></div>
+      </div>
+      <div id="digest-content">
+        <div class="tc-card"><div class="brief-placeholder">Loading&hellip;</div></div>
+      </div>
     </section>
 
     <!-- ===== DAILY BRIEFING ===== -->
@@ -831,6 +843,140 @@ function briefSyncAll() {
     .then(r => r.ok ? r.json() : Promise.reject('briefing/intel.json ' + r.status))
     .then(renderBriefingIntel)
     .catch(renderBriefingIntelError);
+
+  // ---- Intel Digest ----
+  let _digestCache = {};
+
+  function renderDigest(data) {
+    const el = $('#digest-content');
+    if (data.error) {
+      el.innerHTML = `<div class="tc-card tc-muted">${esc(data.error)}</div>`;
+      return;
+    }
+
+    const week = data.week || '';
+    const deals = data.by_deal || {};
+    const crossSources = data.cross_deal_sources || {};
+    const dealCount = Object.keys(deals).length;
+    const artCount = data.total_articles || 0;
+
+    $('#digest-label').textContent = `WEEKLY INTEL DIGEST · ${week}`;
+
+    const simPct = s => Math.round((s || 0) * 100);
+    const simColor = s => s >= 0.50 ? 'var(--green)' : s >= 0.38 ? 'var(--gold)' : 'var(--ink-faint)';
+
+    const parts = [];
+
+    // Summary strip
+    parts.push(`<div class="tc-card" style="display:flex;gap:28px;align-items:center;padding:12px 16px;margin-bottom:10px">
+      <div style="font-family:var(--font-data);font-size:10px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:0.1em">
+        Week of <strong style="color:var(--ink)">${esc(data.week_start || '')} – ${esc(data.week_end || '')}</strong>
+      </div>
+      <div style="font-family:var(--font-data);font-size:10px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:0.1em">
+        <strong style="color:var(--ink)">${artCount}</strong> articles · <strong style="color:var(--ink)">${dealCount}</strong> deals
+      </div>
+      ${data.stale ? '<div style="font-size:10px;color:var(--amber);font-family:var(--font-data)">⚠ Index may be stale — run knowledge_indexer.py</div>' : ''}
+    </div>`);
+
+    // Cross-deal themes
+    const crossEntries = Object.entries(crossSources);
+    if (crossEntries.length) {
+      const rows = crossEntries.map(([src, dids]) =>
+        `<div style="display:flex;gap:12px;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--rule-light)">
+          <div style="font-size:12px;font-weight:600;color:var(--ink);min-width:180px">${esc(src)}</div>
+          <div style="display:flex;gap:5px;flex-wrap:wrap">${dids.map(d =>
+            `<span style="font-family:var(--font-data);font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;padding:2px 6px;background:var(--navy-light);border:1px solid var(--navy-border);color:var(--navy);border-radius:2px">${esc(d)}</span>`
+          ).join('')}</div>
+        </div>`
+      ).join('');
+      parts.push(`<div class="tc-card tc-card-accent-navy" style="margin-bottom:14px">
+        <div class="tc-section-label" style="margin-bottom:8px">Cross-Deal Themes (${crossEntries.length} sources)</div>
+        ${rows}
+      </div>`);
+    }
+
+    // Per-deal sections
+    for (const [dealId, articles] of Object.entries(deals)) {
+      if (!articles.length) continue;
+      const artRows = articles.slice(0, 10).map(a => {
+        const sim = simPct(a.similarity);
+        const linkAttr = a.doc_url ? `href="${esc(a.doc_url)}" target="_blank"` : '';
+        const title = linkAttr
+          ? `<a ${linkAttr} style="font-size:13px;font-weight:600;color:var(--navy);text-decoration:none">${esc(a.article_title)}</a>`
+          : `<span style="font-size:13px;font-weight:600;color:var(--ink)">${esc(a.article_title)}</span>`;
+        return `<div style="padding:9px 0;border-bottom:1px solid var(--rule-light)">
+          <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:3px">
+            ${title}
+            <span style="font-family:var(--font-data);font-size:9px;font-weight:700;color:${simColor(a.similarity)};margin-left:auto;white-space:nowrap">${sim}% match</span>
+          </div>
+          <div style="display:flex;gap:8px;margin-bottom:4px">
+            <span style="font-family:var(--font-data);font-size:9px;color:var(--ink-faint)">${esc(a.source)}</span>
+            <span style="font-family:var(--font-data);font-size:9px;color:var(--ink-ghost)">·</span>
+            <span style="font-family:var(--font-data);font-size:9px;color:var(--ink-faint)">${esc(a.article_date)}</span>
+          </div>
+          <div style="font-size:12px;color:var(--ink-mid);line-height:1.5">${esc(a.snippet)}</div>
+        </div>`;
+      }).join('');
+      parts.push(`<div class="tc-card" style="margin-bottom:12px">
+        <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:10px">
+          <div style="font-family:var(--font-data);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.12em;color:var(--navy)">${esc(dealId.toUpperCase())}</div>
+          <div style="font-family:var(--font-data);font-size:9px;color:var(--ink-faint)">${articles.length} article${articles.length !== 1 ? 's' : ''}</div>
+        </div>
+        ${artRows}
+      </div>`);
+    }
+
+    if (!parts.length || dealCount === 0) {
+      parts.push('<div class="tc-card tc-muted">No articles matched any active deals this week.</div>');
+    }
+
+    el.innerHTML = parts.join('');
+  }
+
+  function loadDigest(week) {
+    if (_digestCache[week || '_latest']) {
+      renderDigest(_digestCache[week || '_latest']);
+      return;
+    }
+    $('#digest-content').innerHTML = '<div class="tc-card"><div class="brief-placeholder">Loading&hellip;</div></div>';
+    const url = '/api/intel-digest' + (week ? '?week=' + encodeURIComponent(week) : '');
+    fetch(url)
+      .then(r => r.ok ? r.json() : Promise.reject('HTTP ' + r.status))
+      .then(data => {
+        _digestCache[week || '_latest'] = data;
+        renderDigest(data);
+        // Build prev/next nav from week
+        buildWeekNav(data.week);
+      })
+      .catch(err => {
+        $('#digest-content').innerHTML = `<div class="tc-card tc-muted">Could not load intel digest: ${esc(String(err).slice(0,120))}</div>`;
+      });
+  }
+
+  function buildWeekNav(currentWeek) {
+    if (!currentWeek) return;
+    const nav = $('#digest-week-nav');
+    const [y, wPart] = currentWeek.split('-W');
+    const wNum = parseInt(wPart, 10);
+    const prevWeek = wNum > 1 ? `${y}-W${String(wNum - 1).padStart(2, '0')}` : null;
+    const nextWeek = `${y}-W${String(wNum + 1).padStart(2, '0')}`;
+    const btnStyle = 'font-family:var(--font-data);font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;padding:3px 8px;border:1px solid var(--rule);background:var(--paper);color:var(--ink-mid);cursor:pointer;border-radius:2px';
+    nav.innerHTML = (prevWeek ? `<button style="${btnStyle}" onclick="loadDigestWeek('${prevWeek}')">← ${prevWeek}</button>` : '') +
+      `<button style="${btnStyle}" onclick="loadDigestWeek(null)">Latest</button>` +
+      `<button style="${btnStyle}" onclick="loadDigestWeek('${nextWeek}')">${nextWeek} →</button>`;
+  }
+
+  window.loadDigestWeek = function(week) { loadDigest(week); };
+
+  // Load digest when tab is first activated
+  document.querySelectorAll('.tc-subtab').forEach(t => {
+    if (t.dataset.view === 'digest') {
+      t.addEventListener('click', () => {
+        if (!$('#digest-content').querySelector('.brief-placeholder') && Object.keys(_digestCache).length) return;
+        loadDigest(null);
+      });
+    }
+  });
 })();
 </script>
 </body>

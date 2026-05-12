@@ -783,6 +783,13 @@ def _compute_deal_logs() -> int:
             existing = json.loads(log_path.read_text()) if log_path.exists() else {}
         except Exception:
             existing = {}
+        # Legacy format tolerance: some deals (cholla, pngts, unitil) have
+        # log.json as a bare list of entries. Normalize to dict shape so
+        # the rest of the loop is uniform.
+        if isinstance(existing, list):
+            existing = {'entries': existing}
+        elif not isinstance(existing, dict):
+            existing = {}
         entries = existing.get('entries') or []
         seen = {e.get('id') for e in entries if e.get('id')}
         # Map from iid → existing entry, used for in-place backfill of
@@ -1097,6 +1104,22 @@ def main():
          str(Path(__file__).parent / 'compile-project-sync.py')],
         check=False
     )
+
+    # Weekly focus suggestions — heuristic, no API call.
+    # Writes topics_suggested.json; HQ page shows "Adopt" button when
+    # topics.json is blank or > 7 days old.
+    try:
+        _topics_script = Path(__file__).parent.parent.parent.parent / \
+            'cos-pipeline' / 'generate_topics_suggested.py'
+        if not _topics_script.exists():
+            # Fallback: try the symlinked local copy
+            _topics_script = Path(__file__).parent / 'generate_topics_suggested.py'
+        if _topics_script.exists():
+            _ps.run([_sys.executable, str(_topics_script)], check=False)
+        else:
+            print('  [topics] generate_topics_suggested.py not found — skipping')
+    except Exception as _te:
+        print(f'  [topics] suggestion generation failed: {_te}')
 
 
 if __name__ == '__main__':

@@ -118,7 +118,10 @@ def sweep(dash: dict, today: datetime | None = None) -> dict:
     new_fu: list[dict] = []
     for f in dash.get("followUps", []):
         if _is_resolved(f.get("what", "")) and _past_grace(
-            f.get("addedDate") or f.get("due"), today
+            # Use only `due` for the resolved grace check — addedDate is
+            # re-stamped on every pipeline run so it always looks fresh.
+            # If due is empty/missing, _past_grace returns True (remove now).
+            f.get("due") or None, today
         ):
             continue  # drop
         # Stamp stale flag (not urgent, past-due > STALE_FLAG_DAYS)
@@ -143,7 +146,7 @@ def sweep(dash: dict, today: datetime | None = None) -> dict:
     new_ae: list[dict] = []
     for a in dash.get("awaitingExternal", []):
         if _is_resolved(a.get("content", "")) and _past_grace(
-            a.get("addedDate") or a.get("due"), today
+            a.get("due") or None, today
         ):
             continue
         d = _parse_date(a.get("due"))

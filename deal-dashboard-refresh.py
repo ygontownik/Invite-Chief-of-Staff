@@ -19,7 +19,7 @@ from pathlib import Path
 # themes. Fully dynamic — new themes in deal-pipeline-data.json are evaluated
 # automatically at the next refresh, no code change required.
 # Set False to fall back to fast keyword matching (no API call, noisier).
-CLASSIFY_SIGNALS = True
+CLASSIFY_SIGNALS = os.environ.get('SKIP_HAIKU_CLASSIFY') != '1'
 
 # ── Path → theme mapping ───────────────────────────────────────────────────────
 # Used only when CLASSIFY_SIGNALS=False. Maps dashboard_path substrings

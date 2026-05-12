@@ -773,6 +773,36 @@ def _redupe_after_canonicalization(items):
             continue
         seen.add(key)
         out.append(item)
+
+    # ── Thread-ID dedup ───────────────────────────────────────────────────
+    # The same Gmail thread can produce multiple extraction results with
+    # different wording (e.g. "confirm meeting slot" vs "confirm call time").
+    # After canonicalization these share the same counterparty but differ
+    # enough in content that the stem dedup above misses them.
+    # Keep only the richest item (longest content) per thread_id.
+    # 2026-05-12: added after iSquared thread 19e02cdfce993a2a produced 3 items.
+    by_thread: dict = {}
+    for item in out:
+        tid = (item.get('source_ref') or {}).get('thread_id') or ''
+        if not tid:
+            continue
+        existing = by_thread.get(tid)
+        if existing is None or len(item.get('content') or '') > len(existing.get('content') or ''):
+            by_thread[tid] = item
+
+    if by_thread:
+        thread_keep = set(id(v) for v in by_thread.values())
+        before_t = len(out)
+        out = [
+            item for item in out
+            if not (item.get('source_ref') or {}).get('thread_id')
+            or id(item) in thread_keep
+        ]
+        dropped_t = before_t - len(out)
+        if dropped_t:
+            print(f'_redupe_after_canonicalization: collapsed {dropped_t} same-thread dup(s)',
+                  file=sys.stderr)
+
     return out
 
 
@@ -2524,6 +2554,74 @@ def main(dry_run: bool = False):
     if dropped_fu:
         print(f'cos-dashboard-fetch: suppressed {dropped_fu} spurious follow-up(s)')
 
+    # ── Follow-up near-duplicate suppression ─────────────────────────────
+    # Transcript processors can emit the same action twice with minor wording
+    # differences or inconsistent who-attribution ("Yoni" vs "Yoni Gontownik").
+    # Dedup on (normalized_who, content_stem_8tok), keeping first occurrence.
+    # 2026-05-12: added after PNGTS Granite State analysis appeared twice from
+    # the same Tomac Cove weekly call.
+    _PRINCIPAL_FIRST = (_fc.principal_first_name(_CTX) or '').lower()
+    _PRINCIPAL_FULL  = ((_CTX.get('principal') or {}).get('name') or '').lower()
+
+    def _norm_who_fu(who_str):
+        w = (who_str or '').strip().lower()
+        if _PRINCIPAL_FIRST and _PRINCIPAL_FIRST in w:
+            return _PRINCIPAL_FIRST
+        return w
+
+    import re as _re_fu
+    _STOP_FU = set('a an the to for of and or with on in at by from is be was i my'.split())
+    def _stem_fu(text):
+        t = (text or '').lower()
+        t = _re_fu.sub(r'[^\w\s]', ' ', t)
+        toks = [tok for tok in t.split() if tok not in _STOP_FU and len(tok) >= 3]
+        return ' '.join(toks[:8])
+
+    # Pass A: exact stem key — catches identical or near-identical wording
+    seen_fu: set = set()
+    deduped_fus = []
+    for fu in followups:
+        key = (_norm_who_fu(fu.get('who', '')), _stem_fu(fu.get('what', '')))
+        if key in seen_fu:
+            print(f'cos-dashboard-fetch: deduped near-dup follow-up (stem): {fu.get("what","")[:60]!r}')
+            continue
+        seen_fu.add(key)
+        deduped_fus.append(fu)
+
+    # Pass B: same-transcript dedup — catches reworded actions from the same call.
+    # When two items share (normalized_who, source, linkedTo) keep the richer one
+    # (longer `what`). linkedTo is the specific doc/transcript URL, so this key
+    # uniquely identifies "same person, same call" without needing content similarity.
+    # 2026-05-12: added after PNGTS Granite State action appeared twice from
+    # "Tomac Cove Weekly Call" with different wording, foiling the stem dedup.
+    by_transcript: dict = {}
+    for fu in deduped_fus:
+        lt = (fu.get('linkedTo') or '').strip()
+        if not lt:
+            continue
+        nw = _norm_who_fu(fu.get('who', ''))
+        src = (fu.get('source') or '').strip().lower()
+        tkey = (nw, src, lt)
+        existing = by_transcript.get(tkey)
+        if existing is None or len(fu.get('what') or '') > len(existing.get('what') or ''):
+            by_transcript[tkey] = fu
+
+    if by_transcript:
+        trans_keep = set(id(v) for v in by_transcript.values())
+        before_t = len(deduped_fus)
+        deduped_fus = [
+            fu for fu in deduped_fus
+            if not ((fu.get('linkedTo') or '').strip())
+            or id(fu) in trans_keep
+        ]
+        dropped_t = before_t - len(deduped_fus)
+        if dropped_t:
+            print(f'cos-dashboard-fetch: deduped {dropped_t} same-transcript follow-up(s)')
+
+    if len(deduped_fus) < len(followups):
+        print(f'cos-dashboard-fetch: deduped {len(followups)-len(deduped_fus)} follow-up(s) total')
+    followups = deduped_fus
+
     for key in ('awaitingExternal', 'dealIntel', 'originationInbox', 'statusUpdates'):
         arr = state.get(key, []) or []
         filtered = [it for it in arr
@@ -2718,7 +2816,9 @@ def main(dry_run: bool = False):
         # The server's /sync-preview endpoint uses this to diff against the live state.
         print(json.dumps(merged, indent=2, ensure_ascii=False))
     else:
-        STATE_PATH.write_text(json.dumps(merged, indent=2, ensure_ascii=False))
+        _tmp = STATE_PATH.with_suffix('.tmp')
+        _tmp.write_text(json.dumps(merged, indent=2, ensure_ascii=False))
+        os.replace(_tmp, STATE_PATH)
         # Stamp lastFetchAt so the dashboard freshness badge reflects doc-read time,
         # not just the heavier Gmail-scan pipeline's lastFullRunAt.
         try:

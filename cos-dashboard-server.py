@@ -976,6 +976,14 @@ _ROOT               = _HERE.parent           # ~/dashboards/
 
 # Firm context — load once at server startup for server-side injections
 sys.path.insert(0, str(Path.home() / 'cos-pipeline'))
+sys.path.insert(0, str(Path(__file__).parent))  # allow local app/ imports
+try:
+    from knowledge_api import query_for_deal, query_recent_digest as _kn_digest
+    _KNOWLEDGE_API_AVAILABLE = True
+except Exception as _kn_e:
+    _KNOWLEDGE_API_AVAILABLE = False
+    print(f'[knowledge_api] not available: {_kn_e}', file=sys.stderr)
+
 try:
     import _firm_context as _fc_srv
     _FC_CTX = _fc_srv.load_firm_context()
@@ -1063,9 +1071,11 @@ GMAIL_SCOPES        = ['https://www.googleapis.com/auth/gmail.send']
 DASHBOARD_HOST      = os.environ.get('DASHBOARD_HOST', socket.gethostname())
 DEAL_REFRESH_SCRIPT  = str(_HERE / 'deal-dashboard-refresh.py')
 COMPILE_SCRIPT       = str(_ROOT / 'routines' / 'compile' / 'deal-system-compile.py')
+DEALS_COMPILE_SCRIPT = str(_ROOT / 'routines' / 'compile' / 'compile-dashboard.py')
 OTTER_SCRIPT         = str(_ROOT / 'routines' / 'process' / 'cos_otter_backfill.py')
 RESOLVER_SCRIPT      = str(_ROOT / 'routines' / 'process' / 'cos_email_resolver.py')
 SWEEP_SCRIPT         = str(_ROOT / 'routines' / 'process' / '_resolved_row_sweep.py')
+ALIAS_SYNC_SCRIPT    = str(Path.home() / 'cos-pipeline' / 'cos_alias_sync.py')
 WARMUP_INTERVAL_MIN  = 10   # auto-fetch every N minutes in background
 
 # ── per-user JSON filter (F-now.3, feature-flagged) ─────────────────
@@ -1405,11 +1415,19 @@ def _deletions_script(user: str = 'owner') -> str:
         cp_aliases = _fc_srv.cp_aliases(_FC_CTX) if _fc_srv else []
     except Exception:
         cp_aliases = []
+    try:
+        with open(USER_STATE_DIR / 'topics_suggested.json') as _f:
+            topics_suggested = json.load(_f)
+    except FileNotFoundError:
+        topics_suggested = {}
+    except Exception:
+        topics_suggested = {}
     firm_ctx_public = _firm_context_public(_FC_CTX)
     return (
         '<script>'
         '(function(){'
         'window.__TOPICS_INITIAL__ = ' + json.dumps(topics_initial) + ';'
+        'window.__TOPICS_SUGGESTED__ = ' + json.dumps(topics_suggested) + ';'
         'window.__ORDER_INITIAL__ = ' + json.dumps(order_initial) + ';'
         'window.__BUILD_BACKLOG_INITIAL__ = ' + json.dumps(build_backlog_initial) + ';'
         'window.__PERSONAL_ITEMS_INITIAL__ = ' + json.dumps(personal_items_initial) + ';'
@@ -1742,36 +1760,71 @@ def _run_sweep():
         _sweep_lock.release()
 
 
+def _run_alias_sync():
+    """Run cos_alias_sync.py — detect new counterparties in originationInbox and
+    append them to counterparty_aliases_auto.json in the config dir.
+    Fast (<1s when no new aliases). Must run after _run_fetch() so it sees the
+    freshly-compiled originationInbox data.
+    """
+    if not Path(ALIAS_SYNC_SCRIPT).exists():
+        return
+    try:
+        result = subprocess.run(
+            [sys.executable, ALIAS_SYNC_SCRIPT],
+            capture_output=True, text=True, timeout=15,
+        )
+        out = (result.stdout or "").strip()
+        if out:
+            print(f'[alias-sync] {out.splitlines()[-1]}', flush=True)
+        if result.returncode != 0:
+            print(f'[alias-sync] failed: {result.stderr[:200]}', flush=True)
+    except subprocess.TimeoutExpired:
+        print('[alias-sync] timed out', flush=True)
+    except Exception as e:
+        print(f'[alias-sync] error: {e}', flush=True)
+
+
 def _warmup_in_background():
     """Warmup sequence on every cycle:
       1. Prune corrections-queue (inline, <1ms)
-      2. compile + (resolver → fetch → sweep) run in parallel threads.
+      2. compile + (resolver → fetch → sweep → alias-sync) run in parallel threads.
          Resolver runs before fetch so same-cycle resolutions land in the data.
          Sweep runs after fetch on the freshly-compiled JSON — pure local I/O,
          no network, <100ms. All three complete well before the next /refresh.
+      3. After both threads complete, broadcast SSE refresh to all open browser tabs.
     """
     _prune_corrections_queue()
 
     def _resolver_then_fetch():
         _run_email_resolver()
         _run_fetch()
-        _run_sweep()  # prune resolved/stale items from the fresh dashboard-data.json
+        _run_sweep()       # prune resolved/stale items from fresh dashboard-data.json
+        _run_alias_sync()  # detect new originationInbox counterparties → add aliases
 
     t_chain   = threading.Thread(target=_resolver_then_fetch, daemon=True, name='warmup-chain')
     t_compile = threading.Thread(target=_run_compile,          daemon=True, name='warmup-compile')
     t_chain.start()
     t_compile.start()
+
+    def _wait_and_broadcast():
+        t_chain.join(timeout=130)
+        t_compile.join(timeout=70)
+        _broadcast_refresh()
+
+    threading.Thread(target=_wait_and_broadcast, daemon=True, name='warmup-broadcast').start()
     return t_chain
 
 def _auto_warmup_loop():
-    """Background loop: warm cache immediately on startup, then every N minutes."""
+    """Background loop: warm cache immediately on startup, then every N minutes.
+    Each cycle runs the full warmup (compile + fetch + broadcast) so open browser
+    tabs receive fresh data without manual refresh."""
     # Initial warmup — delay 5s to let server finish starting
     time.sleep(5)
     _run_fetch()
-    # Recurring warmup
+    # Recurring warmup — full cycle including SSE broadcast to open tabs
     while True:
         time.sleep(WARMUP_INTERVAL_MIN * 60)
-        _run_fetch()
+        _warmup_in_background()
 
 # ── Routines (Claude scheduled-task health) ────────────────
 # Reads ~/Library/LaunchAgents/com.yoni.claude-task.*.plist + per-task
@@ -2330,6 +2383,43 @@ def _batch_force_retrieve(batch_id: str) -> tuple[bool, str]:
     return True, 'Retrieve started in background'
 
 
+# ── Deal list helpers ───────────────────────────────────────
+
+def _merge_registered_deals(pipeline_deals: list, registered_deals: list) -> list:
+    """Return pipeline_deals filtered (no Auto ghosts) + any registered deals
+    (from dealPortfolio.deals) that are absent from the live list.
+
+    Uses first-token matching to catch variants like
+    'PNGTS (Portland Natural Gas...)' vs 'PNGTS / Granite State'.
+    """
+    import re as _re
+
+    def _first_token(s: str) -> str:
+        """Lowercase first significant word — used for fuzzy dedup."""
+        return (_re.split(r'[\s/(]', s.strip())[0] or '').lower()
+
+    # Step 1: filter Auto ghosts
+    clean = [d for d in pipeline_deals if 'Auto' not in d.get('stage', '')]
+
+    if not registered_deals:
+        return clean
+
+    existing_ids     = {d.get('id', '') for d in clean if d.get('id')}
+    existing_names   = {(d.get('name') or '').lower() for d in clean}
+    existing_tokens  = {_first_token(d.get('name', '')) for d in clean}
+
+    for rd in registered_deals:
+        rid    = rd.get('id', '')
+        rnam   = (rd.get('name') or '').lower()
+        rtok   = _first_token(rd.get('name', ''))
+        if (rid not in existing_ids
+                and rnam not in existing_names
+                and (not rtok or rtok not in existing_tokens)):
+            clean.append(rd)
+
+    return clean
+
+
 # ── Request handler ────────────────────────────────────────
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
@@ -2596,7 +2686,7 @@ class Handler(BaseHTTPRequestHandler):
             # per-section age so the UI can flag stale tiles even when the
             # global fetch ran recently (e.g. an OAuth-scoped sub-fetch
             # silently returned empty and preserved a stale prior value).
-            status = {'ok': False, 'fetchedAt': None, 'ageMin': None, 'sections': {}}
+            status = {'ok': False, 'fetchedAt': None, 'ageMin': None, 'sections': {}, 'deal_sync_stale': False}
             if STATE_PATH.exists():
                 try:
                     import json as _j
@@ -2620,6 +2710,23 @@ class Handler(BaseHTTPRequestHandler):
                                 continue
                 except Exception:
                     pass
+            # Check deal-sync heartbeat: stale if missing or last real run > 36h ago.
+            try:
+                from datetime import datetime as _dt2
+                _hb_path = Path.home() / 'dashboards' / 'data' / 'deal-sync-heartbeat.json'
+                if not _hb_path.exists():
+                    status['deal_sync_stale'] = True
+                else:
+                    _hb = json.loads(_hb_path.read_text())
+                    _last = _hb.get('last_completed_at', '')
+                    _dry  = _hb.get('dry_run', True)
+                    if _dry or not _last:
+                        status['deal_sync_stale'] = True
+                    else:
+                        _age_h = (_dt2.now() - _dt2.fromisoformat(_last)).total_seconds() / 3600
+                        status['deal_sync_stale'] = _age_h > 36
+            except Exception:
+                status['deal_sync_stale'] = False
             self.send_json(200, status)
         elif self.path == '/sync-preview':
             if user != 'owner':
@@ -2653,6 +2760,9 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_403(); return
                 self._handle_admin_heartbeat()
                 return
+            if parsed.path in ('/admin/transcripts', '/admin/transcripts/'):
+                self._handle_admin_transcripts()
+                return
             flash = None
             if 'ftype' in qs and 'fmsg' in qs:
                 flash = (qs['ftype'][0], qs['fmsg'][0])
@@ -2666,6 +2776,10 @@ class Handler(BaseHTTPRequestHandler):
             if user != 'owner':
                 self._send_403(); return
             self._handle_system_health_latest()
+        elif self.path.startswith('/api/deals/') and '/intelligence' in self.path:
+            self._handle_deal_intelligence()
+        elif self.path.split('?')[0] == '/api/intel-digest':
+            self._handle_intel_digest()
         elif self.path.split('?')[0] == '/api/git-status':
             # owner-only: last commit + dirty status for each tracked repo
             if user != 'owner':
@@ -2697,10 +2811,9 @@ class Handler(BaseHTTPRequestHandler):
             self._serve_html_template(COS_DASHBOARD, user)
         elif self.path.startswith('/api/auth-health'):
             # Credential health — owner-only.
-            user = self._authenticate()
-            if user is None:
-                self._send_401()
-                return
+            # user is already set by the _is_localhost()/authenticate() block
+            # at the top of do_GET — don't re-authenticate here or LAN
+            # browser requests (treated as owner via _is_localhost) get 401.
             if user != 'owner':
                 self._send_403()
                 return
@@ -2868,6 +2981,65 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             pass
         body = _json.dumps(payload).encode('utf-8')
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(body)))
+        self.send_header('Cache-Control', 'no-store')
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _handle_admin_transcripts(self):
+        """Owner-only: return processed call transcripts as JSON for the
+        Call History tab. Reads credentials/processed_cos_transcripts.json,
+        strips separator-only titles, and returns the last 60 entries sorted
+        newest-first. Drive file IDs become clickable doc links in the UI.
+        """
+        import json as _json
+        from pathlib import Path as _Path
+        import re as _re
+
+        tracker = _Path.home() / 'credentials' / 'processed_cos_transcripts.json'
+        if not tracker.exists():
+            payload = {'items': [], 'total': 0, 'error': 'tracker not found'}
+            body = _json.dumps(payload).encode()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Content-Length', str(len(body)))
+            self.send_header('Cache-Control', 'no-store')
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        raw = _json.loads(tracker.read_text())
+        _SEP = _re.compile(r'^[─━│┃─━| \-]+$')  # separator-only titles
+        _DRIVE_ID = _re.compile(r'^[A-Za-z0-9_\-]{20,}$')
+
+        items = []
+        for key, val in raw.items():
+            if not isinstance(val, dict):
+                continue
+            title = (val.get('title') or '').strip()
+            if not title or _SEP.match(title):
+                continue
+            # Skip purely internal housekeeping entries
+            if val.get('skipped') and val.get('skip_reason') == 'dedup':
+                continue
+            entry = {
+                'key':          key,
+                'title':        title,
+                'category':     val.get('category') or 'Other',
+                'processed_at': val.get('processed_at') or '',
+                'skipped':      bool(val.get('skipped')),
+                'skip_reason':  val.get('skip_reason') or '',
+            }
+            # Build Drive link when key looks like a Drive file ID
+            if _DRIVE_ID.match(key):
+                entry['drive_url'] = f'https://docs.google.com/document/d/{key}/edit'
+            items.append(entry)
+
+        items.sort(key=lambda x: x['processed_at'], reverse=True)
+        payload = {'items': items[:60], 'total': len(items)}
+        body = _json.dumps(payload).encode()
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Content-Length', str(len(body)))
@@ -3319,7 +3491,15 @@ class Handler(BaseHTTPRequestHandler):
             # Deal-tile bucket — frontend reads DATA[<tenant_slug>] for the
             # legacy slug-keyed deal list. Key built from COS_TENANT_SLUG so
             # this module never carries a literal slug string.
-            COS_TENANT_SLUG:    state.get(COS_TENANT_SLUG,     []),
+            # Filter out pipeline-generated ghost entries (stage contains "Auto")
+            # before serving. These are auto-extracted contacts from transcripts
+            # that should live in originationInbox, not the live-deals list.
+            # Then inject any registered deals from dealPortfolio that are
+            # missing (e.g. Cholla, Unitil not yet in the Deal Pipeline doc).
+            COS_TENANT_SLUG:    _merge_registered_deals(
+                                    state.get(COS_TENANT_SLUG, []),
+                                    (state.get('dealPortfolio') or {}).get('deals', [])
+                                ),
             'fundraising':      fr_merged,
             'briefingSynopsis': state.get('briefingSynopsis', {}),
             'themesSynopsis':   state.get('themesSynopsis',   {}),
@@ -4732,6 +4912,53 @@ function copyInstructions() {{
             return
         self.send_json(200, payload)
 
+    def _handle_deal_intelligence(self):
+        """GET /api/deals/<deal_id>/intelligence?q=<query>&limit=N&since=YYYY-MM-DD"""
+        if not _KNOWLEDGE_API_AVAILABLE:
+            self.send_json(503, {'error': 'Knowledge index not available'})
+            return
+        # Parse path: /api/deals/<deal_id>/intelligence
+        parts = self.path.split('?', 1)
+        path_parts = parts[0].strip('/').split('/')
+        # path_parts = ['api', 'deals', '<deal_id>', 'intelligence']
+        deal_id = path_parts[2] if len(path_parts) >= 3 else ''
+        if not deal_id:
+            self.send_json(400, {'error': 'Missing deal_id'}); return
+
+        params: dict[str, str] = {}
+        if len(parts) > 1:
+            for kv in parts[1].split('&'):
+                if '=' in kv:
+                    k, v = kv.split('=', 1)
+                    params[k] = v.replace('+', ' ').replace('%20', ' ')
+
+        q     = params.get('q') or None
+        limit = min(int(params.get('limit', '10')), 25)
+        since = params.get('since') or None
+
+        try:
+            result = query_for_deal(deal_id, q=q, limit=limit, since=since)
+            self.send_json(200, result)
+        except Exception as e:
+            self.send_json(500, {'error': str(e)})
+
+    def _handle_intel_digest(self):
+        """GET /api/intel-digest?week=YYYY-WNN"""
+        if not _KNOWLEDGE_API_AVAILABLE:
+            self.send_json(503, {'error': 'Knowledge index not available'}); return
+        parts = self.path.split('?', 1)
+        params: dict[str, str] = {}
+        if len(parts) > 1:
+            for kv in parts[1].split('&'):
+                if '=' in kv:
+                    k, v = kv.split('=', 1)
+                    params[k] = v
+        week = params.get('week') or None
+        try:
+            self.send_json(200, _kn_digest(week))
+        except Exception as e:
+            self.send_json(500, {'error': str(e)})
+
     def _handle_git_status(self):
         """GET /api/git-status — last commit + dirty/ahead/behind for each tracked repo."""
         import subprocess
@@ -5399,14 +5626,24 @@ echo "[$(date)] Join and record launched." >> "$LOG"
             self.send_json(202, {'ok': True, 'status': 'started'})
 
     def _handle_refresh_deals(self):
-        """Run deal-dashboard-refresh.py to inject fresh JSON into the deals HTML file."""
+        """Recompile deal-system-data.json from local files (no API), then inject into HTML.
+        Skips Haiku signal classification — that runs in the background warmup/compile path."""
         try:
+            compile_result = subprocess.run(
+                [sys.executable, DEALS_COMPILE_SCRIPT],
+                capture_output=True, text=True, timeout=10,
+            )
+            if compile_result.returncode != 0:
+                self.send_json(500, {'ok': False, 'error': compile_result.stderr})
+                return
+            env = os.environ.copy()
+            env['SKIP_HAIKU_CLASSIFY'] = '1'
             result = subprocess.run(
                 [sys.executable, DEAL_REFRESH_SCRIPT],
-                capture_output=True, text=True, timeout=30,
+                capture_output=True, text=True, timeout=15, env=env,
             )
             if result.returncode == 0:
-                self.send_json(200, {'ok': True, 'log': result.stdout})
+                self.send_json(200, {'ok': True, 'log': compile_result.stdout + result.stdout})
             else:
                 self.send_json(500, {'ok': False, 'error': result.stderr})
         except subprocess.TimeoutExpired:
@@ -5444,7 +5681,9 @@ echo "[$(date)] Join and record launched." >> "$LOG"
                     for r in removes:
                         existing.discard(r)
                     cur[key] = list(existing)
-            STATE_PATH.write_text(json.dumps(cur, indent=2))
+            _tmp = STATE_PATH.with_suffix('.tmp')
+            _tmp.write_text(json.dumps(cur, indent=2))
+            os.replace(_tmp, STATE_PATH)
         self.send_json(200, {'ok': True})
 
     def _handle_pipeline_status(self):
@@ -5524,6 +5763,7 @@ echo "[$(date)] Join and record launched." >> "$LOG"
                 'days_to_deadline': days_out,
                 'health': d.get('health'),
                 'key_risk': str(d.get('key_risk', ''))[:200],
+                'critical_next_step': str(d.get('critical_next_step', ''))[:300],
                 'edge': str(d.get('tcip_edge') or d.get('edge', ''))[:200],  # noqa: tenant-leak — backward-compat read of legacy key
                 'open_workstreams': [w.get('title') for w in d.get('workstreams', [])
                                      if w.get('status') not in ('done', 'closed')][:3],
@@ -5552,8 +5792,9 @@ Generate a complete standalone HTML morning briefing page. Requirements:
 - Nav links to: / | /briefing/ | /project-sync/status | /project-sync/update
 - Today's date and a one-sentence headline (most urgent situation)
 - One deal card per active deal, ranked by urgency, each containing:
-    deal name, why-today (one sentence), action required, days-to-deadline
-    (colored by urgency), project link if project_url is set,
+    deal name, stage, health score, critical_next_step (bold bullet — the single
+    most important action blocking the deal; use key_risk if critical_next_step empty),
+    days-to-deadline (colored by urgency), project link if project_url is set,
     suggested project prompt (click-to-copy via onclick clipboard API)
 - Alert banner listing any deals with sync_status stale or no-project
 - Cross-deal flags section if any timing conflicts or capital tensions exist
@@ -5599,11 +5840,13 @@ Return ONLY the complete HTML. Start with <!DOCTYPE html>."""
                 proj = f'<a href="{d["project_url"]}" target="_blank" style="color:#6bcbff">Open Project →</a>' if (d.get('project_url') or '').startswith('http') else ''
                 prompt_text = f"Continuing {d['name']}. Stage: {d.get('stage')}. What needs attention today?"
                 days_block = f'<div style="color:{dc};font-size:12px;margin-top:6px">⏱ {days} days</div>' if days is not None else ''
+                next_step = d.get('critical_next_step') or d.get('key_risk', '')
                 cards += (
                     f'<div style="background:#111;border:1px solid #222;padding:16px;margin-bottom:10px;display:flex;gap:14px">'
                     f'<div style="color:#333;font-size:26px;font-weight:700;min-width:30px">#{i}</div>'
-                    f'<div><div style="color:#eee;font-weight:700;margin-bottom:6px">{d["name"]}</div>'
-                    f'<div style="color:#aaa;font-size:13px">{d.get("key_risk","")[:120]}</div>'
+                    f'<div style="flex:1"><div style="color:#eee;font-weight:700;margin-bottom:4px">{d["name"]}'
+                    f'<span style="color:#555;font-size:12px;font-weight:400;margin-left:10px">{d.get("stage","")}</span></div>'
+                    f'<div style="color:#c8a84b;font-size:13px;font-weight:600;margin-bottom:4px">▶ {next_step[:160]}</div>'
                     f'{days_block}'
                     f'<div style="margin-top:8px">{proj}</div>'
                     f'<div style="color:#555;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-top:10px">Opening prompt</div>'

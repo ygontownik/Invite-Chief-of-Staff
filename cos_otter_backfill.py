@@ -949,6 +949,97 @@ def load_pipeline_context():
 
     sections.append("\n".join(path_lines))
 
+    # ── Open actions already on the dashboard ─────────────────────────────────
+    # Inject a compact list of current open followUps so the extractor can:
+    #   (a) mark a new mention of the same task as "status_update" not "new_action"
+    #   (b) consolidate related sub-tasks into an existing item
+    #   (c) copy dashboard_path from sibling items for consistent routing
+    # BUDGET CAP: 20 items max, 60-char what, no ctx/path — keeps the block
+    # under ~1.5KB so it never pushes long transcripts over the context limit.
+    if DASHBOARD_DATA_PATH.exists():
+        try:
+            dash = json.loads(DASHBOARD_DATA_PATH.read_text())
+            fus = [
+                f for f in dash.get("followUps", [])
+                if not (f.get("what") or "").startswith("[RESOLVED]")
+                and f.get("state", "active") not in ("closed", "dormant")
+            ]
+            # Most recent 20 items only — enough for same-call dedup without
+            # bloating the context on longer transcripts
+            fus.sort(key=lambda f: f.get("addedDate", ""), reverse=True)
+            fus = fus[:20]
+            if fus:
+                open_lines = ["\nOPEN ACTIONS (last 20, newest first) — check before emitting new_action:"]
+                open_lines.append(
+                    "If this call updates an item here → action_type='status_update'. "
+                    "If it sub-tasks an item here → consolidate. "
+                    "Format: [who] what (due)"
+                )
+                for f in fus:
+                    who  = (f.get("who") or "?")[:20]
+                    what = (f.get("what") or "")[:60]
+                    due  = f.get("due") or ""
+                    due_s = f" ({due})" if due else ""
+                    open_lines.append(f"  [{who}] {what}{due_s}")
+                sections.append("\n".join(open_lines))
+        except Exception:
+            pass
+
+    # ── Per-deal context from deal.md ─────────────────────────────────────────
+    # Compact workstream/milestone/contact snapshot so the extractor can:
+    #   (a) map action items to specific workstream IDs (ws-001, ws-002 …)
+    #   (b) identify the correct owner for a task (Yoni vs Mark vs external)
+    #   (c) recognise when a call advances a named milestone
+    # BUDGET: ~300 chars/deal × 7 deals ≈ 2.1 KB added to context.
+    # Only deals with ≥1 in-progress workstream are included.
+    _deals_dir = Path.home() / "dashboards/data/deals"
+    if _deals_dir.exists():
+        try:
+            import yaml as _yaml
+            deal_lines = ["\nACTIVE DEAL WORKSTREAMS — map actions to these when classifying:"]
+            deal_lines.append(
+                "Format: [deal_id | stage] workstream (owner) — note | NEXT: milestone (due)"
+            )
+            any_deal = False
+            for _dm in sorted(_deals_dir.glob("*/deal.md")):
+                if _dm.parent.name.startswith("_"):
+                    continue
+                try:
+                    raw_text = _dm.read_text()
+                    # Extract YAML frontmatter between --- markers
+                    if raw_text.startswith("---"):
+                        end = raw_text.index("\n---", 3)
+                        fm = _yaml.safe_load(raw_text[3:end])
+                    else:
+                        continue
+                    deal_id   = fm.get("id") or _dm.parent.name
+                    deal_name = fm.get("name") or deal_id
+                    stage     = fm.get("stage") or "?"
+                    ws_list   = fm.get("workstreams") or []
+                    active_ws = [w for w in ws_list if w.get("status") in ("in-progress", "blocked")]
+                    next_ms   = fm.get("next_milestone") or ""
+                    next_due  = fm.get("next_milestone_due") or ""
+                    # Include deals that either have active workstreams OR a next milestone
+                    if not active_ws and not next_ms:
+                        continue
+                    any_deal = True
+                    next_s    = f" | NEXT: {next_ms[:60]} ({next_due})" if next_ms else ""
+                    deal_lines.append(f"\n[{deal_id} | {stage}] {deal_name}{next_s}")
+                    for ws in active_ws:
+                        ws_id    = ws.get("id", "?")
+                        ws_title = (ws.get("title") or "")[:50]
+                        ws_owner = (ws.get("owner") or "")[:20]
+                        ws_note  = (ws.get("note") or "")[:80]
+                        ws_status = ws.get("status", "?")
+                        flag     = "⚠" if ws_status == "blocked" else ""
+                        deal_lines.append(f"  {flag}{ws_id} [{ws_owner}] {ws_title} — {ws_note}")
+                except Exception:
+                    continue
+            if any_deal:
+                sections.append("\n".join(deal_lines))
+        except Exception:
+            pass
+
     # Note: peer/co-investor firms are listed in BACKFILL_PREAMBLE (cached block 1)
     # and are not duplicated here to keep the pipeline context block lean.
 
@@ -1034,6 +1125,29 @@ EXTRACTION TASKS:
    Inconsistent naming (e.g. "Yoni" vs "Yoni Gontownik") creates duplicate actions on the dashboard.
    Canonical first names: {_OWNERS}. Use these exactly — no last names, no initials, no variants.
    Codified 2026-05-12 after PNGTS action appeared twice from same call due to "Yoni" vs "Yoni Gontownik".
+
+   WHO ATTRIBUTION RULE (rule W1) — the `who` field is the person or firm who OWNS the action (must do the work), NOT the subject of the action.
+   • If a TCIP team member needs to reach out to / email / call an external party → `who` is the team member (first name only). The external party belongs in `what`. Example: "Email Eddie Dunn at John Hancock re: infra opportunities" → who="Yoni" (not "Eddie Dunn (John Hancock)").
+   • An external party can only be `who` if they are an ACTIVE SPEAKER in this transcript — meaning they spoke lines and made a commitment in their own voice. Appearing only in the call TITLE or being MENTIONED by others does NOT make them a participant. Example: a call titled "Thunderhead FIT" where only Brad (Thunderhead) speaks means FIT is NOT a participant — actions attributed to FIT must be reassigned to the TCIP team member who will follow up with them.
+   • If an external party WAS an active speaker and explicitly committed to something → they can be `who`. Example: Brad Misialek is speaking and says "I'll run the IRR scenarios by Wednesday" → who="Brad Misialek / Thunderhead".
+   • "Map / compile / share information" tasks belong to the person who HAS the information, not the person who would benefit from it. Example: on a call with Marc Borzykowski (Vector), "map Vector's bus shelter zones" → who="Marc Borzykowski / Vector" because Marc has the Vector data, not who="Yoni".
+   • If you cannot determine which team member owns the action, default to `who="{_PRINCIPAL_FIRST}"`.
+   Codified 2026-05-12 after external parties (Eddie Dunn, Doug Bogie, Latano, Manulife contact, etc.) were incorrectly assigned as `who` on weekly-call actions.
+   Refined 2026-05-12: (a) title-mention ≠ call participant (FIT in call title but not speaking → not `who`); (b) info-holder owns the mapping/sharing task (Marc Borzykowski has Vector data → Marc is `who` for Vector zone mapping, not Yoni).
+
+   ACTION CONSOLIDATION RULE (rule C1) — when the same person on this call has multiple related actions that together constitute one analytical task or deliverable, emit ONE consolidated item instead of separate items.
+   • Signs consolidation applies: same `who`, same deal/workstream, actions are sequential steps in one analysis, or the actions share the same due date and context.
+   • How to consolidate: write a single comprehensive verb-first `what` that covers all sub-tasks; use the latest `due` date; use the most specific `context`.
+   • Example: "Run IRR sensitivity on call option multiple" + "Run financial scenarios on LTV and reservation fee" (same person, same analytical purpose — sizing deal terms for the May 13 meeting) → consolidate: "Run IRR sensitivity and LTV/reservation-fee scenarios to size deal terms before 2026-05-13 FIT meeting."
+   • Do NOT consolidate if the actions have meaningfully different owners, different deals, or different counterparties.
+   Codified 2026-05-12 to prevent dashboard clutter from multi-part analyses being split into 2-4 separate items per person per call.
+
+   OPEN ACTIONS DEDUP (rule D1) — the pipeline context block injected above contains "OPEN ACTIONS ALREADY ON THE DASHBOARD". Before emitting any action_item, scan that list:
+   • If the same task is already there (same who + same deal + substantially same what) → set action_type="status_update". Do NOT create a duplicate new_action.
+   • If this call advances or narrows an existing open action (e.g. "we agreed on the structure" for an item already open as "draft structure") → emit a status_update with updated context, not a new_action.
+   • If no match exists → emit as new_action as normal.
+   • When emitting a status_update that matches an existing item, copy the existing item's dashboard_path exactly — do not re-derive it.
+   Codified 2026-05-12 to prevent the dashboard from accumulating duplicate open actions across weekly calls on the same deals.
 
    Each item: {{
      "who": "person/firm being actioned",
@@ -1281,6 +1395,9 @@ def extract_all(transcript_text, title, hint_category="auto", pipeline_context="
         api_timeout=90,
     ).strip()
     raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.MULTILINE).strip()
+    # Strip control characters that invalidate JSON (tabs/newlines/CR are fine;
+    # other C0 controls — \x00-\x08, \x0b, \x0c, \x0e-\x1f — are not).
+    raw = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", raw)
     return json.loads(raw)
 
 
@@ -1302,6 +1419,63 @@ def mark_processed(tracker, file_id, title, category):
         "title": title,
         "category": category,
     }
+
+
+def _write_to_deal_logs(deal_log_entries, call_date, file_name, doc_link):
+    """Write LLM-extracted deal_log_entries directly to per-deal log.json files.
+
+    Deduped by a stable hash of (deal_id, summary). Soft-fails per entry
+    so one bad deal never blocks the rest. Skips deals with no local directory.
+    Returns count of newly written entries.
+    """
+    import hashlib
+    deals_dir = Path.home() / "dashboards" / "data" / "deals"
+    written = 0
+    now_iso = datetime.now().isoformat(timespec="seconds")
+
+    for entry in (deal_log_entries or []):
+        if not isinstance(entry, dict):
+            continue
+        deal_id = (entry.get("deal_id") or "").strip().lower()
+        summary = (entry.get("summary") or "").strip()
+        if not deal_id or not summary:
+            continue
+
+        deal_dir = deals_dir / deal_id
+        if not deal_dir.is_dir():
+            continue
+
+        log_path = deal_dir / "log.json"
+        try:
+            if log_path.exists():
+                log_data = json.loads(log_path.read_text())
+            else:
+                log_data = {"deal_id": deal_id, "entries": [], "updated_at": now_iso}
+            entries = log_data.setdefault("entries", [])
+
+            # Stable ID — 8 hex chars from sha256 of deal_id+summary prefix
+            raw_id = f"{deal_id}|{summary[:120]}"
+            entry_id = hashlib.sha256(raw_id.encode()).hexdigest()[:8]
+
+            if any(e.get("id") == entry_id for e in entries):
+                continue
+
+            entries.append({
+                "id": entry_id,
+                "date": call_date or now_iso[:10],
+                "source": "otter_transcript",
+                "who": file_name,
+                "what": summary,
+                "source_url": doc_link,
+                "source_title": file_name,
+            })
+            log_data["updated_at"] = now_iso
+            log_path.write_text(json.dumps(log_data, indent=2, ensure_ascii=False))
+            written += 1
+        except Exception as e:
+            print(f"    ⚠️   deal log write failed [{deal_id}]: {e}", file=sys.stderr)
+
+    return written
 
 
 # ── Write helpers ─────────────────────────────────────────────────────────────
@@ -1890,6 +2064,15 @@ def process_transcript(token, file_id, file_name, hint_category, source_label, s
     except Exception as _se:
         print(f"    ⚠️   Deal-log sidecar skipped (non-critical): {_se}",
               file=sys.stderr)
+
+    # ── Write deal intel to per-deal log.json ─────────────────────────────────
+    # Converts extracted deal_log_entries[] into canonical log.json entries so
+    # compile-dashboard.py picks up last_intel_date and recency health component.
+    _dle2 = data.get("deal_log_entries", []) or []
+    if _dle2:
+        _n2 = _write_to_deal_logs(_dle2, call_date, file_name, doc_link)
+        if _n2:
+            print(f"    📋  Deal log.json: +{_n2} entries written", flush=True)
 
     # ── Rename file to 'YYYY-MM-DD Clean Title' ───────────────────────────────
     # Otter drops files with decorative dash-padded names. Rename on first

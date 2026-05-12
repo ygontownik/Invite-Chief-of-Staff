@@ -2284,8 +2284,8 @@ Actions.
 call has multiple related actions constituting one analytical task (same deal,
 same due date, sequential steps), consolidate into one item with a comprehensive
 `what`. Previously, e.g. "Run IRR sensitivity" and "Run financial scenarios on
-LTV and reservation fee" from Brad Misialek / Thunderhead were emitted as two
-separate items when they're both "run the deal math before the FIT meeting."
+LTV and reservation fee" from the same counterparty were emitted as two
+separate items when they're both steps of a single analytical task.
 
 ---
 
@@ -2319,3 +2319,29 @@ from Keychain/env.
 Also check `firm_context.yaml` — if `auth_mode` is "api" but the API key is
 exhausted, changing it to "subscription" alone is insufficient because the fallback
 chain still reaches the API key. The env var override is the correct belt.
+
+---
+
+## TOPIC — WHO ATTRIBUTION RULE W1 REFINEMENTS
+
+### 2026-05-12 — Title-mention ≠ call participant (W1 refinement A)
+
+A counterparty appearing in the call TITLE (e.g. "Deal / Partner") does NOT
+make them an active participant. Only parties who spoke lines and made explicit
+commitments in their own voice qualify as `who`. A firm mentioned in a call title
+but not a speaker — actions attributed to that firm must be reassigned to
+the principal team member who will follow up with them.
+
+Correction applied: `who=<partner-firm>, Confirm return preference` → `who=<team-member>`.
+
+---
+
+### 2026-05-12 — Info-holder owns the mapping/sharing task (W1 refinement B)
+
+When an action is "map / compile / share information," the correct `who` is the
+person who HAS the information — not the person who would benefit from receiving it.
+On the Marc Borzykowski / Fleet Solutions call, "Map Vector's active bus shelter
+construction zones against PFS site pipeline" was incorrectly assigned to Yoni (the
+listener). Marc Borzykowski has the Vector data and must do the mapping.
+
+Correction applied: `who=Yoni, Map Vector's bus shelter zones` → `who=Marc Borzykowski / Vector`.

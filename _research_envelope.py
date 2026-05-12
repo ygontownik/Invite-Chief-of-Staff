@@ -31,6 +31,11 @@ from typing import Any
 # Firm context — loaded lazily so the module still works without a config file
 # (e.g. in unit tests or isolated runs). `_PRINCIPAL_NAME` is used as the
 # default owner on envelope items; falls back to "principal" if config missing.
+# Pin the process/ dir onto sys.path first so _firm_context (which lives
+# alongside _envelope_writer in process/) is importable regardless of cwd.
+_PROCESS_DIR = str(Path.home() / "dashboards/routines/process")
+if _PROCESS_DIR not in sys.path:
+    sys.path.insert(0, _PROCESS_DIR)
 try:
     import _firm_context as _fc
     _CTX = _fc.load_firm_context()
@@ -101,6 +106,11 @@ def _load_pipeline_context() -> str:
 def _load_envelope_writer():
     """Import _envelope_writer.py by path (avoids package-layout assumptions)."""
     path = Path.home() / "dashboards/routines/process/_envelope_writer.py"
+    # Ensure process/ is on sys.path so _envelope_writer's own
+    # `import _firm_context` resolves (both live in the same directory).
+    proc_dir = str(path.parent)
+    if proc_dir not in sys.path:
+        sys.path.insert(0, proc_dir)
     spec = importlib.util.spec_from_file_location("_envelope_writer", path)
     mod = importlib.util.module_from_spec(spec)
     assert spec.loader is not None

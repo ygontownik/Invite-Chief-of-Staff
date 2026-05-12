@@ -28,6 +28,13 @@ Sub-commands (each prints structured output the slash command can parse):
         Read new content from stdin, overwrite the corresponding doc
         in Drive (text/plain media update).
 
+    write-actions-md <deal_id>
+        Read dashboard_entry JSON from stdin, extract actions array,
+        write a formatted 7-column markdown table to the local
+        actions.md file (skips if file already has real content).
+        Also syncs to Drive actions doc via Deal Sync Writer if
+        ~/cos-pipeline-config-tomac/config/deal_sync.yaml exists.
+
     move-to-ready <file_id> <deal_folder_id>
         Move file into the deal's _Ready/ subfolder (creates folder
         if absent), mirroring the cos_transcript_hook _Ready/ pattern.
@@ -73,6 +80,7 @@ DRIVE_DOCS_YAML = os.path.expanduser("~/dashboards/config/drive-docs.yaml")
 EXTRACT_STATE_PATH = os.path.expanduser("~/dashboards/data/deal_extract_state.json")
 EXTRACT_LOG_DIR = os.path.expanduser("~/dashboards/logs")
 ERROR_LOG = os.path.join(EXTRACT_LOG_DIR, "extract_errors.log")
+DEAL_SYNC_YAML = os.path.expanduser("~/cos-pipeline-config-tomac/config/deal_sync.yaml")
 
 # Files in a deal folder we never feed back as inputs (they ARE the deal state)
 EXCLUDED_NAME_SUFFIXES = (
@@ -734,6 +742,123 @@ def cmd_write_deal_entry(args):
         print(f"  warning: sync failed (non-fatal): {e}", file=sys.stderr)
 
 
+_STATUS_MAP = {
+    "pending": "open",
+    "in progress": "in-progress",
+    "in-progress": "in-progress",
+    "queued": "open",
+    "today": "in-progress",
+    "deferred": "open",
+    "open": "open",
+    "monitor": "open",
+    "complete": "closed",
+    "closed": "closed",
+}
+
+
+def _map_action_status(s):
+    if not s:
+        return "open"
+    sl = s.lower().strip()
+    if sl.startswith("await"):
+        return "blocked"
+    return _STATUS_MAP.get(sl, "open")
+
+
+def _is_actions_stub(text):
+    """Return True if the file has no real table rows (placeholder only)."""
+    return "| # |" not in text
+
+
+def cmd_write_actions_md(args):
+    """Generate actions.md from a dashboard_entry JSON (stdin).
+
+    Reads the `actions` array from the entry, formats it as a 7-column
+    markdown table, and writes to:
+      1. Local ~/dashboards/data/deals/<deal_id>/actions.md
+      2. Drive actions doc via Deal Sync Writer (if deal_sync.yaml configured)
+
+    Skips if the local file already has real table content (hand-maintained).
+    """
+    deal_id = args.deal_id
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    raw = sys.stdin.read()
+    if not raw.strip():
+        die("empty stdin — pass dashboard_entry JSON on stdin")
+    try:
+        entry = json.loads(raw)
+    except Exception as e:
+        die(f"invalid JSON: {e}")
+
+    actions = entry.get("actions", [])
+    deal_name = entry.get("name", deal_id)
+
+    local_path = Path(os.path.expanduser(f"~/dashboards/data/deals/{deal_id}/actions.md"))
+    existing_text = local_path.read_text() if local_path.exists() else ""
+
+    if not _is_actions_stub(existing_text):
+        print(f"SKIP {deal_id}/actions.md — has real content; not overwriting")
+        return
+
+    if not actions:
+        print(f"SKIP {deal_id} — no actions in entry; leaving stub unchanged")
+        return
+
+    lines = [
+        f"# {deal_name} — Open Actions",
+        "",
+        "| # | Action | Owner | Due | Priority | Status | Opened |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for i, a in enumerate(actions, 1):
+        priority = (a.get("priority") or "medium").lower()
+        status = _map_action_status(a.get("status") or "")
+        due = a.get("due") or "TBD"
+        owner = (a.get("owner") or "TBD").replace("|", "/")
+        action_text = (a.get("action") or "").replace("|", "/")
+        lines.append(f"| {i} | {action_text} | {owner} | {due} | {priority} | {status} | {today} |")
+
+    content = "\n".join(lines) + "\n"
+
+    if args.dry_run:
+        print(f"[DRY-RUN] would write {len(actions)} action rows to {local_path}")
+        print(content[:600])
+        return
+
+    os.makedirs(local_path.parent, exist_ok=True)
+    local_path.write_text(content)
+    print(f"OK wrote {len(actions)} actions to {local_path}")
+
+    if os.path.exists(DEAL_SYNC_YAML):
+        try:
+            import requests as _requests
+            with open(DEAL_SYNC_YAML) as f:
+                ds_cfg = yaml.safe_load(f)
+            url = ds_cfg.get("url")
+            secret = ds_cfg.get("secret")
+            if url and secret:
+                deal_reg = get_deal_entry(deal_id)
+                actions_sub = deal_reg.get("actions")
+                if actions_sub and actions_sub.get("doc_id"):
+                    doc_id = actions_sub["doc_id"]
+                    resp = _requests.post(url, json={
+                        "secret": secret,
+                        "fileId": doc_id,
+                        "content": content,
+                    }, timeout=30)
+                    if resp.status_code == 200:
+                        print(f"OK synced actions to Drive doc {doc_id}")
+                    else:
+                        print(f"  warning: Drive sync returned {resp.status_code}", file=sys.stderr)
+                else:
+                    print(f"  note: no actions doc_id for {deal_id} in drive-docs.yaml — skipped Drive write")
+        except Exception as e:
+            print(f"  warning: Drive write failed (non-fatal): {e}", file=sys.stderr)
+    else:
+        print(f"  note: deal_sync.yaml not found — skipped Drive write (deploy Deal Sync Writer to enable)")
+
+
 def cmd_regenerate_pipeline_section(args):
     cfg = load_drive_docs()
     firm_id = cfg["reference_docs"]["firm_context"]["doc_id"]
@@ -774,6 +899,7 @@ def build_parser():
     s = sub.add_parser("read-file"); s.add_argument("file_id")
     s = sub.add_parser("read-deal-doc"); s.add_argument("deal_id"); s.add_argument("kind", choices=["status", "brief", "lps", "terms", "actions"])
     s = sub.add_parser("write-deal-doc"); s.add_argument("deal_id"); s.add_argument("kind", choices=["status", "brief"])
+    s = sub.add_parser("write-actions-md"); s.add_argument("deal_id")
     s = sub.add_parser("read-deal-entry"); s.add_argument("deal_id")
     s = sub.add_parser("write-deal-entry"); s.add_argument("deal_id")
     s = sub.add_parser("read-log-entries"); s.add_argument("deal_id")
@@ -792,6 +918,7 @@ HANDLERS = {
     "read-file": cmd_read_file,
     "read-deal-doc": cmd_read_deal_doc,
     "write-deal-doc": cmd_write_deal_doc,
+    "write-actions-md": cmd_write_actions_md,
     "read-deal-entry": cmd_read_deal_entry,
     "write-deal-entry": cmd_write_deal_entry,
     "read-log-entries": cmd_read_log_entries,

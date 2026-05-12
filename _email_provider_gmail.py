@@ -124,12 +124,15 @@ class GmailProvider(EmailProvider):
         if not include_sent:
             parts.append("-in:sent")
 
-        # Default exclusions if no custom query
-        if not query:
-            parts.extend([
-                "-from:noreply", "-from:no-reply",
-                "-category:promotions", "-category:updates",
-            ])
+        # Always-on noise filters — applied regardless of custom query so
+        # newsletter/promo volume doesn't inflate API token usage.
+        parts.extend([
+            "-from:noreply", "-from:no-reply",
+            "-category:promotions", "-category:updates", "-category:forums",
+            "-label:^smartlabel_newsletter", "-label:^smartlabel_notification",
+        ])
+        # Custom query (from firm_context capture.inbox_query) is prepended
+        # above; the always-on filters narrow it further.
 
         q = " ".join(parts) if parts else None
 

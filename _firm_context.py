@@ -107,6 +107,24 @@ def load_firm_context() -> dict:
             f"and fill in your firm's details."
         )
 
+    # Merge auto-discovered aliases from counterparty_aliases_auto.json.
+    # Written by cos_alias_sync.py after each dashboard fetch; contains
+    # companies spotted in originationInbox but not yet in firm_context.yaml.
+    # Merged here so every downstream caller (envelope writer, resolvers,
+    # capture pipeline) sees the full alias set without manual edits.
+    _auto_path = config_dir / "counterparty_aliases_auto.json"
+    if _auto_path.exists():
+        try:
+            _auto = json.load(open(_auto_path))
+            _existing = ctx.get("counterparty_aliases") or []
+            _existing_canonicals = {str(e.get("canonical", "")).lower() for e in _existing}
+            for _entry in _auto:
+                if str(_entry.get("canonical", "")).lower() not in _existing_canonicals:
+                    _existing.append(_entry)
+            ctx["counterparty_aliases"] = _existing
+        except Exception:
+            pass
+
     # Schema version check — warn but don't crash so pipelines keep running
     file_version = ctx.get("schema_version", 1)
     if file_version < SCHEMA_VERSION:

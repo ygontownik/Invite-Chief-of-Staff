@@ -793,9 +793,23 @@
 
       <!-- ══ TAB 3: Call History ══════════════════════════════ -->
       <div id="tab-calls" class="adm-tab-panel">
-        <div class="tc-card">
+        <div class="tc-card" style="margin-bottom:24px">
           <div class="adm-section-label" style="margin-bottom:16px">Scheduled calls</div>
           <div id="all-scheduled-list"></div>
+        </div>
+
+        <!-- ── Transcripts Digested ─────────────────────────────── -->
+        <div class="tc-card">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+            <div class="adm-section-label" style="margin-bottom:0">Transcripts Digested</div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <span id="td-total" style="font-family:var(--font-data);font-size:.75rem;color:var(--ink-mid)"></span>
+              <select id="td-cat-filter" onchange="filterTranscripts()" style="font-family:var(--font-data);font-size:.75rem;padding:2px 6px;border:1px solid var(--rule);border-radius:4px;background:var(--paper);color:var(--ink)">
+                <option value="">All categories</option>
+              </select>
+            </div>
+          </div>
+          <div id="td-list"><div class="adm-empty">Loading…</div></div>
         </div>
       </div>
 
@@ -1511,7 +1525,84 @@ function renderCallHistory() {
                       + '<tbody>' + rows + '</tbody></table>';
   }
 
-  // Processed transcripts list lives on Status > Calls; not duplicated here.
+  // Processed transcripts list lives in the Transcripts Digested card below.
+  loadTranscripts();
+}
+
+// ── Transcripts Digested ───────────────────────────────────────
+var _TD_ALL = [];   // full list cached for client-side category filter
+
+function loadTranscripts() {
+  var el = document.getElementById('td-list');
+  if (!el) return;
+  fetch('/admin/transcripts', {cache: 'no-store'})
+    .then(function(r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    })
+    .then(function(data) {
+      _TD_ALL = data.items || [];
+      // Populate category filter
+      var cats = Array.from(new Set(_TD_ALL.map(function(t){ return t.category || 'Other'; }))).sort();
+      var sel = document.getElementById('td-cat-filter');
+      if (sel) {
+        cats.forEach(function(c) {
+          var opt = document.createElement('option');
+          opt.value = c; opt.textContent = c;
+          sel.appendChild(opt);
+        });
+      }
+      var tot = document.getElementById('td-total');
+      if (tot) tot.textContent = data.total + ' total';
+      renderTranscripts(_TD_ALL);
+    })
+    .catch(function(e) {
+      if (el) el.innerHTML = '<div class="adm-empty" style="color:var(--red)">' + (e.message || 'Failed to load transcripts') + '</div>';
+    });
+}
+
+function filterTranscripts() {
+  var sel = document.getElementById('td-cat-filter');
+  var cat = sel ? sel.value : '';
+  var filtered = cat ? _TD_ALL.filter(function(t){ return t.category === cat; }) : _TD_ALL;
+  renderTranscripts(filtered);
+}
+
+function renderTranscripts(items) {
+  var el = document.getElementById('td-list');
+  if (!el) return;
+  if (!items.length) {
+    el.innerHTML = '<div class="adm-empty">No transcripts found.</div>';
+    return;
+  }
+  var CAT_COLOR = {
+    'Tomac Cove':  '#0f1e38',
+    'Recruiting':  '#0ea5e9',
+    'Other':       '#64748b',
+    'error':       '#dc2626',
+  };
+  var rows = items.map(function(t) {
+    var date    = t.processed_at ? t.processed_at.slice(0,10) : '—';
+    var color   = CAT_COLOR[t.category] || '#64748b';
+    var catPill = '<span style="display:inline-block;padding:1px 7px;border-radius:9px;font-size:.68rem;font-weight:600;'
+                + 'font-family:var(--font-data);letter-spacing:.04em;background:' + color + '22;color:' + color + '">'
+                + esc(t.category) + '</span>';
+    var titleCell = t.drive_url
+      ? '<a href="' + esc(t.drive_url) + '" target="_blank" rel="noopener" style="color:var(--ink);text-decoration:none;font-weight:600">'
+        + esc(t.title) + '</a>'
+      : '<span style="font-weight:600;color:var(--ink)">' + esc(t.title) + '</span>';
+    var skipNote = t.skipped && t.skip_reason
+      ? ' <span style="font-size:.68rem;color:var(--ink-mid);font-family:var(--font-data)">[' + esc(t.skip_reason) + ']</span>'
+      : '';
+    return '<tr>'
+      + '<td style="font-family:var(--font-data);font-size:.8rem;color:var(--ink-mid);white-space:nowrap">' + date + '</td>'
+      + '<td>' + titleCell + skipNote + '</td>'
+      + '<td>' + catPill + '</td>'
+      + '</tr>';
+  }).join('');
+  el.innerHTML = '<table class="adm-table"><thead><tr>'
+    + '<th style="width:90px">Processed</th><th>Title</th><th style="width:110px">Category</th>'
+    + '</tr></thead><tbody>' + rows + '</tbody></table>';
 }
 
 // ── Pipeline Confidence ────────────────────────────────────────
@@ -2323,6 +2414,9 @@ function rtStopPolling() {
       rtStartPolling();
     } else {
       rtStopPolling();
+    }
+    if (name === 'calls') {
+      loadTranscripts();
     }
     return ret;
   };

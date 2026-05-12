@@ -256,7 +256,16 @@ def build_system_prompt(ctx: dict) -> str:
         f"    + Gideon Powell (Cholla) to review ERCOT sites'.\n"
         f"  - The external parties go in the `what` and `context` fields, NOT in `who`.\n"
         f"  - Do NOT emit who='Takanock' or who='counterparty name' for a meeting\n"
-        f"    {p_first} was asked to organize.",
+        f"    {p_first} was asked to organize.\n\n"
+        f"CONFIRMED MEETING FLAG (rule CM1) — when a calendar event or email\n"
+        f"CONFIRMS a meeting is scheduled (not just proposed), emit two extra fields:\n"
+        f"  `meeting_time`: 'HH:MM' (24h, local time) — time of the confirmed meeting\n"
+        f"  `status`: 'scheduled'\n"
+        f"  `_manual`: true\n"
+        f"This distinguishes confirmed meetings from outreach-in-progress items\n"
+        f"and ensures they survive dashboard refresh cycles.\n"
+        f"Example: 'Alain Halimi confirmed call Friday 9:30am' →\n"
+        f"  due='2026-MM-DD', meeting_time='09:30', status='scheduled', _manual=true.",
 
         f"\nABSOLUTE-DATE RULE (rule AB1) — every reference to a date or week in\n"
         f"the `what` / `context` / `linked_to` text MUST be an absolute form.\n"
@@ -273,6 +282,27 @@ def build_system_prompt(ctx: dict) -> str:
         f"  Why: the row lives on the dashboard for days; relative phrasing\n"
         f"  reads stale every day after extraction even when the action is\n"
         f"  still valid. Absolute dates never go stale.",
+
+        "═" * 60,
+        "TEAM vs DEAL ROUTING (rule TD1)",
+        "═" * 60,
+
+        "\nEvery deal-related action must be classified as TEAM or DEAL.\n"
+        "Set `content_type` accordingly:\n\n"
+        "  TEAM → content_type: my_action (lands in followUps — Yoni's active task list)\n"
+        "    Use for: outreach, scheduling, introductions, calls to set up,\n"
+        "    meetings to confirm, emails to send, people to contact.\n"
+        "    Key test: does this require a specific named external party to act?\n\n"
+        "  DEAL → content_type: deal_takeaway (lands in dealIntel — deal research log)\n"
+        "    Use for: internal analysis, financial modeling, diligence research,\n"
+        "    data pulls, market checks, valuation work, deck preparation with\n"
+        "    no specific external deadline or named recipient.\n"
+        "    Key test: could Yoni do this alone, without any specific counterparty?\n\n"
+        "  GRAY AREA: if an action involves both coordination AND analysis,\n"
+        "    emit TWO items (one TEAM + one DEAL).\n\n"
+        "  DUPLICATE SUPPRESSION: if the same who+what combination was already\n"
+        "    extracted within the last 2 weeks, DO NOT re-emit it. Check the\n"
+        "    existing follow-up rows before emitting.\n",
 
         "═" * 60,
         "PART B — RECONCILIATION",
@@ -623,7 +653,8 @@ def main() -> int:
     # Round 1: data collection
     log.info(f"Fetching emails since {since.isoformat()}...")
     try:
-        emails = provider.search_inbox(since=since, max_results=50)
+        inbox_query = (ctx.get("capture") or {}).get("inbox_query")
+        emails = provider.search_inbox(since=since, max_results=50, query=inbox_query)
     except EmailProviderError as e:
         log.error(f"Inbox search failed: {e}")
         return 1

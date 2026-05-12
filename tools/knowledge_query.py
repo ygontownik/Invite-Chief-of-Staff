@@ -158,7 +158,7 @@ def query_deal_intel(
     except Exception:
         print('ERROR: deal_intel collection not found. Run deal_intel_indexer.py first.',
               file=sys.stderr)
-        return []
+        sys.exit(1)
 
     if collection.count() == 0:
         return []

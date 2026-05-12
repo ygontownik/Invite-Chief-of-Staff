@@ -988,6 +988,40 @@ def _slugify(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", (s or "").lower()).strip("-")
 
 
+def _semantic_key(item: dict) -> str:
+    """Rough fingerprint: (who_first_token, first-6-words-of-what).
+    Used to catch semantically duplicate extractions before they land in
+    followUps (e.g. Pennybacker outreach appearing 4× from the same call)."""
+    import re as _re
+    who_raw = item.get("who") or item.get("counterparty") or ""
+    # first significant token from who field (strips titles, parens, firm names)
+    who_tok = _re.split(r"[\s/\-\(]", who_raw.lower())[0][:12]
+    what_raw = item.get("what") or item.get("content") or ""
+    # first 6 meaningful words (strip punctuation)
+    what_words = _re.sub(r"[^a-z0-9 ]", "", what_raw.lower()).split()[:6]
+    return who_tok + "|" + " ".join(what_words)
+
+
+_RECENT_DEDUP_DAYS = 14  # window for semantic near-duplicate check in followUps
+
+
+def _is_near_dupe_followup(item: dict, existing_fus: list[dict], today_str: str) -> bool:
+    """Return True if an existing followUp with the same semantic key exists
+    and was added within _RECENT_DEDUP_DAYS. Only applied to my_action items."""
+    key = _semantic_key(item)
+    if not key or key.startswith("|"):  # empty who/what — let id-based dedup handle
+        return False
+
+    from datetime import date, timedelta
+    cutoff = (date.fromisoformat(today_str) - timedelta(days=_RECENT_DEDUP_DAYS)).isoformat()
+
+    for fu in existing_fus:
+        if (fu.get("addedDate", "") >= cutoff
+                and _semantic_key(fu) == key):
+            return True
+    return False
+
+
 def append_items(items: list[dict], data_path: Path | None = None) -> dict:
     """
     Route a batch of envelope items to the correct destinations in
@@ -1030,6 +1064,18 @@ def append_items(items: list[dict], data_path: Path | None = None) -> dict:
             # Route by content type
             if ct in ARRAY_DEST:
                 arr_key = ARRAY_DEST[ct]
+                # Rule R2 — semantic near-dedup for followUps (my_action).
+                # Catches the same action extracted 2-4× from repeated pipeline
+                # runs on the same call/email (id-based dedup can't catch these
+                # because the LLM generates different IDs each run).
+                if (arr_key == "followUps"
+                        and ct == "my_action"
+                        and _is_near_dupe_followup(
+                            item, data.get("followUps", []),
+                            item.get("addedDate", datetime.now().strftime("%Y-%m-%d"))
+                        )):
+                    summary["skipped_dupes"] += 1
+                    continue
                 if _dedupe_append(data[arr_key], item):
                     summary["routed"][ct] = summary["routed"].get(ct, 0) + 1
                 else:
