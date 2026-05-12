@@ -2227,3 +2227,95 @@ durable edit path is `.template.html` → run `python3 app/cos-dashboard-refresh
 **How to verify**: After editing the template and running the refresh script,
 `grep` the target string in `.rendered.html` — not in `.template.html` or
 `.html`. Only the rendered file is what the browser actually receives.
+
+---
+
+## TOPIC — AWAITING COUNTERPARTIES DEDUP
+
+### 2026-05-12 — Thread-ID dedup added to _redupe_after_canonicalization
+
+Multiple extractions from the same Gmail thread can produce distinct items
+with different wording that escape the content-stem dedup (e.g. "confirm meeting
+slot" vs "confirm call time" from the same iSquared Intro thread). Fix: after
+the stem-dedup loop in `_redupe_after_canonicalization`, group by
+`source_ref.thread_id` and keep only the richest (longest content) item per
+thread. Applied in `cos-dashboard-fetch.py`.
+
+### 2026-05-12 — Firm-name normalization required for camelCase vs spaced variants
+
+"iSquared Capital" (camelCase) and "I Squared Capital" (spaced) produce different
+`_normalize_cp` keys because the function lowercases before alias lookup. Both
+must appear as needles in the `counterparty_aliases` entry in `firm_context.yaml`.
+Adding only the canonical or only one spelling causes the other to fall through.
+
+---
+
+## TOPIC — FOLLOW-UPS DEDUP
+
+### 2026-05-12 — Same-transcript dedup added as second pass
+
+Transcript processors can emit the same action twice with minor wording
+differences (e.g. "Analyze public info + AI to size Granite State" vs "Analyze
+Granite State asset using public data and AI"). The stem dedup misses these
+because key tokens appear in different order. Fix: second dedup pass in
+`cos-dashboard-fetch.py` using `(normalized_who, source, linkedTo)` as key —
+same person, same transcript URL → keep the longer `what`. Added 2026-05-12.
+
+### 2026-05-12 — Team member naming must be first-name-only in who/owner fields
+
+Extraction prompt in `cos_otter_backfill.py` now explicitly requires first name
+only for team members in `who` and `owner` fields. Full names like "Yoni Gontownik"
+create duplicate follow-ups because the `normalized_who` function can only
+reliably collapse to first name when the first name appears as a substring.
+
+### 2026-05-12 — WHO attribution rule (W1): external parties not on the call can never be `who`
+
+`cos_otter_backfill.py` prompt now enforces: if the action is a team member
+reaching out to someone NOT on the call, `who` must be the team member; the
+external party belongs in `what`. External parties who WERE on the call and
+explicitly committed to something can still be `who`. Previously, outreach
+targets like "Eddie Dunn (John Hancock)", "Latano (NextEra)", "Doug Bogie" were
+appearing as `who`, routing items to Awaiting Counterparties instead of Team
+Actions.
+
+### 2026-05-12 — ACTION CONSOLIDATION RULE (C1): multiple related actions from same person → one item
+
+`cos_otter_backfill.py` prompt now requires: when the same person on the same
+call has multiple related actions constituting one analytical task (same deal,
+same due date, sequential steps), consolidate into one item with a comprehensive
+`what`. Previously, e.g. "Run IRR sensitivity" and "Run financial scenarios on
+LTV and reservation fee" from Brad Misialek / Thunderhead were emitted as two
+separate items when they're both "run the deal math before the FIT meeting."
+
+---
+
+## TOPIC — TEAM ACTIONS CARD
+
+### 2026-05-12 — myAction in deal-config.yaml must be manually cleared when done
+
+The Team Actions card sources `myAction` from `deal-config.yaml` (via
+TOMAC_CONFIG injected at serve time). No pipeline auto-clears this field when
+an action is completed. When an action is done, clear `myAction: ""` and `task: ""`
+in `deal-config.yaml` directly. The UI dismiss button also works but its key
+is text-based — if the myAction text ever changes, the dismiss orphans and the
+item re-appears.
+
+---
+
+## TOPIC — SUBSCRIPTION AUTH / API FALLBACK
+
+### 2026-05-12 — Set CLAUDE_AUTH_MODE=subscription in any runner that loads ANTHROPIC_API_KEY
+
+`_claude_dispatch.py` falls back to `ANTHROPIC_API_KEY` when a subscription
+call fails. If the API key is exhausted (HTTP 400), this causes SILENT transcript
+processing failures — no error in the log, just a 400 that gets swallowed. The
+root symptom is transcripts that never appear in processed docs despite no logged
+error. Fix: always export `CLAUDE_AUTH_MODE=subscription` in runner scripts AFTER
+`load-secrets.sh` (which sets the API key). This forces a clean raise on
+subscription failure instead of silent API fallback. Applies to any LaunchAgent
+or cron runner that (a) uses Claude subscription auth and (b) loads the API key
+from Keychain/env.
+
+Also check `firm_context.yaml` — if `auth_mode` is "api" but the API key is
+exhausted, changing it to "subscription" alone is insufficient because the fallback
+chain still reaches the API key. The env var override is the correct belt.
