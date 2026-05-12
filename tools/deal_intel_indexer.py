@@ -104,7 +104,7 @@ def is_indexable(entry: dict) -> bool:
 
     Spec says: index entries where captured=True.
     Actual data: no 'captured' field exists; intel entries are identified by
-    source='intel' or source_type='claude-code'.  We index both conventions.
+    source='intel'.  Fall back to that when the captured flag is absent.
     """
     # Spec schema: explicit captured flag
     if 'captured' in entry:
@@ -188,6 +188,8 @@ def main():
         for entry in captured:
             entry_id = entry.get('id', '')
             if not entry_id:
+                print(f'  [{deal_id}] entry missing id, skipping: {str(entry)[:80]}')
+                total_errors += 1
                 continue
 
             sidecar_key = make_entry_id(deal_id, entry_id)
@@ -197,6 +199,8 @@ def main():
 
             text = entry_to_text(entry)
             if not text:
+                print(f'  [{deal_id}] entry {entry_id!r} produced no embeddable text, skipping')
+                total_errors += 1
                 continue
 
             now_iso = datetime.now(timezone.utc).isoformat()
