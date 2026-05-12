@@ -32,6 +32,19 @@ INDEX_DIR      = DATA_DIR / 'knowledge_index'
 EMBEDDING_MODEL = 'all-MiniLM-L6-v2'
 COLLECTION_NAME = 'intelligence'
 
+# Module-level ChromaDB client cache — avoids duplicate PersistentClient
+# instantiation on the same path (SQLite lock risk).
+_chroma_clients: dict[str, object] = {}
+
+
+def _get_chroma_client() -> object:
+    """Return a cached PersistentClient for INDEX_DIR. Creates on first call."""
+    import chromadb
+    key = str(INDEX_DIR)
+    if key not in _chroma_clients:
+        _chroma_clients[key] = chromadb.PersistentClient(path=key)
+    return _chroma_clients[key]
+
 
 def _snippet(text: str, max_chars: int = 400) -> str:
     if len(text) <= max_chars:
@@ -54,11 +67,10 @@ def query(
               file=sys.stderr)
         sys.exit(1)
 
-    import chromadb
     from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
 
     embed_fn   = SentenceTransformerEmbeddingFunction(model_name=EMBEDDING_MODEL)
-    db         = chromadb.PersistentClient(path=str(INDEX_DIR))
+    db         = _get_chroma_client()
     collection = db.get_or_create_collection(
         name=COLLECTION_NAME,
         embedding_function=embed_fn,
@@ -131,13 +143,12 @@ def query_deal_intel(
     if not INDEX_DIR.exists():
         print('ERROR: Knowledge index not found. Run deal_intel_indexer.py first.',
               file=sys.stderr)
-        return []
+        sys.exit(1)
 
-    import chromadb
     from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
 
     embed_fn = SentenceTransformerEmbeddingFunction(model_name=EMBEDDING_MODEL)
-    db = chromadb.PersistentClient(path=str(INDEX_DIR))
+    db = _get_chroma_client()
 
     try:
         collection = db.get_collection(
