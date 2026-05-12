@@ -20,12 +20,12 @@ import multi_tenant as mt  # noqa: E402
 
 class TestSlugValidation(unittest.TestCase):
     def test_accepts_legal_slugs(self):
-        for s in ("tomac", "re-dev", "abc", "a1", "foo-bar-baz"):
+        for s in ("tomac", "re-dev", "abc", "a1", "foo-bar-baz"):  # noqa: tenant-leak (slug format test)
             mt.validate_slug(s)  # must not raise
 
     def test_rejects_uppercase(self):
         with self.assertRaises(ValueError):
-            mt.validate_slug("Tomac")
+            mt.validate_slug("Tomac")  # noqa: tenant-leak (uppercase slug rejection test)
 
     def test_rejects_whitespace(self):
         with self.assertRaises(ValueError):
@@ -53,7 +53,7 @@ class TestSlugValidation(unittest.TestCase):
 
 class TestPortAllocation(unittest.TestCase):
     def test_reserved_ports(self):
-        self.assertEqual(mt.slug_to_port("tomac"), 7777)
+        self.assertEqual(mt.slug_to_port("tomac"), 7777)  # noqa: tenant-leak (reserved port test)
         self.assertEqual(mt.slug_to_port("re-dev"), 7778)
 
     def test_dynamic_port_in_range(self):
@@ -88,8 +88,8 @@ class TestPortAllocation(unittest.TestCase):
 class TestLabelFormat(unittest.TestCase):
     def test_label_format(self):
         self.assertEqual(
-            mt.launchagent_label("tomac", "morning-briefing"),
-            "com.cos.tomac.morning-briefing",
+            mt.launchagent_label("tomac", "morning-briefing"),  # noqa: tenant-leak (label format test)
+            "com.cos.tomac.morning-briefing",  # noqa: tenant-leak (label format test)
         )
         self.assertEqual(
             mt.launchagent_label("re-dev", "cos-capture"),
@@ -98,24 +98,24 @@ class TestLabelFormat(unittest.TestCase):
 
     def test_label_rejects_bad_routine(self):
         with self.assertRaises(ValueError):
-            mt.launchagent_label("tomac", "")
+            mt.launchagent_label("tomac", "")  # noqa: tenant-leak (validation test)
         with self.assertRaises(ValueError):
-            mt.launchagent_label("tomac", "morning briefing")
+            mt.launchagent_label("tomac", "morning briefing")  # noqa: tenant-leak (validation test)
         with self.assertRaises(ValueError):
-            mt.launchagent_label("tomac", "morning.briefing")
+            mt.launchagent_label("tomac", "morning.briefing")  # noqa: tenant-leak (validation test)
 
     def test_label_rejects_bad_slug(self):
         with self.assertRaises(ValueError):
-            mt.launchagent_label("Tomac", "x")
+            mt.launchagent_label("Tomac", "x")  # noqa: tenant-leak (validation test)
 
 
 class TestKeychainAndPaths(unittest.TestCase):
     def test_keychain_service(self):
-        self.assertEqual(mt.keychain_service("tomac"), "cos-pipeline-tomac")
+        self.assertEqual(mt.keychain_service("tomac"), "cos-pipeline-tomac")  # noqa: tenant-leak (slug test)
         self.assertEqual(mt.keychain_service("re-dev"), "cos-pipeline-re-dev")
 
     def test_data_dir(self):
-        self.assertTrue(str(mt.tenant_data_dir("tomac")).endswith("/cos-pipeline/data-tomac"))
+        self.assertTrue(str(mt.tenant_data_dir("tomac")).endswith("/cos-pipeline/data-tomac"))  # noqa: tenant-leak (path test)
 
     def test_logs_dir(self):
         self.assertTrue(str(mt.tenant_logs_dir("re-dev")).endswith("/cos-pipeline/logs-re-dev"))
@@ -130,7 +130,7 @@ class TestListKnownTenants(unittest.TestCase):
         # present on the dev machine. If running in a sandbox without them,
         # this assertion is the documented signal that the env is wrong.
         slugs = mt.list_known_tenants()
-        self.assertIn("tomac", slugs, f"expected 'tomac' in {slugs}")
+        self.assertIn("tomac", slugs, f"expected 'tomac' in {slugs}")  # noqa: tenant-leak (dev machine check)
         self.assertIn("re-dev", slugs, f"expected 're-dev' in {slugs}")
 
     def test_returns_sorted(self):

@@ -929,7 +929,7 @@
       <div class="section-num" style="background:var(--blue);">&#10003;</div>
       <div>
         <div class="section-title">Send your setup to the admin</div>
-        <div class="section-sub">Submit your info and Yoni will add you to the repo and confirm you're ready to install.</div>
+        <div class="section-sub">Submit your info and the admin will add you to the repo and confirm you're ready to install.</div>
       </div>
     </div>
     <div class="field-row">
@@ -1209,7 +1209,7 @@ function renderTeamMembers() {
         <div class="field-row" style="gap:10px;margin-bottom:0;">
           <div class="field" style="margin-bottom:0;">
             <label style="font-size:12px;">Name</label>
-            <input type="text" value="${m.name}" placeholder="Mark Saxe"
+            <input type="text" value="${m.name}" placeholder="Alex Smith"
               oninput="state.teamMembers[${i}].name=this.value;update()" style="font-size:13px;padding:7px 10px;">
           </div>
           <div class="field" style="margin-bottom:0;">
@@ -1438,7 +1438,7 @@ ${genIntelligenceSourcesYaml()}
 # Each toggle gates pipelines, dashboard tiles, and classifier behavior.
 # Per-user overrides live in $CONFIG_DIR/config/users.json :: users[].features.
 features:
-  call_recording: false           # ~/tomac-cove-pipeline/ Twilio + call_scheduler chain (off by default; turn on if you need dial-in recording)
+  call_recording: false           # ~/cos-pipeline/ Twilio + call_scheduler chain (off by default; turn on if you need dial-in recording)
   podcast_transcription: true     # AssemblyAI-driven podcast feed digestion
   research_pdfs: false            # Jefferies / GS / RBN / FVR PDF processing (off by default)
   fundraising: false              # LP-tracking tile + workflows (off by default)
@@ -1447,7 +1447,7 @@ features:
 # Falls back to dashboard-tiles.yaml :: title if a key is absent.
 tile_labels:
   cos: HQ
-  tomac-cove: Deal Pipeline
+  deals: Deal Pipeline
 
 # Read-only mode — true on partner/secondary installs that share the
 # primary tenant's Drive but should NOT run write pipelines.
@@ -1815,10 +1815,10 @@ async function submitSetup() {
   btn.disabled=true; btn.textContent='Sending\u2026';
   try {
     const resp=await fetch('https://formspree.io/f/xykojkzd',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({name,email,github,firm,subject:'COS Pipeline setup \u2014 '+(firm||name),claude_md:document.getElementById('claude-md-output').textContent.slice(0,2000)})});
-    if (resp.ok) { succEl.textContent='\u2713 Sent! Yoni will add you to the repo within 24 hours.'; succEl.style.display='block'; btn.textContent='Sent \u2713'; btn.style.background='var(--green)'; }
+    if (resp.ok) { succEl.textContent='\u2713 Sent! The admin will add you to the repo within 24 hours.'; succEl.style.display='block'; btn.textContent='Sent \u2713'; btn.style.background='var(--green)'; }
     else throw new Error('Server error '+resp.status);
   } catch(err) {
-    errEl.textContent='Submission failed \u2014 email ygontownik@gmail.com with your name, GitHub username, and firm.';
+    errEl.textContent='Submission failed \u2014 check your connection and try again, or contact your COS Pipeline admin directly.';
     errEl.style.display='block'; btn.disabled=false; btn.textContent='Send to admin \u2192';
   }
 }

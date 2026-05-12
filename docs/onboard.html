@@ -309,7 +309,7 @@
 </nav>
 
 <div class="header">
-  <div class="firm">Tomac Cove Infrastructure Partners</div>
+  <div class="firm">COS Pipeline — Team Onboarding</div>
   <h1>Pipeline Setup</h1>
   <p>New machine onboarding &nbsp;·&nbsp; 3 steps &nbsp;·&nbsp; ~10 minutes</p>
 </div>
@@ -320,7 +320,7 @@
   <div class="switcher">
     <a href="onboard.html" class="active">
       Joining an existing team
-      <span class="switcher-label">Tomac Cove internal — your admin sends you a link</span>
+      <span class="switcher-label">Subscriber onboarding — your admin sends you a link</span>
     </a>
     <a href="onboard-new-firm.html">
       Setting up for a new firm
@@ -336,14 +336,14 @@
       <div class="prereq-item"><span class="check">✓</span> Python 3.11+ &nbsp;<a href="https://python.org" target="_blank">→ python.org</a></div>
     </div>
     <div>
-      <div class="prereqs-label">Yoni gives you</div>
+      <div class="prereqs-label">Your admin gives you</div>
       <div class="prereq-item"><span class="check">✓</span> Access to this GitHub repo</div>
       <div class="prereq-item"><span class="check">✓</span> Google OAuth credentials file (via secure channel)</div>
     </div>
     <div>
       <div class="prereqs-label">Before starting</div>
-      <div class="prereq-item"><span class="check">✓</span> Tell Yoni your GitHub username <strong>and the Gmail address</strong> you'll use</div>
-      <div class="prereq-item"><span class="check">✓</span> Wait for his confirmation that you've been <strong>added as a Google OAuth test user</strong> (without this, Step 2's Google sign-in will be blocked)</div>
+      <div class="prereq-item"><span class="check">✓</span> Tell your admin your GitHub username <strong>and the Gmail address</strong> you'll use</div>
+      <div class="prereq-item"><span class="check">✓</span> Wait for confirmation that you've been <strong>added as a Google OAuth test user</strong> (without this, Step 2's Google sign-in will be blocked)</div>
     </div>
   </div>
 
@@ -399,8 +399,8 @@
           <li>Asks for your GitHub username and the token from Step 1 → clones the repo</li>
           <li>Opens the <strong>Anthropic console</strong> in your browser → create a key, paste it back</li>
           <li>Sets a <strong>dashboard username and password</strong> — write it down</li>
-          <li>Waits while Yoni sends you <code>gdrive_credentials.json</code> → save it to <code>~/Downloads/</code>, the installer picks it up automatically</li>
-          <li>Opens <strong>Google sign-in</strong> in your browser → sign in with the Gmail you gave Yoni, click Allow, return to Terminal. <em>If you see "This app isn't verified" with no "Advanced" link, contact Yoni — your Gmail probably hasn't been added as a test user yet.</em></li>
+          <li>Waits while your admin sends you <code>gdrive_credentials.json</code> → save it to <code>~/Downloads/</code>, the installer picks it up automatically</li>
+          <li>Opens <strong>Google sign-in</strong> in your browser → sign in with the Gmail you provided, click Allow, return to Terminal. <em>If you see "This app isn't verified" with no "Advanced" link, contact your admin — your Gmail probably hasn't been added as a test user yet.</em></li>
           <li>Validates everything and opens your dashboard</li>
         </ol>
 
@@ -545,11 +545,11 @@
 
       <div>
         <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px;">Who pays for the API?</div>
-        <div style="font-size: 14px; color: var(--muted);">TCIP has one Anthropic account. All three of you (Yoni, Mark, Nik) use the same API key stored in your own Keychains. Charges go to one TCIP bill regardless of whose machine runs a pipeline job. Yoni can see per-model usage in <code style="font-size: 12px; background: #f0ece4; padding: 1px 5px; border-radius: 3px;">~/dashboards/logs/anthropic-usage.jsonl</code>.</div>
+        <div style="font-size: 14px; color: var(--muted);">Your firm has one Anthropic account. All team members use the same API key stored in their own Keychains. Charges go to one bill regardless of whose machine runs a pipeline job. The admin can see per-model usage in <code style="font-size: 12px; background: #f0ece4; padding: 1px 5px; border-radius: 3px;">~/dashboards/logs/anthropic-usage.jsonl</code>.</div>
       </div>
 
       <div>
-        <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px;">Will my pipeline duplicate what Yoni already processed?</div>
+        <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px;">Will my pipeline duplicate what others already processed?</div>
         <div style="font-size: 14px; color: var(--muted);">No. Each script checks the shared Google Docs before writing. If an email thread or transcript is already there (written by any team member's machine), it skips it. Email dedup runs by subject line; transcript dedup runs by a PROCESSED: header written to the source doc.</div>
       </div>
 
@@ -559,7 +559,7 @@
       </div>
 
       <div>
-        <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px;">How do I update the config when Yoni pushes changes?</div>
+        <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px;">How do I update the config when the admin pushes changes?</div>
         <div style="font-size: 14px; color: var(--muted);">
           <div class="code-block" style="margin: 8px 0 0;">
             <div class="code-label">Terminal <button class="copy-btn" onclick="copyCode(this)">Copy</button></div>
@@ -570,7 +570,7 @@
 
       <div>
         <div style="font-weight: 600; font-size: 14px; margin-bottom: 4px;">Something broke. How do I debug?</div>
-        <div style="font-size: 14px; color: var(--muted);">Logs are in <code style="font-size: 12px; background: #f0ece4; padding: 1px 5px; border-radius: 3px;">~/dashboards/logs/claude-tasks/</code>. Each pipeline has a <code>.stdout.log</code> and <code>.stderr.log</code>. Send the relevant log to Yoni.</div>
+        <div style="font-size: 14px; color: var(--muted);">Logs are in <code style="font-size: 12px; background: #f0ece4; padding: 1px 5px; border-radius: 3px;">~/dashboards/logs/claude-tasks/</code>. Each pipeline has a <code>.stdout.log</code> and <code>.stderr.log</code>. Send the relevant log to your admin.</div>
       </div>
 
     </div>

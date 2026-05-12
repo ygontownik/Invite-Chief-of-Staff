@@ -77,7 +77,7 @@ def _firm_recruit_keywords(fcfg):
 
 
 def _is_deal_ws(ws):
-    return ws in ('deals', 'tomac')
+    return ws in ('deals', 'tomac')  # noqa: tenant-leak (backward-compat alias)
 
 
 def _doc_id(ctx, fcfg, key, default=''):
@@ -92,13 +92,13 @@ def _doc_id(ctx, fcfg, key, default=''):
 
 MOCK_CTX = {
     'schema_version': 2,
-    'principal': {'name': 'Yoni Gontownik', 'email': 'y@x.com'},
+    'principal': {'name': 'Jane Principal', 'email': 'jane@example.com'},
     'team': [
-        {'name': 'Mark Saxe', 'role': 'co-founder, deal lead'},
-        {'name': 'Nik', 'role': 'fundraising'},
+        {'name': 'Alex Colleague', 'role': 'co-founder, deal lead'},
+        {'name': 'Sam', 'role': 'fundraising'},
     ],
-    'owner_whitelist': ['Yoni', 'Mark', 'Nik'],
-    'workstream_categories': {'deal': 'Tomac Cove'},
+    'owner_whitelist': ['Jane', 'Alex', 'Sam'],
+    'workstream_categories': {'deal': 'Example Firm'},
     'google_docs': {
         'pipeline':   'NEW_PIPELINE_DOC_ID',
         'followups':  'NEW_FU_DOC_ID',
@@ -106,15 +106,15 @@ MOCK_CTX = {
 }
 
 MOCK_FCONFIG = {
-    'firm_name': 'Tomac Cove',
+    'firm_name': 'Example Firm',
     'docs': {
         'recruiting': 'LEGACY_RECRUIT_DOC_ID',
-        'tomac':      'LEGACY_TOMAC_DOC_ID',  # legacy fallback only
+        'example':    'LEGACY_EXAMPLE_DOC_ID',  # legacy fallback only
     },
-    'deal_keywords': ['cholla', 'gideon', 'venus', 'term sheet'],
-    'recruit_keywords': ['piper maddox', 'interview'],
+    'deal_keywords': ['alphadeal', 'janedoe', 'project', 'term sheet'],
+    'recruit_keywords': ['example recruiter', 'interview'],
     'counterparty_aliases': [
-        {'needles': ['cholla'], 'canonical': 'Cholla Power Plant'},
+        {'needles': ['alphadeal'], 'canonical': 'AlphaDeal Power Plant'},
     ],
 }
 
@@ -146,13 +146,13 @@ class DealKeywordsFromFirmConfig(unittest.TestCase):
 
     def test_keywords_loaded_from_firm_config(self):
         kws = _firm_deal_keywords(MOCK_FCONFIG)
-        self.assertIn('cholla', kws)
-        self.assertIn('gideon', kws)
+        self.assertIn('alphadeal', kws)
+        self.assertIn('janedoe', kws)
         self.assertIn('term sheet', kws)
 
     def test_canonical_aliases_merged_into_keywords(self):
         kws = _firm_deal_keywords(MOCK_FCONFIG)
-        self.assertIn('cholla power plant', kws)
+        self.assertIn('alphadeal power plant', kws)
 
     def test_default_keywords_when_missing(self):
         kws = _firm_deal_keywords({})
@@ -164,7 +164,7 @@ class RecruitKeywordsFromFirmConfig(unittest.TestCase):
 
     def test_recruit_keywords_loaded(self):
         kws = _firm_recruit_keywords(MOCK_FCONFIG)
-        self.assertIn('piper maddox', kws)
+        self.assertIn('example recruiter', kws)
         self.assertIn('interview', kws)
 
     def test_default_recruit_when_missing(self):
@@ -184,10 +184,10 @@ class DocIdResolution(unittest.TestCase):
         v = _doc_id(MOCK_CTX, MOCK_FCONFIG, 'recruiting')
         self.assertEqual(v, 'LEGACY_RECRUIT_DOC_ID')
 
-    def test_legacy_tomac_key_resolves(self):
-        # During the back-compat window the 'tomac' key still resolves
-        v = _doc_id(MOCK_CTX, MOCK_FCONFIG, 'tomac')
-        self.assertEqual(v, 'LEGACY_TOMAC_DOC_ID')
+    def test_legacy_key_resolves_via_firm_config_docs(self):
+        # Legacy keys not in google_docs fall back to firm_config.docs
+        v = _doc_id(MOCK_CTX, MOCK_FCONFIG, 'example')
+        self.assertEqual(v, 'LEGACY_EXAMPLE_DOC_ID')
 
 
 class WorkstreamBackCompat(unittest.TestCase):
@@ -196,7 +196,7 @@ class WorkstreamBackCompat(unittest.TestCase):
         self.assertTrue(_is_deal_ws('deals'))
 
     def test_tomac_still_accepted_for_one_release(self):
-        self.assertTrue(_is_deal_ws('tomac'))
+        self.assertTrue(_is_deal_ws('tomac'))  # noqa: tenant-leak (backward-compat alias)
 
     def test_other_workstreams_not_deal(self):
         for ws in ('job', 'personal', '', None, 'recruiting'):
@@ -204,30 +204,30 @@ class WorkstreamBackCompat(unittest.TestCase):
 
 
 class JsonOutputContract(unittest.TestCase):
-    """Per PLAN E1.1(b): JSON output uses 'deals' key; 'tomac' kept as
+    """Per PLAN E1.1(b): JSON output uses 'deals' key; the legacy tenant key is kept as
     a back-compat duplicate during the one-release window."""
 
     def _build_output(self, deals_value):
         return {
             'deals': deals_value,
-            'tomac': deals_value,
+            'tomac': deals_value,  # noqa: tenant-leak (backward-compat key)
         }
 
     def test_deals_key_present(self):
-        out = self._build_output([{'name': 'Cholla', 'stage': 'Sourcing'}])
+        out = self._build_output([{'name': 'AlphaDeal', 'stage': 'Sourcing'}])
         self.assertIn('deals', out)
-        self.assertEqual(out['deals'][0]['name'], 'Cholla')
+        self.assertEqual(out['deals'][0]['name'], 'AlphaDeal')
 
     def test_tomac_back_compat_duplicate(self):
-        deals = [{'name': 'Cholla'}]
+        deals = [{'name': 'AlphaDeal'}]
         out = self._build_output(deals)
-        self.assertEqual(out['deals'], out['tomac'])
+        self.assertEqual(out['deals'], out['tomac'])  # noqa: tenant-leak (backward-compat key)
 
 
 class DealConfigPathResolution(unittest.TestCase):
     """Per PLAN E1.4: _DEAL_CONFIG_PATH points to the per-tenant config
     repo (~/cos-pipeline-config-<slug>/config/deal-config.yaml) with
-    fallback to the legacy ~/dashboards/config/tomac-config.yaml path
+    fallback to the legacy ~/dashboards/config/<slug>-config.yaml path
     for one release."""
 
     def _resolve_path(self, env_dir=None, tenant_dir=None, dashboards_dir=None):
@@ -238,7 +238,7 @@ class DealConfigPathResolution(unittest.TestCase):
             candidates.append(Path(tenant_dir) / 'config' / 'deal-config.yaml')
         if dashboards_dir:
             candidates.append(Path(dashboards_dir) / 'config' / 'deal-config.yaml')
-            candidates.append(Path(dashboards_dir) / 'config' / 'tomac-config.yaml')
+            candidates.append(Path(dashboards_dir) / 'config' / 'tomac-config.yaml')  # noqa: tenant-leak (legacy fallback path)
         for p in candidates:
             if p.exists():
                 return p
@@ -246,7 +246,7 @@ class DealConfigPathResolution(unittest.TestCase):
 
     def test_per_tenant_config_preferred(self):
         with tempfile.TemporaryDirectory() as td:
-            tenant = Path(td) / 'cos-pipeline-config-tomac'
+            tenant = Path(td) / 'cos-pipeline-config-tomac'  # noqa: tenant-leak (backward-compat path test)
             (tenant / 'config').mkdir(parents=True)
             target = tenant / 'config' / 'deal-config.yaml'
             target.write_text('liveDeals: []\n')
@@ -257,7 +257,7 @@ class DealConfigPathResolution(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             dash = Path(td) / 'dashboards'
             (dash / 'config').mkdir(parents=True)
-            legacy = dash / 'config' / 'tomac-config.yaml'
+            legacy = dash / 'config' / 'tomac-config.yaml'  # noqa: tenant-leak (legacy fallback path)
             legacy.write_text('liveDeals: []\n')
             resolved = self._resolve_path(dashboards_dir=dash)
             self.assertEqual(resolved, legacy)
@@ -287,8 +287,8 @@ class ParseDealPipelineNameExists(unittest.TestCase):
         text = nxt.read_text()
         self.assertIn('parse_deal_pipeline', text,
                       'parse_deal_pipeline rename not documented')
-        self.assertIn('parse_tomac', text,
-                      'parse_tomac alias for back-compat not documented')
+        self.assertIn('parse_tomac', text,  # noqa: tenant-leak (backward-compat alias check)
+                      'parse_tomac alias for back-compat not documented')  # noqa: tenant-leak
 
     def test_next_file_documents_deal_config_path(self):
         # Also mentioned in server-routes.delta.md (since the constant
@@ -299,9 +299,9 @@ class ParseDealPipelineNameExists(unittest.TestCase):
         self.assertIn('_DEAL_CONFIG_PATH', text)
         self.assertIn('deal-config.yaml', text)
         # Per-tenant path mentioned
-        self.assertIn('cos-pipeline-config-tomac', text)
+        self.assertIn('cos-pipeline-config-tomac', text)  # noqa: tenant-leak (backward-compat path test)
         # Legacy fallback mentioned
-        self.assertIn('tomac-config.yaml', text)
+        self.assertIn('tomac-config.yaml', text)  # noqa: tenant-leak (legacy path test)
 
     def test_next_file_documents_deal_window_var(self):
         delta = Path.home() / 'cos-pipeline' / 'next' / 'track-C' / 'server-routes.delta.md'

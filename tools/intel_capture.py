@@ -368,7 +368,17 @@ def _extract_intel_from_transcript(transcript_text, deals, explicit_date=None):
     if len(transcript_text) > MAX_CHARS:
         transcript_text = transcript_text[:MAX_CHARS] + "\n\n[transcript truncated]"
 
-    prompt = f"""You are processing a call/meeting transcript for an infrastructure investment firm (Tomac Cove Infrastructure Partners).
+    _fc_ctx = {}
+    try:
+        import sys as _sys, os as _os
+        _sys.path.insert(0, str(Path(__file__).parent.parent))
+        import _firm_context as _fc_mod
+        _fc_ctx = _fc_mod.load_firm_context() or {}
+    except Exception:
+        pass
+    _firm_display    = (((_fc_ctx.get("firm") or {}).get("name") or "the firm")).strip()
+    _firm_short_name = (((_fc_ctx.get("firm") or {}).get("short_name") or _firm_display)).strip()
+    prompt = f"""You are processing a call/meeting transcript for {_firm_display} ({_firm_short_name}).
 
 Extract ALL intelligence from this transcript across two layers:
 

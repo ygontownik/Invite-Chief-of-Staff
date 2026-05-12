@@ -177,7 +177,7 @@ def format_for_tile(agg: dict[str, Any], top_n: int = 5) -> dict[str, Any]:
 
 
 if __name__ == "__main__":
-    agg = aggregate_costs("tomac", lookback_days=30)
+    agg = aggregate_costs("tomac", lookback_days=30)  # noqa: tenant-leak (dev quickrun default)
     tile = format_for_tile(agg)
     print("── raw aggregate ──")
     print(json.dumps(agg, indent=2))

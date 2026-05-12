@@ -89,7 +89,7 @@ class TestCallAggregation(_Base):
              "usage": {"input_tokens": 80, "output_tokens": 40},
              "rate_limit_status": "allowed", "rate_limit_resets_at": None,
              "project_id": "proj-x"},
-            {"ts": ts, "task_type": "tomac-deal-compile", "model": "claude-opus-4-7",
+            {"ts": ts, "task_type": "tomac-deal-compile", "model": "claude-opus-4-7",  # noqa: tenant-leak (task_type test)
              "mode": "subscription", "outcome": "failure:ProcessError",
              "usage": {}, "rate_limit_status": "exceeded",
              "rate_limit_resets_at": "2026-05-04T03:00:00+00:00",
@@ -130,7 +130,7 @@ class TestQueueDepth(_Base):
         self._write_queue([
             {"task_type": "briefing-morning", "queue_until": None, "attempts": 1,
              "system": "ctx", "messages": []},
-            {"task_type": "tomac-deal-compile", "queue_until": None, "attempts": 1,
+            {"task_type": "tomac-deal-compile", "queue_until": None, "attempts": 1,  # noqa: tenant-leak (task_type test)
              "system": "ctx", "messages": []},
         ])
         # Dead letter file

@@ -85,7 +85,7 @@ class TestLoadAndAggregate(_Base):
                  "model": "claude-sonnet-4-6", "outcome": "ok",
                  "usage": {"input_tokens": 80, "output_tokens": 40},
                  "rate_limit_status": "allowed", "rate_limit_resets_at": None},
-                {"ts": ts, "task_type": "tomac-deal-compile",
+                {"ts": ts, "task_type": "tomac-deal-compile",  # noqa: tenant-leak (task_type key test)
                  "model": "claude-opus-4-7",
                  "outcome": "failure:ProcessError",
                  "usage": {}, "rate_limit_status": "exceeded",

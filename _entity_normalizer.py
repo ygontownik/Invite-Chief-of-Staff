@@ -186,8 +186,8 @@ class EntityNormalizer:
             if name.lower() == s_lower:
                 return ResolvedEntity(s_clean, name, source, "exact")
 
-        # 3. Substring (s in canonical or canonical in s) — handles "Cholla Petro"
-        #    inside "Cholla / Gideon Powell".
+        # 3. Substring (s in canonical or canonical in s) — handles "AlphaCo Petro"
+        #    inside "AlphaCo / Jane Doe".
         for name, source in self.canonical:
             n_lower = name.lower()
             if (s_lower in n_lower) or any(tok and tok in s_lower for tok in n_lower.split(" / ")):

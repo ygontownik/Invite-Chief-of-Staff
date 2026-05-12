@@ -12,7 +12,7 @@ Rewritten 2026-05-03 (session 4) to:
   - SEPARATE check for firm_config.json :: keychain_service_prefix
   - SEPARATE check rejecting deprecated firm_config.json :: docs (C8)
 
-These tests run setup.sh --instance=tomac --validate and assert on the output.
+These tests run setup.sh --instance=<slug> --validate and assert on the output.
 """
 import os
 import re
@@ -24,7 +24,7 @@ REPO = Path(__file__).resolve().parent.parent
 SETUP = REPO / 'setup.sh'
 
 
-def _run_validate(slug='tomac'):
+def _run_validate(slug='tomac'):  # noqa: tenant-leak (integration test default slug)
     return subprocess.run(
         ['bash', str(SETUP), f'--instance={slug}', '--validate'],
         capture_output=True, text=True, timeout=60,
@@ -35,7 +35,7 @@ class Gate2RequiredKeysAreCorrect(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.r = _run_validate('tomac')
+        cls.r = _run_validate('tomac')  # noqa: tenant-leak (integration test)
         cls.out = cls.r.stdout + cls.r.stderr
 
     def test_checks_principal(self):
@@ -75,11 +75,11 @@ class Gate2RequiredKeysAreCorrect(unittest.TestCase):
 
 
 class TomacValidatePassesClean(unittest.TestCase):
-    """The whole point: tomac validate should PASS after session-4 fixes."""
+    """The whole point: the default-tenant validate should PASS after session-4 fixes."""
 
     @classmethod
     def setUpClass(cls):
-        cls.r = _run_validate('tomac')
+        cls.r = _run_validate('tomac')  # noqa: tenant-leak (integration test)
         cls.out = cls.r.stdout + cls.r.stderr
 
     def test_exits_zero(self):

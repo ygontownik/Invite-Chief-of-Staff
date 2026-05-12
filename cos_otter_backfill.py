@@ -1180,14 +1180,14 @@ EXTRACTION TASKS:
      "status_update" — the call just provided a status on something already being tracked (e.g. "proposal expected this week", "call already scheduled"). Do NOT write to Follow-ups; include in the PROCESSED header only.
    TEAM MEMBER NAMING — CRITICAL: Always use FIRST NAME ONLY for the firm's own team members
    in both `who` and `owner` fields. Never use full names like "{_OWNERS.replace('|', ' Lastname, ')} Lastname".
-   Inconsistent naming (e.g. "Yoni" vs "Yoni Gontownik") creates duplicate actions on the dashboard.
+   Inconsistent naming (e.g. "Alex" vs "Alex Smith") creates duplicate actions on the dashboard.
    Canonical first names: {_OWNERS}. Use these exactly — no last names, no initials, no variants.
-   Codified 2026-05-12 after PNGTS action appeared twice from same call due to "Yoni" vs "Yoni Gontownik".
+   Codified 2026-05-12 after a deal action appeared twice from same call due to first-name vs full-name mismatch.
 
    WHO ATTRIBUTION RULE (rule W1) — the `who` field is the person or firm who OWNS the action (must do the work), NOT the subject of the action.
    • If a TCIP team member needs to reach out to / email / call an external party → `who` is the team member (first name only). The external party belongs in `what`. Example: "Email Eddie Dunn at John Hancock re: infra opportunities" → who="Yoni" (not "Eddie Dunn (John Hancock)").
-   • An external party can only be `who` if they are an ACTIVE SPEAKER in this transcript — meaning they spoke lines and made a commitment in their own voice. Appearing only in the call TITLE or being MENTIONED by others does NOT make them a participant. Example: a call titled "Thunderhead FIT" where only Brad (Thunderhead) speaks means FIT is NOT a participant — actions attributed to FIT must be reassigned to the TCIP team member who will follow up with them.
-   • If an external party WAS an active speaker and explicitly committed to something → they can be `who`. Example: Brad Misialek is speaking and says "I'll run the IRR scenarios by Wednesday" → who="Brad Misialek / Thunderhead".
+   • An external party can only be `who` if they are an ACTIVE SPEAKER in this transcript — meaning they spoke lines and made a commitment in their own voice. Appearing only in the call TITLE or being MENTIONED by others does NOT make them a participant. Example: a call titled "DealCo FIT" where only Alex (DealCo) speaks means FIT is NOT a participant — actions attributed to FIT must be reassigned to the TCIP team member who will follow up with them.
+   • If an external party WAS an active speaker and explicitly committed to something → they can be `who`. Example: Alex Rivera is speaking and says "I'll run the IRR scenarios by Wednesday" → who="Alex Rivera / DealCo".
    • "Map / compile / share information" tasks belong to the person who HAS the information, not the person who would benefit from it. Example: on a call with Marc Borzykowski (Vector), "map Vector's bus shelter zones" → who="Marc Borzykowski / Vector" because Marc has the Vector data, not who="Yoni".
    • If you cannot determine which team member owns the action, default to `who="{_PRINCIPAL_FIRST}"`.
    Codified 2026-05-12 after external parties (Eddie Dunn, Doug Bogie, Latano, Manulife contact, etc.) were incorrectly assigned as `who` on weekly-call actions.

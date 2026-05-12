@@ -5,8 +5,8 @@ has no real installed agents. They verify:
   - Guard: --uninstall without --instance refuses to run
   - Empty case: uninstalling an unused slug exits 0 with 0 items removed
   - Idempotency: two runs in a row both succeed cleanly
-  - Slug isolation: a fake-slug uninstall does NOT touch com.cos.tomac.*
-    LaunchAgents, cos-pipeline-tomac/* keychain entries, data-tomac/, etc.
+  - Slug isolation: a fake-slug uninstall does NOT touch the default tenant's
+    LaunchAgents, keychain entries, or data directories.
 
 The sandbox slug is never written to and never used in the real port registry.
 """
@@ -62,12 +62,12 @@ class UninstallGuards(unittest.TestCase):
 class SlugIsolation(unittest.TestCase):
     """Uninstalling slug X must not affect slug Y's footprint."""
 
-    def _tomac_inventory(self):
-        """Snapshot the parts of tomac's footprint that uninstall could touch."""
+    def _tomac_inventory(self):  # noqa: tenant-leak (slug isolation test)
+        """Snapshot the parts of the default-tenant footprint that uninstall could touch."""
         la = sorted(
-            p.name for p in (Path.home() / 'Library' / 'LaunchAgents').glob('com.cos.tomac.*')
+            p.name for p in (Path.home() / 'Library' / 'LaunchAgents').glob('com.cos.tomac.*')  # noqa: tenant-leak (slug isolation test)
         )
-        # Keychain: count cos-pipeline-tomac/* entries
+        # Keychain: count cos-pipeline-tomac/* entries  # noqa: tenant-leak (slug isolation test)
         try:
             dump = subprocess.run(
                 ['security', 'dump-keychain',
@@ -78,11 +78,11 @@ class SlugIsolation(unittest.TestCase):
             dump = ''
         kc_count = sum(
             1 for line in dump.splitlines()
-            if '"svce"<blob>="cos-pipeline-tomac/' in line
+            if '"svce"<blob>="cos-pipeline-tomac/' in line  # noqa: tenant-leak (keychain slug check)
         )
         # Dirs
-        data_exists = (REPO / 'data-tomac').exists()
-        logs_exists = (REPO / 'logs-tomac').exists()
+        data_exists = (REPO / 'data-tomac').exists()  # noqa: tenant-leak (dir slug check)
+        logs_exists = (REPO / 'logs-tomac').exists()  # noqa: tenant-leak (dir slug check)
         return {
             'launchagents': la,
             'keychain_count': kc_count,
@@ -90,17 +90,17 @@ class SlugIsolation(unittest.TestCase):
             'logs_dir': logs_exists,
         }
 
-    def test_uninstalling_sandbox_does_not_touch_tomac(self):
-        before = self._tomac_inventory()
+    def test_uninstalling_sandbox_does_not_touch_tomac(self):  # noqa: tenant-leak (method name — slug isolation test)
+        before = self._tomac_inventory()  # noqa: tenant-leak (slug isolation test)
         r = _run_setup(
             f'--instance={SANDBOX_SLUG}', '--uninstall', '--yes',
             '--purge-data', '--purge-config',
         )
         self.assertEqual(r.returncode, 0,
                          msg=f'stdout={r.stdout!r}\nstderr={r.stderr!r}')
-        after = self._tomac_inventory()
+        after = self._tomac_inventory()  # noqa: tenant-leak (slug isolation test)
         self.assertEqual(before, after,
-                         msg='tomac footprint changed after sandbox uninstall')
+                         msg='default-tenant footprint changed after sandbox uninstall')
 
 
 class CliFlags(unittest.TestCase):

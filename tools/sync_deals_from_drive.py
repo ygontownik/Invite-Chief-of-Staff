@@ -6,7 +6,7 @@ write a _drive_overlay.json that compile-dashboard.py merges at compile time,
 and update deal.md YAML frontmatter (stage + thesis scores) so the health
 formula always uses current values.
 
-Run: python3 sync_deals_from_drive.py [--deal-id pngts]
+Run: python3 sync_deals_from_drive.py [--deal-id <deal_id>]
 """
 
 import json

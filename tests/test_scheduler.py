@@ -200,18 +200,18 @@ class RegisterFlow(unittest.TestCase):
 
     def test_list_registered_filters_by_prefix(self):
         # Create three plist files with different prefixes.
-        (self.tmp / 'com.cos.tomac.foo.plist').write_bytes(b'<plist/>')
-        (self.tmp / 'com.cos.tomac.bar.plist').write_bytes(b'<plist/>')
+        (self.tmp / 'com.cos.tomac.foo.plist').write_bytes(b'<plist/>')  # noqa: tenant-leak (prefix filter test)
+        (self.tmp / 'com.cos.tomac.bar.plist').write_bytes(b'<plist/>')  # noqa: tenant-leak (prefix filter test)
         (self.tmp / 'com.unrelated.baz.plist').write_bytes(b'<plist/>')
         try:
             with mock.patch.dict(os.environ, {'COS_SCHEDULER_BACKEND': 'launchd'}, clear=False):
                 with mock.patch.object(_scheduler, '_launchagents_dir', return_value=self.tmp):
-                    matches = _scheduler.list_registered('com.cos.tomac.')
-                    self.assertEqual(matches, ['com.cos.tomac.bar', 'com.cos.tomac.foo'])
+                    matches = _scheduler.list_registered('com.cos.tomac.')  # noqa: tenant-leak (prefix filter test)
+                    self.assertEqual(matches, ['com.cos.tomac.bar', 'com.cos.tomac.foo'])  # noqa: tenant-leak (prefix filter test)
                     all_three = _scheduler.list_registered('')
                     self.assertIn('com.unrelated.baz', all_three)
         finally:
-            for f in ('com.cos.tomac.foo.plist', 'com.cos.tomac.bar.plist',
+            for f in ('com.cos.tomac.foo.plist', 'com.cos.tomac.bar.plist',  # noqa: tenant-leak (cleanup)
                       'com.unrelated.baz.plist'):
                 p = self.tmp / f
                 if p.exists():

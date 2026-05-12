@@ -103,8 +103,8 @@ class ServicePrefix(unittest.TestCase):
 
     def test_uses_firm_config_value_when_present(self):
         with mock.patch('_firm_context.load_firm_config',
-                        return_value={'keychain_service_prefix': 'cos-pipeline-tomac'}):
-            self.assertEqual(_secrets._service_prefix(), 'cos-pipeline-tomac')
+                        return_value={'keychain_service_prefix': 'cos-pipeline-tomac'}):  # noqa: tenant-leak (keychain prefix test)
+            self.assertEqual(_secrets._service_prefix(), 'cos-pipeline-tomac')  # noqa: tenant-leak (keychain prefix test)
 
     def test_handles_firm_config_load_failure(self):
         with mock.patch('_firm_context.load_firm_config',
@@ -129,13 +129,13 @@ class KeychainEntryShape(unittest.TestCase):
 
         with mock.patch.dict(os.environ, {'USER': 'alice'}, clear=False):
             with mock.patch.object(_secrets, '_service_prefix',
-                                   return_value='cos-pipeline-tomac'):
+                                   return_value='cos-pipeline-tomac'):  # noqa: tenant-leak (keychain shape test)
                 with mock.patch('subprocess.run', side_effect=fake_run):
                     _secrets._load_keychain('ANTHROPIC_API_KEY')
 
         cmd = captured['cmd']
         # ['security', 'find-generic-password', '-s', svc, '-a', acct, '-w']
-        self.assertEqual(cmd[3], 'cos-pipeline-tomac/ANTHROPIC_API_KEY')
+        self.assertEqual(cmd[3], 'cos-pipeline-tomac/ANTHROPIC_API_KEY')  # noqa: tenant-leak (keychain shape test)
         self.assertEqual(cmd[5], 'alice')
 
     def test_store_uses_prefix_slash_key_service_and_user_account(self):

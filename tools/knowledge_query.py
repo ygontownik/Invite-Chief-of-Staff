@@ -15,7 +15,7 @@ Usage:
 
 Examples:
     knowledge_query.py "PJM interconnection queue delays"
-    knowledge_query.py "ERCOT land prices" --deal cholla --top-k 5
+    knowledge_query.py "ERCOT land prices" --deal <deal_id> --top-k 5
     knowledge_query.py "LNG FID projects" --since 2026-03-01
     knowledge_query.py "data center water" --format json
 """

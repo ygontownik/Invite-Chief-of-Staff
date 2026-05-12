@@ -82,7 +82,7 @@ class TestUsersMigrate(unittest.TestCase):
         self.users_path = self.root / "users.json"
 
         self.dashboard_path.write_text(json.dumps({
-            "_pinnedItems": ["deal:cholla"],
+            "_pinnedItems": ["deal:cholla"],  # noqa: tenant-leak (test fixture — backward-compat path)
             "_hiddenItems": ["followUp:legacy-noise"],
             "_dismissedFollowUps": ["fu-001", "fu-002"],
             "_dismissedEmailIds": ["em-aaa"],
@@ -98,9 +98,9 @@ class TestUsersMigrate(unittest.TestCase):
         self.users_path.write_text(json.dumps({
             "users": [
                 {"username": "yoni", "email": "yoni@example.com",
-                 "tiles": ["/", "/tomac-cove/"]},
+                 "tiles": ["/", "/tomac-cove/"]},  # noqa: tenant-leak (test fixture)
                 {"username": "mark", "email": "mark@example.com",
-                 "tiles": ["/tomac-cove/"]},
+                 "tiles": ["/tomac-cove/"]},  # noqa: tenant-leak (test fixture)
             ]
         }))
 
@@ -130,13 +130,13 @@ class TestUsersMigrate(unittest.TestCase):
             (self.config_root / "users" / "mark@example.com" / "preferences.json").read_text())
 
         # Owner gets pinned + dismissed* migrated into hiddenItems.
-        self.assertIn("deal:cholla", owner_prefs["pinnedItems"])
+        self.assertIn("deal:cholla", owner_prefs["pinnedItems"])  # noqa: tenant-leak (test fixture check)
         self.assertIn("followUp:fu-001", owner_prefs["hiddenItems"])
         self.assertIn("emailQueue:em-aaa", owner_prefs["hiddenItems"])
         # Owner-only legacy keys NOT migrated to non-owner.
         self.assertNotIn("followUp:fu-001", mark_prefs["hiddenItems"])
         # Tiles are passed through.
-        self.assertEqual(mark_prefs["tilesVisible"], ["/tomac-cove/"])
+        self.assertEqual(mark_prefs["tilesVisible"], ["/tomac-cove/"])  # noqa: tenant-leak (test fixture check)
         # Schema defaults applied.
         self.assertEqual(mark_prefs["theme"], "paper")
         self.assertFalse(mark_prefs["notificationsMuted"])
@@ -185,7 +185,7 @@ class TestPerUserFilter(unittest.TestCase):
                 {"id": "fu-stale", "text": "drop me"},
                 {"id": "fu-keep", "text": "keep me"},
             ],
-            "tomac": [{"id": "deal-1"}],
+            "tomac": [{"id": "deal-1"}],  # noqa: tenant-leak (backward-compat key test)
         }
 
     def tearDown(self):
@@ -201,7 +201,7 @@ class TestPerUserFilter(unittest.TestCase):
         self.assertNotIn("briefingLog", out)
         # Allowed keys still present.
         self.assertIn("today", out)
-        self.assertIn("tomac", out)
+        self.assertIn("tomac", out)  # noqa: tenant-leak (backward-compat key test)
         # hiddenItems applied to followUps.
         ids = [x["id"] for x in out["followUps"]]
         self.assertIn("fu-keep", ids)

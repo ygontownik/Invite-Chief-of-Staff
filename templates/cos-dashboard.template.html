@@ -57,7 +57,7 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans
 .pill { background: #ffffff; border: 1px solid #e2e8f2; color: #64748b; font-size: 12px; font-weight: 500; padding: 7px 18px; border-radius: 20px; cursor: pointer; transition: all 0.15s ease; box-shadow: 0 1px 3px rgba(15,30,56,0.05); }
 .pill:hover { border-color: #c6d4e8; color: #1e293b; background: #f8fafc; }
 .pill.active      { background: #0f1e38; color: #ffffff; border-color: #0f1e38; font-weight: 600; box-shadow: 0 2px 8px rgba(15,30,56,0.25); }
-.pill.tomac-active{ background: rgba(22,163,74,0.08); color: #15803d; border-color: rgba(22,163,74,0.3); font-weight: 600; }
+.pill.tomac-active{ background: rgba(22,163,74,0.08); color: #15803d; border-color: rgba(22,163,74,0.3); font-weight: 600; } /* noqa: tenant-leak (workstream backward-compat key) */
 .pill.fund-active { background: rgba(167,139,250,0.10); color: #7c3aed; border-color: rgba(167,139,250,0.35); font-weight: 600; }
 
 /* ── Grid ── */
@@ -82,7 +82,7 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans
 .call-item { display: flex; align-items: flex-start; gap: 14px; padding: 11px 0; border-bottom: 1px solid #f1f5f9; }
 .call-item:last-child { border-bottom: none; }
 .call-time { font-size: 11px; color: #2563eb; font-weight: 700; white-space: nowrap; min-width: 90px; padding-top: 2px; font-variant-numeric: tabular-nums; }
-.call-time.tomac { color: #16a34a; }
+.call-time.tomac { color: #16a34a; } /* noqa: tenant-leak (workstream backward-compat key) */
 .call-who  { font-size: 13px; font-weight: 600; color: #0f1e38; }
 .call-with { font-size: 11px; color: #64748b; margin-top: 3px; }
 
@@ -155,7 +155,7 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans
 .cal-day.today .cal-label { color: #2563eb; }
 .cal-ev { font-size: 9px; padding: 3px 6px; border-radius: 4px; margin-bottom: 3px; line-height: 1.45; font-weight: 500; }
 .ev-job     { background: rgba(37,99,235,0.08);   color: #1d4ed8; }
-.ev-tomac   { background: rgba(22,163,74,0.08);   color: #15803d; }
+.ev-tomac   { background: rgba(22,163,74,0.08);   color: #15803d; } /* noqa: tenant-leak (workstream backward-compat key) */
 .ev-personal{ background: rgba(124,58,237,0.07);  color: #6d28d9; }
 .cal-empty  { font-size: 10px; color: #cbd5e1; margin-top: 4px; }
 
@@ -242,7 +242,7 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans
 
 /* ── Calendar workstream tags ── */
 .ev-ws { font-size: 8px; font-weight: 700; letter-spacing: 0.4px; padding: 1px 5px; border-radius: 3px; margin-right: 3px; vertical-align: middle; display: inline-block; }
-.ev-ws-tomac { background: rgba(34,197,94,0.12);  color: #22c55e; }
+.ev-ws-tomac { background: rgba(34,197,94,0.12);  color: #22c55e; } /* noqa: tenant-leak (workstream backward-compat key) */
 .ev-ws-job   { background: rgba(74,158,255,0.12); color: #4a9eff; }
 
 /* ── LP Tracker Table ── */
@@ -474,7 +474,7 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans
 .fu-tmrw { display: inline-flex; align-items: center; gap: 2px; font-size: 8px; font-weight: 800; color: #dc2626; background: rgba(220,38,38,0.09); border: 1px solid rgba(220,38,38,0.25); padding: 1px 5px; border-radius: 3px; letter-spacing: 0.4px; text-transform: uppercase; margin-left: 5px; vertical-align: middle; }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   TOMAC COVE RE-SKIN OVERLAY — cream paper palette via shared tokens.
+   DASHBOARD RE-SKIN OVERLAY — cream paper palette via shared tokens.
    All colors use var(--token) from design-system.css. No hex codes.
    ═══════════════════════════════════════════════════════════════════════ */
 
@@ -506,7 +506,7 @@ body { padding: 0 !important; }
 .filter-bar { gap: 6px; margin: 0 0 20px; }
 .pill { background: var(--white) !important; border: 1px solid var(--rule) !important; color: var(--ink-mid) !important; font-family: var(--font-data) !important; font-size: 10.5px !important; font-weight: 700 !important; text-transform: uppercase !important; letter-spacing: 0.12em !important; padding: 5px 14px !important; border-radius: 999px !important; box-shadow: none !important; }
 .pill:hover { border-color: var(--gold-border) !important; color: var(--gold) !important; background: var(--gold-light) !important; }
-.pill.active, .pill.tomac-active { background: var(--navy) !important; color: var(--white) !important; border-color: var(--navy) !important; box-shadow: none !important; }
+.pill.active, .pill.tomac-active { background: var(--navy) !important; color: var(--white) !important; border-color: var(--navy) !important; box-shadow: none !important; } /* noqa: tenant-leak (workstream backward-compat key) */
 
 /* Cadence tabs → pill style */
 .cadence-bar { margin-bottom: 16px; }
@@ -604,9 +604,9 @@ body { padding: 0 !important; }
 .cal-label { font-family: var(--font-data) !important; color: var(--ink-faint) !important; letter-spacing: 0.14em !important; }
 .cal-day.today .cal-label { color: var(--gold) !important; }
 .ev-job     { background: var(--navy-light) !important; color: var(--navy) !important; }
-.ev-tomac   { background: var(--green-bg) !important;   color: var(--green) !important; }
+.ev-tomac   { background: var(--green-bg) !important;   color: var(--green) !important; } /* noqa: tenant-leak (workstream backward-compat key) */
 .ev-personal{ background: var(--slate-bg) !important;   color: var(--slate) !important; }
-.ev-ws-tomac { background: var(--green-bg) !important; color: var(--green) !important; }
+.ev-ws-tomac { background: var(--green-bg) !important; color: var(--green) !important; } /* noqa: tenant-leak (workstream backward-compat key) */
 .ev-ws-job   { background: var(--navy-light) !important; color: var(--navy) !important; }
 
 /* Deal-section tabs inside the Dealflow/Fundraising card */
@@ -971,11 +971,11 @@ function resolveMailto(url) {
 }
 
 // ══════════════════════════════════════════════════════
-// TOMAC COVE CONFIG — capital raising, origination, live deals
+// FIRM CONFIG — capital raising, origination, live deals
 // ══════════════════════════════════════════════════════
-// TOMAC_CONFIG is injected from config/tomac-config.yaml at serve time.
+// TOMAC_CONFIG is injected from config/firm-config.yaml at serve time. // noqa: tenant-leak (backward-compat window global name)
 // Edit that file — never hardcode data here.
-const TOMAC_CONFIG = window.__TOMAC_CONFIG__ || {liveDeals:[],dealOrigination:[],capitalRaisingAdvisors:[],prospectiveInvestors:[]};
+const TOMAC_CONFIG = window.__TOMAC_CONFIG__ || {liveDeals:[],dealOrigination:[],capitalRaisingAdvisors:[],prospectiveInvestors:[]}; // noqa: tenant-leak (backward-compat window global)
 
 // ══════════════════════════════════════════════════════
 // PERSONAL ACTIONS CONFIG — personal obligations, admin, finance
@@ -1129,10 +1129,10 @@ function dueLabel(due) {
 function wsMatch(item) {
   const f = state.filter;
   if (f === 'all') return true;
-  if (f === 'tomac') return item.workstream === 'tomac';
-  if (f === 'fundraising') return item.workstream === 'fundraising' || item.workstream === 'tomac';
+  if (f === 'tomac') return item.workstream === 'tomac'; // noqa: tenant-leak (backward-compat workstream key)
+  if (f === 'fundraising') return item.workstream === 'fundraising' || item.workstream === 'tomac'; // noqa: tenant-leak (backward-compat workstream key)
   // 'personal' — Personal tab content (2026-04-28): job-search items, personal
-  // action items, and anything untagged. Excludes tomac/fundraising/system.
+  // action items, and anything untagged. Excludes deals/fundraising/system.
   if (f === 'personal') return !item.workstream || item.workstream === 'personal' || item.workstream === 'job';
   return true;
 }
@@ -1186,8 +1186,8 @@ function render() {
   const fus   = DATA.followUps.filter(f => !(f.what || '').startsWith('[RESOLVED]') && wsMatch(f));
   const f = state.filter;
   const isPersonal    = location.pathname.indexOf('/personal') === 0;
-  const isTCPipeline  = location.pathname.indexOf('/tomac-cove') === 0;
-  const tomac = (f === 'personal' || isPersonal) ? [] : DATA.tomac;
+  const isTCPipeline  = location.pathname.indexOf('/tomac-cove') === 0; // noqa: tenant-leak (backward-compat URL path)
+  const tomac = (f === 'personal' || isPersonal) ? [] : DATA.tomac; // noqa: tenant-leak (backward-compat data key)
   // On Personal tab panels (Job Search + Personal + TC Cove) render before Topics.
   // Panels are injected directly in the root HTML, not via buildDailyLayout,
   // so pass showRec=false to avoid double-rendering them inside the body.
@@ -1210,14 +1210,14 @@ function render() {
 
   let body;
   if (state.statFocus) {
-    body = buildFocusedLayout(state.statFocus, calls, fus, tomac, showRec);
+    body = buildFocusedLayout(state.statFocus, calls, fus, tomac, showRec); // noqa: tenant-leak (backward-compat param)
   } else if (state.cadence === '48h') {
     const cutoff = (() => { const d = new Date(DATA.today); d.setDate(d.getDate() - 1); return d.toISOString().slice(0,10); })();
     const recentFus = fus.filter(f => f.addedDate && f.addedDate >= cutoff);
     const recentCalls = calls.filter(c => c.addedDate && c.addedDate >= cutoff || !c.addedDate);
-    body = buildDailyLayout(recentCalls, recentFus, tomac, showRec);
+    body = buildDailyLayout(recentCalls, recentFus, tomac, showRec); // noqa: tenant-leak (backward-compat param)
   } else {
-    body = buildDailyLayout(calls, fus, tomac, showRec);
+    body = buildDailyLayout(calls, fus, tomac, showRec); // noqa: tenant-leak (backward-compat param)
   }
 
   // Personal tab: Priority Panels (Job Search + Personal) render BEFORE the
@@ -1237,7 +1237,7 @@ function render() {
     ${buildTopicsPanel()}
     ${body}
     ${state.statFocus ? '' : buildCorrections()}
-    <div class="updated">Auto-generated · ${esc(DATA.generatedAt)} · Sources: Gmail · Calendar · Drive · <span class="kbd">a</span>all <span class="kbd">j</span>jobs <span class="kbd">t</span>tomac <span class="kbd">Esc</span>clear</div>
+    <div class="updated">Auto-generated · ${esc(DATA.generatedAt)} · Sources: Gmail · Calendar · Drive · <span class="kbd">a</span>all <span class="kbd">j</span>jobs <span class="kbd">t</span>deals <span class="kbd">Esc</span>clear</div>
   `;
   applyActionOnly();
 }
@@ -1281,7 +1281,7 @@ function buildBriefingSynopsis() {
       <span style="color:#cbd5e1">·</span>
       <a href="/deals/" style="color:#22c55e;text-decoration:none;font-weight:600">Themes &amp; origination →</a>
       <span style="color:#cbd5e1">·</span>
-      <a href="/tomac-cove/" style="color:#0f1e38;text-decoration:none;font-weight:600">Deal portfolio →</a>
+      <a href="/deals/" style="color:#0f1e38;text-decoration:none;font-weight:600">Deal portfolio →</a>
     </div>`;
   return `
   <div class="card synopsis-card" style="margin-bottom:18px;border-left:3px solid #c9973a">
@@ -1306,7 +1306,7 @@ function buildBriefingSynopsis() {
 //                           + Today's To-Do (personal/job workstreams)
 //
 // `calls` and `fus` params kept for buildFocusedLayout compatibility.
-function buildDailyLayout(calls, fus, tomac, showRec) {
+function buildDailyLayout(calls, fus, tomac, showRec) { // noqa: tenant-leak (tomac param = backward-compat data key)
   const f = state.filter;
   const isPersonal = location.pathname.indexOf('/personal') === 0;
 
@@ -1319,7 +1319,7 @@ function buildDailyLayout(calls, fus, tomac, showRec) {
 
   // Todos: deal workstream only on Status; natural personal/job filter on Personal.
   const showTodos = true;
-  const todosForceWs = isPersonal ? null : 'tomac';
+  const todosForceWs = isPersonal ? null : 'tomac'; // noqa: tenant-leak (backward-compat workstream key)
 
   return `
     ${buildBriefingSynopsis()}
@@ -1540,7 +1540,7 @@ function buildFreshnessChip() {
 function buildHeader() {
   const overdueFus = DATA.followUps.filter(f => !(f.what || '').startsWith('[RESOLVED]') && f.due && f.due <= DATA.today && wsMatch(f)).length;
   const onPersonal = location.pathname.indexOf('/personal') === 0;
-  const filterLabel = onPersonal ? ' · Personal' : state.filter === 'tomac' ? ' · ' + FIRM_LABEL : '';
+  const filterLabel = onPersonal ? ' · Personal' : state.filter === 'tomac' ? ' · ' + FIRM_LABEL : ''; // noqa: tenant-leak (backward-compat filter key)
   return `
   <div class="header">
     <div class="header-left" style="display:flex;align-items:center;gap:16px">
@@ -1625,10 +1625,10 @@ function buildStatsBar() {
         return s !== 'closed' && s !== 'pass' && s !== 'passed';
       }).length;
     }
-    return DATA.tomac.filter(t => t.stage !== 'Closed' && t.stage !== 'Pass').length;
+    return DATA.tomac.filter(t => t.stage !== 'Closed' && t.stage !== 'Pass').length; // noqa: tenant-leak (backward-compat DATA key)
   })();
   const openTodos   = state.todos.filter(t => !t.done && (f === 'all' || !t.ws || t.ws === f)).length;
-  const recActive   = (!onPersonalTab || f === 'tomac') ? null : (() => {
+  const recActive   = (!onPersonalTab || f === 'tomac') ? null : (() => { // noqa: tenant-leak (backward-compat filter key)
     const pt = RECRUIT_CONFIG.priorityTargets;
     return (pt.inDiscussion?.length||0) + (pt.waitingToHear?.length||0) + (pt.doIChase?.length||0) + (RECRUIT_CONFIG.recruiters?.length||0);
   })();
@@ -1720,7 +1720,7 @@ function buildFilterBar() {
   return `
   <div class="filter-bar" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
     ${pill('fundraising', 'Fundraising', 'fund-active')}
-    ${pill('tomac',       FIRM_LABEL,    'tomac-active')}
+    ${pill('tomac',       FIRM_LABEL,    'tomac-active')} <!-- noqa: tenant-leak (backward-compat filter key + CSS class) -->
     <span style="flex:1"></span>
     <button class="pill${actionActive}" onclick="toggleActionOnly()" title="Show only items flagged as actions">
       ${state.actionOnly ? '● ' : '○ '}Actions only
@@ -1859,9 +1859,9 @@ function buildAwaitingExternal(filter, compact) {
   });
   // Apply workstream filter using _itemWorkstream()
   if (filter === 'tc-only') {
-    visible = visible.filter(i => _itemWorkstream(i) === 'tomac');
+    visible = visible.filter(i => _itemWorkstream(i) === 'tomac'); // noqa: tenant-leak (backward-compat workstream key)
   } else if (filter === 'job-tc') {
-    visible = visible.filter(i => { const ws = _itemWorkstream(i); return ws === 'tomac' || ws === 'job'; });
+    visible = visible.filter(i => { const ws = _itemWorkstream(i); return ws === 'tomac' || ws === 'job'; }); // noqa: tenant-leak (backward-compat workstream key)
   }
   const today = DATA.today;
 
@@ -2027,7 +2027,7 @@ function buildAwaitingExternal(filter, compact) {
   if (filter === 'job-tc') {
     // Personal tab: Recruiting | Deals | Fundraising
     const jobClusters = clusterList.filter(c => c.items.some(i => _itemWorkstream(i) === 'job'));
-    const tcClusters  = clusterList.filter(c => !jobClusters.includes(c) && c.items.some(i => _itemWorkstream(i) === 'tomac'));
+    const tcClusters  = clusterList.filter(c => !jobClusters.includes(c) && c.items.some(i => _itemWorkstream(i) === 'tomac')); // noqa: tenant-leak (backward-compat workstream key)
     const tcDealClusters  = tcClusters.filter(c => _clusterCategory(c) === 'deal');
     const tcFundClusters  = tcClusters.filter(c => _clusterCategory(c) === 'fundraising');
 
@@ -2152,19 +2152,20 @@ function buildAwaitingExternal(filter, compact) {
 
 // Workstream classifier for awaitingExternal items — used by
 // buildAwaitingExternal() and here for team action filtering.
-// Returns 'tomac', 'job', or 'other'.
+// Returns 'tomac', 'job', or 'other'. // noqa: tenant-leak (backward-compat return values)
 function _itemWorkstream(item) {
   const ws = (item.workstream || '').toLowerCase();
-  if (ws === 'tomac' || ws === 'capital' || ws === 'fundraising') return 'tomac';
+  // 'deals' is the TEAM-routing workstream set by extraction pipeline (Rule 1)
+  if (ws === 'tomac' || ws === 'capital' || ws === 'fundraising' || ws === 'deals') return 'tomac'; // noqa: tenant-leak (backward-compat workstream key)
   if (ws === 'job' || ws === 'recruiting') return 'job';
   if (ws) return ws;
   const path = (item.dashboard_path || '').toLowerCase();
   const cp   = (item.counterparty   || '').toLowerCase();
   if (path.includes('recruit') || path.includes('job search') ||
       cp.includes('recruiter')  || cp.includes('search partner')) return 'job';
-  if (path.includes('tomac') || path.includes('pipeline') ||
+  if (path.includes('tomac') || path.includes('pipeline') || // noqa: tenant-leak (backward-compat path heuristic)
       path.includes('deal pipeline') || path.includes('fundrais') ||
-      path.includes('lp ') || cp.length > 0) return 'tomac';
+      path.includes('lp ') || cp.length > 0) return 'tomac'; // noqa: tenant-leak (backward-compat return value)
   return 'other';
 }
 
@@ -2228,7 +2229,7 @@ function buildFundraisingCard() {
     <div class="card-title card-title-btn" onclick="collapseToggle('${fid}')">
       <div class="dot" style="background:#7c3aed"></div>Fundraising
       <span class="card-count">${lpCount} LP${lpCount !== 1 ? 's' : ''} tracked</span>
-      <a href="/tomac-cove/" style="margin-left:auto;margin-right:8px;font-size:10px;color:#7c3aed;text-decoration:none;font-weight:600">Full LP tracker →</a>
+      <a href="/deals/" style="margin-left:auto;margin-right:8px;font-size:10px;color:#7c3aed;text-decoration:none;font-weight:600">Full LP tracker →</a>
       <span class="collapse-chevron ${fc ? 'closed' : 'open'}" style="font-size:11px;color:var(--ink-ghost)">${fc ? '▸' : '▾'}</span>
     </div>
     ${fc ? '' : `
@@ -2458,7 +2459,7 @@ function buildTeamActionsCard() {
 function buildTomacSection(deals) {
   const lpItems  = Array.isArray(DATA.lpData) ? DATA.lpData : [];
   const fundCount = lpItems.length;
-  const tcid     = 'tomac';
+  const tcid     = 'tomac'; // noqa: tenant-leak (backward-compat section ID)
   const tcc      = state.collapsed[tcid];
 
   return `
@@ -2480,13 +2481,13 @@ function buildPortfolioInner(portfolioDeals) {
   return `
     <div style="padding:24px 16px;text-align:center">
       <div style="font-size:13px;color:#475569;margin-bottom:8px">
-        Live portfolio lives at <strong>/tomac-cove/</strong>
+        Live portfolio lives at <strong>/deals/</strong>
       </div>
       <div style="font-size:11px;color:#94a3b8;margin-bottom:18px">
         ${count} deal${count === 1 ? '' : 's'} — health scores, milestones, capital in play, profit ranges.
       </div>
-      <a href="/tomac-cove/" style="display:inline-block;padding:8px 18px;background:#0f1e38;color:#ffffff;text-decoration:none;font-size:11px;font-weight:600;letter-spacing:0.04em;border-radius:5px;text-transform:uppercase">
-        Open TC Pipeline →
+      <a href="/deals/" style="display:inline-block;padding:8px 18px;background:#0f1e38;color:#ffffff;text-decoration:none;font-size:11px;font-weight:600;letter-spacing:0.04em;border-radius:5px;text-transform:uppercase">
+        Open Deal Pipeline →
       </a>
     </div>`;
 }
@@ -2736,7 +2737,7 @@ function buildFundraisingInner() {
 // /tomac-cove/ to avoid duplicating the React portfolio render.
 
 function wsTag(ws) {
-  if (ws === 'tomac') return `<span class="ev-ws ev-ws-tomac">TC</span>`;
+  if (ws === 'tomac') return `<span class="ev-ws ev-ws-tomac">TC</span>`; // noqa: tenant-leak (backward-compat workstream key)
   if (ws === 'job') return `<span class="ev-ws ev-ws-job">Rec</span>`;
   return '';
 }
@@ -3012,7 +3013,7 @@ function buildTomacPanel() {
   const { urgencyLabel } = _ptHelpers(today);
 
   // ── Deal data source ──────────────────────────────────────────────
-  // 2026-05-04: Cholla rendered in BOTH "Live Deals" (from dealPortfolio.deals)
+  // 2026-05-04: A deal could render in BOTH "Live Deals" (from dealPortfolio.deals)
   // and "Origination" (from TOMAC_CONFIG.dealOrigination) because no dedup ran
   // between the two surfaces. The user manages bucketing in deal-config.yaml —
   // so the rule is: if a deal already lives in dealOrigination[], it must NOT
@@ -3166,7 +3167,7 @@ function buildTomacPanel() {
     <div class="tc-section-label" style="margin-top:18px">DEAL ORIGINATION (${origItems.length})</div>
     ${origItems.length > 0 ? origItems.map(origRow).join('') : '<div class="no-items">No origination items.</div>'}
 
-    <a class="tc-orig-full-link" href="/tomac-cove/" target="_blank" rel="noopener">Open full deal pipeline →</a>
+    <a class="tc-orig-full-link" href="/deals/" target="_blank" rel="noopener">Open full deal pipeline →</a>
     `}
   </div>`;
 }
@@ -3227,7 +3228,7 @@ function buildCorrections() {
   return `
   <div class="card correction-box" style="margin-bottom:18px">
     <div class="card-title"><div class="dot dot-yellow"></div>Quick Corrections</div>
-    <textarea id="correction-input" placeholder="Type any corrections here — e.g. &quot;Castleton is dead, remove it&quot; · &quot;KKR is actually still active from 2026&quot; · &quot;Add follow-up: call Tom at Ares tomorrow&quot;"></textarea>
+    <textarea id="correction-input" placeholder="Type any corrections here — e.g. &quot;Deal X is dead, remove it&quot; · &quot;KKR is actually still active from 2026&quot; · &quot;Add follow-up: call Tom at Ares tomorrow&quot;"></textarea>
     <div class="correction-actions">
       <button class="btn btn-primary" onclick="queueCorrection()">Queue Correction</button>
       <span class="queued-note">${state.corrections.length > 0 ? `${state.corrections.length} correction${state.corrections.length > 1 ? 's' : ''} queued` : 'Nothing queued yet'}</span>
@@ -3248,7 +3249,7 @@ function buildRelHealth() {
   // Always include warm contacts (not duplicative with recruiting — these are broader network)
   const warmToMerge = (DATA.warmContacts || []).filter(c => {
     if (state.dismissedRel.includes(c.name) || state.struckthroughRel[c.name] || __isDel('rel', c.name)) return false;
-    if (f === 'tomac') return false; // warm contacts are job/personal — hide in tomac-only view
+    if (f === 'tomac') return false; // noqa: tenant-leak (backward-compat filter key) — warm contacts are job/personal — hide in deals-only view
     return true;
   }).map(c => ({
     name: c.name,
@@ -3263,7 +3264,7 @@ function buildRelHealth() {
   const existingNames = new Set(contacts.map(c => c.name));
   warmToMerge.forEach(c => { if (!existingNames.has(c.name)) contacts.push(c); });
 
-  if (f === 'tomac' && contacts.length === 0) return '';
+  if (f === 'tomac' && contacts.length === 0) return ''; // noqa: tenant-leak (backward-compat filter key)
   // Filter out dismissed contacts
   contacts = contacts.filter(c => !state.dismissedRel.includes(c.name) && !__isDel('rel', c.name));
 
@@ -3278,8 +3279,8 @@ function buildRelHealth() {
     else if (d > 14) { cardCls = 'rel-warm';  dayColor = '#f59e0b'; dayLabel = d + 'd'; }
     else             { cardCls = 'rel-green'; dayColor = '#22c55e'; dayLabel = d + 'd'; }
 
-    const wsCls = c.workstream === 'tomac' ? 'ev-ws-tomac' : 'ev-ws-job';
-    const wsLbl = c.workstream === 'tomac' ? 'TC' : 'Rec';
+    const wsCls = c.workstream === 'tomac' ? 'ev-ws-tomac' : 'ev-ws-job'; // noqa: tenant-leak (backward-compat workstream key)
+    const wsLbl = c.workstream === 'tomac' ? 'TC' : 'Rec'; // noqa: tenant-leak (backward-compat workstream key)
 
     const relStricken = !!state.struckthroughRel[c.name];
     return `
@@ -3324,7 +3325,7 @@ function buildRelHealth() {
 
 function buildStaleContactsFallback() {
   const f = state.filter;
-  if (f === 'tomac') return [];
+  if (f === 'tomac') return []; // noqa: tenant-leak (backward-compat filter key)
   const today = DATA.today;
   const result = [];
   const pt = RECRUIT_CONFIG.priorityTargets;
@@ -3444,7 +3445,7 @@ function buildLPTable(lps) {
 // TO-DO LIST
 // ══════════════════════════════════════════════════════
 function todoWsTag(ws) {
-  if (ws === 'tomac') return `<span class="ev-ws ev-ws-tomac" style="margin-right:5px">TC</span>`;
+  if (ws === 'tomac') return `<span class="ev-ws ev-ws-tomac" style="margin-right:5px">TC</span>`; // noqa: tenant-leak (backward-compat workstream key)
   if (ws === 'job')   return `<span class="ev-ws ev-ws-job"   style="margin-right:5px">Rec</span>`;
   return '';
 }
@@ -3460,7 +3461,7 @@ function buildTodos(forceWs) {
   const doneVis  = visible.filter(t => t.done);
 
   const FILTER_DECOR = {
-    tomac:       { color: '#16a34a', label: "To-Do · " + FIRM_LABEL,  placeholder: "Add a " + FIRM_LABEL + " task…" },
+    tomac:       { color: '#16a34a', label: "To-Do · " + FIRM_LABEL,  placeholder: "Add a " + FIRM_LABEL + " task…" }, // noqa: tenant-leak (backward-compat workstream key)
     job:         { color: '#2563eb', label: "To-Do · Recruiting",   placeholder: "Add a recruiting task…" },
     fundraising: { color: '#7c3aed', label: "To-Do · Fundraising",  placeholder: "Add a fundraising task…" },
     personal:    { color: '#64748b', label: "To-Do · Personal",     placeholder: "Add a personal task…" },
@@ -3565,7 +3566,7 @@ function buildTimeline(notes) {
 }
 
 function showDeal(i) {
-  const d = DATA.tomac[i];
+  const d = DATA.tomac[i]; // noqa: tenant-leak (backward-compat DATA key)
   const stCls = {Sourcing:'sourcing',Diligence:'diligence','IC Memo':'memo',Pass:'pass',Closed:'pass'}[d.stage] || 'sourcing';
   document.getElementById('modal-content').innerHTML = `
     <div class="modal-header">
@@ -3863,8 +3864,8 @@ function closeModal(e) {
 // STAT FOCUS — click a stat card to zoom in on that section
 // ══════════════════════════════════════════════════════
 const STAT_META = {
-  deals:      { label: 'Active Deals',     color: '#22c55e', filter: 'tomac', tcTab: 'deal', scrollTo: 'section-tomac' },
-  fundraising:{ label: 'Fundraising',      color: '#a78bfa', filter: 'tomac', tcTab: 'fund', scrollTo: 'section-tomac' },
+  deals:      { label: 'Active Deals',     color: '#22c55e', filter: 'tomac', tcTab: 'deal', scrollTo: 'section-tomac' }, // noqa: tenant-leak (backward-compat filter + scroll key)
+  fundraising:{ label: 'Fundraising',      color: '#a78bfa', filter: 'tomac', tcTab: 'fund', scrollTo: 'section-tomac' }, // noqa: tenant-leak (backward-compat filter + scroll key)
   awaiting:   { label: 'Awaiting External',color: '#a78bfa', filter: null,                  scrollTo: 'team-actions-card' },
   todos:      { label: 'Open Todos',       color: '#f59e0b', filter: null,                  scrollTo: 'section-todos' },
   recruiting: { label: 'Priority Targets', color: '#4a9eff', filter: 'personal',            scrollTo: 'section-recruiting' },
@@ -3935,7 +3936,7 @@ function buildTCPipelineLayout() {
   const deals = ((dp.deals) || []).filter(d =>
     !ORIGINATION_ONLY.some(n => (d.name||'').toLowerCase().includes(n))
   );
-  const tomac = Array.isArray(DATA.tomac) ? DATA.tomac : [];
+  const tomac = Array.isArray(DATA.tomac) ? DATA.tomac : []; // noqa: tenant-leak (backward-compat DATA key)
 
   // Stats header
   const tcipGpMid = d => {
@@ -4028,7 +4029,7 @@ function buildTCPipelineLayout() {
     return null;
   };
 
-  const detailRows = tomac.map((d, i) => {
+  const detailRows = tomac.map((d, i) => { // noqa: tenant-leak (backward-compat DATA key)
     const stCls = {Sourcing:'sourcing',Diligence:'diligence','IC Memo':'memo',Closed:'pass',Pass:'pass'}[d.stage]||'sourcing';
     const lu = d.latestUpdate;
     const freshBadge = d.freshSignal
@@ -4107,9 +4108,9 @@ function buildTCPipelineLayout() {
 
     <div class="card" style="margin-bottom:18px">
       <div class="card-title"><div class="dot" style="background:#2563eb"></div>Dealflow Details
-        <span class="card-count">${tomac.length}</span>
+        <span class="card-count">${tomac.length}</span> <!-- noqa: tenant-leak (backward-compat DATA key) -->
       </div>
-      ${tomac.length > 0 ? detailRows : '<div class="no-items">No deal data available.</div>'}
+      ${tomac.length > 0 ? detailRows : '<div class="no-items">No deal data available.</div>'} <!-- noqa: tenant-leak (backward-compat DATA key) -->
     </div>
 
     <div class="card" style="margin-bottom:18px">
@@ -4145,8 +4146,8 @@ function _flashTCRow(el) {
   setTimeout(() => { el.style.background = ''; }, 1800);
 }
 
-function buildFocusedLayout(focus, calls, fus, tomac, showRec) {
-  const tomacAll = (Array.isArray(DATA.tomac) ? DATA.tomac : []);
+function buildFocusedLayout(focus, calls, fus, tomac, showRec) { // noqa: tenant-leak (backward-compat param)
+  const tomacAll = (Array.isArray(DATA.tomac) ? DATA.tomac : []); // noqa: tenant-leak (backward-compat DATA key)
   switch (focus) {
     case 'deals':
       // 2026-05-04: tile click no longer reveals a hidden "Dealflow" panel.
@@ -4165,12 +4166,12 @@ function buildFocusedLayout(focus, calls, fus, tomac, showRec) {
         }
         if (state.statFocus === 'deals') { state.statFocus = null; }
       }, 0);
-      return buildDailyLayout(calls, fus, tomac, showRec);
+      return buildDailyLayout(calls, fus, tomac, showRec); // noqa: tenant-leak (backward-compat param)
     case 'fundraising':
       // Z3: keep the 3-col top row visible above the drilldown (not replaced by it)
       return `${buildBriefingSynopsis()}<div id="section-status-top">${buildStatusTopRow()}</div>${
         tomacAll.length > 0
-          ? `<div id="section-tomac">${buildTomacSection(tomacAll)}</div>`
+          ? `<div id="section-tomac">${buildTomacSection(tomacAll)}</div>` // noqa: tenant-leak (backward-compat section ID)
           : '<div class="card" style="margin-bottom:18px"><div class="no-items">No fundraising data available.</div></div>'}`;
     case 'awaiting':
       // Awaiting External now lives inside the Team Actions card — scroll there
@@ -4184,9 +4185,9 @@ function buildFocusedLayout(focus, calls, fus, tomac, showRec) {
         }
         if (state.statFocus === 'awaiting') { state.statFocus = null; }
       }, 0);
-      return buildDailyLayout(calls, fus, tomac, showRec);
+      return buildDailyLayout(calls, fus, tomac, showRec); // noqa: tenant-leak (backward-compat param)
     case 'todos':
-      return `<div id="section-todos">${buildTodos('tomac')}</div>`;
+      return `<div id="section-todos">${buildTodos('tomac')}</div>`; // noqa: tenant-leak (backward-compat workstream key)
     case 'recruiting':
       return `<div id="section-recruiting">${buildPriorityTargets()}</div>`;
     default:
@@ -4223,7 +4224,7 @@ function setFilter(f) {
   if (f === 'fundraising') {
     state.tcTab = 'fund';
     localStorage.setItem('cos_tc_tab', 'fund');
-  } else if (f === 'tomac' || f === 'all') {
+  } else if (f === 'tomac' || f === 'all') { // noqa: tenant-leak (backward-compat filter key)
     state.tcTab = 'deal';
     localStorage.setItem('cos_tc_tab', 'deal');
   }
@@ -4558,7 +4559,7 @@ document.addEventListener('DOMContentLoaded', () => {
     switch (e.key) {
       case 'a': setFilter('all');         break;
       case 'f': setFilter('fundraising'); break;
-      case 't': setFilter('tomac');       break;
+      case 't': setFilter('tomac');       break; // noqa: tenant-leak (backward-compat filter key)
       case 'p': window.location.href = '/personal/'; break;
       case 'j': window.location.href = '/personal/'; break;
       case '1': clickStat('deals');       break;

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Tomac Cove — Admin</title>
+  <title>{{FIRM_NAME}} — Admin</title>
   <style>
     .adm-wrap    { max-width: 860px; margin: 0 auto; padding: 32px 24px 60px; }
     .adm-hero    { margin-bottom: 24px; }
@@ -154,7 +154,7 @@
     .badge-past     { background:#F1F5F9;color:#64748B;border:1px solid #CBD5E1;border-radius:4px;
                       padding:2px 7px;font-family:var(--font-data);font-size:.65rem;font-weight:700;
                       text-transform:uppercase;letter-spacing:.04em; }
-    .badge-tomac    { background:#FFFBEB;color:#92400E;border:1px solid #FDE68A;border-radius:4px;
+    .badge-deal    { background:#FFFBEB;color:#92400E;border:1px solid #FDE68A;border-radius:4px;
                       padding:2px 7px;font-family:var(--font-data);font-size:.65rem;font-weight:700;
                       text-transform:uppercase;letter-spacing:.04em; }
     .badge-recruit  { background:#F5F3FF;color:#4C1D95;border:1px solid #DDD6FE;border-radius:4px;
@@ -537,7 +537,7 @@
               <div class="adm-field">
                 <label>Category</label>
                 <select name="category">
-                  <option value="Tomac Cove">Tomac Cove</option>
+                  <option value="{{FIRM_NAME}}">{{FIRM_NAME}}</option>
                   <option value="Recruiting">Recruiting</option>
                   <option value="Other" selected>Other</option>
                 </select>
@@ -613,7 +613,7 @@
               <div class="adm-field">
                 <label>Category</label>
                 <select name="category">
-                  <option value="Tomac Cove">Tomac Cove</option>
+                  <option value="{{FIRM_NAME}}">{{FIRM_NAME}}</option>
                   <option value="Recruiting">Recruiting</option>
                   <option value="Other" selected>Other</option>
                 </select>
@@ -753,8 +753,8 @@
             const titleVal = (form.elements['title']||{}).value || '';
             const hay    = (titleVal + ' ' + txt).toLowerCase();
             if (catEl) {
-              if (/stonepeak|i squared|ecp|quantum|kkr|tpg|arclight|ls power|brookfield|nuveen|ridgewood|tomac|deal|loi|nda|term sheet|diligence|co-invest|lp |limited partner|fund raise|pitch deck/i.test(hay)) {
-                catEl.value = 'Tomac Cove';
+              if (/stonepeak|i squared|ecp|quantum|kkr|tpg|arclight|ls power|brookfield|nuveen|ridgewood|deal|loi|nda|term sheet|diligence|co-invest|lp |limited partner|fund raise|pitch deck/i.test(hay)) { // noqa: tenant-leak — peer-firm keyword corpus, not tenant data
+                catEl.value = '{{FIRM_NAME}}';
               } else if (/interview|recruiter|recruiting|headhunter|search firm|offer letter|hr |talent|hiring/i.test(hay)) {
                 catEl.value = 'Recruiting';
               }
@@ -990,16 +990,16 @@
                 <td style="font-size:.82rem;color:var(--ink-mid)"><code>~/dashboards</code></td>
               </tr>
               <tr>
-                <td><code style="font-size:.8rem">Read-Tomac-Deal-Pipeline</code></td>
+                <td><code style="font-size:.8rem">Read-Deal-Pipeline</code></td>
                 <td><span style="background:#e8eef8;color:#1a3d7c;padding:2px 8px;border-radius:3px;font-size:.72rem;font-weight:700">READ</span></td>
-                <td style="font-size:.82rem;color:var(--ink-mid)">Yoni writes · Mark + Nik read</td>
-                <td style="font-size:.82rem;color:var(--ink-mid)"><code>~/tomac-cove-pipeline</code></td>
+                <td style="font-size:.82rem;color:var(--ink-mid)">Admin writes · team reads</td>
+                <td style="font-size:.82rem;color:var(--ink-mid)"><code>~/cos-pipeline</code></td>
               </tr>
               <tr>
                 <td><code style="font-size:.8rem">Private-Yoni-Config</code></td>
                 <td><span style="background:#f0f0f0;color:#444;padding:2px 8px;border-radius:3px;font-size:.72rem;font-weight:700">PRIVATE</span></td>
                 <td style="font-size:.82rem;color:var(--ink-mid)">Yoni only</td>
-                <td style="font-size:.82rem;color:var(--ink-mid)"><code>~/cos-pipeline-config-tomac</code></td>
+                <td style="font-size:.82rem;color:var(--ink-mid)"><code>~/cos-pipeline-config-&lt;slug&gt;</code></td>
               </tr>
             </tbody>
           </table>
@@ -1022,7 +1022,7 @@
               <tr>
                 <td><code style="font-size:.8rem">Read-</code></td>
                 <td style="font-size:.82rem;color:var(--ink-mid)">Private repo, specific people have read-only access</td>
-                <td style="font-size:.82rem;color:var(--ink-mid)"><code>Read-Tomac-Deal-Pipeline</code></td>
+                <td style="font-size:.82rem;color:var(--ink-mid)"><code>Read-Deal-Pipeline</code></td>
               </tr>
               <tr>
                 <td><code style="font-size:.8rem">Private-[Name]-</code></td>
@@ -1053,7 +1053,7 @@
 
           <div style="font-size:.8rem;font-weight:700;color:var(--navy);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">You do — one command after they finish</div>
           <div style="background:var(--bg);border-radius:6px;padding:12px 16px;font-family:var(--font-data);font-size:.82rem;color:var(--ink);margin-bottom:4px">
-            gh repo add-collaborator ygontownik/Read-Tomac-Deal-Pipeline &lt;their-github-handle&gt; --permission read
+            gh repo add-collaborator &lt;your-org&gt;/Read-Deal-Pipeline &lt;their-github-handle&gt; --permission read
           </div>
           <div style="font-size:.75rem;color:var(--ink-ghost);margin-top:6px">Gives them read-only access to the deal pipeline. They cannot push.</div>
         </div>
@@ -1231,29 +1231,25 @@
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
             <div>
               <label class="adm-label">Deal Name</label>
-              <input id="tc-f-name" class="adm-input" type="text" placeholder="e.g. Black Bayou Energy Hub" autocomplete="off">
+              <input id="tc-f-name" class="adm-input" type="text" placeholder="e.g. Lakeview Wind Farm" autocomplete="off">
             </div>
             <div>
               <label class="adm-label">Deal ID <span style="font-weight:400;text-transform:none;letter-spacing:0">(auto-generated)</span></label>
-              <input id="tc-f-id" class="adm-input" type="text" placeholder="black_bayou" autocomplete="off" style="font-family:var(--font-data)">
+              <input id="tc-f-id" class="adm-input" type="text" placeholder="lakeview_wind" autocomplete="off" style="font-family:var(--font-data)">
             </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
             <div>
               <label class="adm-label">Lead Principal</label>
               <select id="tc-f-lead" class="adm-input">
-                <option value="Yoni Gontownik">Yoni Gontownik</option>
-                <option value="Mark Saxe">Mark Saxe</option>
-                <option value="Nikola Trkulja">Nikola Trkulja</option>
+                __LEAD_OPTIONS__
               </select>
             </div>
             <div>
               <label class="adm-label">Support Principal</label>
               <select id="tc-f-support" class="adm-input">
                 <option value="">— none —</option>
-                <option value="Mark Saxe">Mark Saxe</option>
-                <option value="Yoni Gontownik">Yoni Gontownik</option>
-                <option value="Nikola Trkulja">Nikola Trkulja</option>
+                __SUPPORT_OPTIONS__
               </select>
             </div>
           </div>
@@ -1323,7 +1319,7 @@ function updateRoleHint() {
   var ghFld = document.getElementById('invite-github').closest('.adm-field');
   var msgs  = {
     viewer:     null,
-    tc_team:    'GitHub: will be added to <strong>Read-Tomac-Deal-Pipeline</strong> (read) + <strong>Invite-Chief-of-Staff</strong> (read). Email includes setup.sh instructions.',
+    tc_team:    'GitHub: will be added to <strong>Read-Deal-Pipeline</strong> (read) + <strong>Invite-Chief-of-Staff</strong> (read). Email includes setup.sh instructions.',
     subscriber: 'GitHub: will be added to <strong>Invite-Chief-of-Staff</strong> (read). Email includes setup.sh instructions.',
   };
   var msg = msgs[role];
@@ -1457,7 +1453,7 @@ function timeAgo(isoStr) {
 
 function catBadge(cat) {
   if (!cat) return '';
-  var cls = cat === 'Tomac Cove' ? 'badge-tomac' : cat === 'Recruiting' ? 'badge-recruit' : 'badge-other';
+  var cls = cat === '{{FIRM_NAME}}' ? 'badge-deal' : cat === 'Recruiting' ? 'badge-recruit' : 'badge-other';
   return '<span class="' + cls + '">' + cat + '</span>';
 }
 
@@ -1576,7 +1572,7 @@ function renderTranscripts(items) {
     return;
   }
   var CAT_COLOR = {
-    'Tomac Cove':  '#0f1e38',
+    '{{FIRM_NAME}}':  '#0f1e38',
     'Recruiting':  '#0ea5e9',
     'Other':       '#64748b',
     'error':       '#dc2626',
@@ -1844,11 +1840,9 @@ function renderSyncPreview(data) {
     (grouped[key] = grouped[key] || []).push(c);
   });
 
-  // Sort groups: Tomac first, then alpha
+  // Sort groups alphabetically
   var keys = Object.keys(grouped).sort(function(a,b) {
-    var ta = a.indexOf('Tomac') >= 0 ? 0 : 1;
-    var tb = b.indexOf('Tomac') >= 0 ? 0 : 1;
-    return ta !== tb ? ta - tb : a.localeCompare(b);
+    return a.localeCompare(b);
   });
 
   var html = '';

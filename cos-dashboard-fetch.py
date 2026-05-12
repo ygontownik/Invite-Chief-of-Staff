@@ -923,8 +923,8 @@ def _auto_expire_stale_events(items):
         # due date passes (today + 1 onward), the event has happened
         # or been missed and the item is dead. The user reported 5
         # specific items lingering with due=yesterday despite the
-        # underlying event already occurring (Apogee, EXIM, Thunderhead,
-        # Black Mountain, etc.). >=1 day past now drops, while
+        # underlying event already occurring (e.g. calls, conferences, meetings
+        # with past due dates). >=1 day past now drops, while
         # day-of (days_past==0) still renders so the user sees the
         # reminder on the day itself.
         if days_past >= 1:
@@ -1488,8 +1488,8 @@ def _auto_promote_origination(existing_deals, followups, envelope_items, today_s
         clusters[cp].append(('env', it))
     # Narrow dedup: if a cluster's normalized name appears verbatim (case-
     # insensitive) inside another cluster's *raw* counterparty strings, they
-    # are likely the same deal under two spellings (e.g. "Cholla" appears
-    # inside "Chisholm / CHolla — Gideon Powell"). Merge the smaller into
+    # are likely the same deal under two spellings (e.g. "AlphaEnergy" appears
+    # inside "AlphaEnergy / DealX — Jane Doe"). Merge the smaller into
     # the larger.
     def _raw_cps(items):
         return [str((it.get('counterparty') or it.get('parent_id') or '')).lower() for _, it in items]
@@ -1513,7 +1513,7 @@ def _auto_promote_origination(existing_deals, followups, envelope_items, today_s
         tokens = _deal_tokens(cp)
         # Also pull tokens from items' parent_id / context so followups that
         # mention the asset (e.g. "Big South Dallas") match a cluster keyed
-        # on the firm ("Cholla").
+        # on the firm ("DealX").
         import re as _re
         for _, it in clusters[cp]:
             for field_name in ('parent_id','context'):
@@ -1559,7 +1559,7 @@ def _auto_promote_origination(existing_deals, followups, envelope_items, today_s
             # overdue action with a past due date shouldn't dominate
             # over a fresh action captured today — yesterday's ranch-
             # visit reminder was masking today's Oncor FEA fundraising
-            # focus on Cholla, for example. Sort by addedDate desc,
+            # focus on a specific deal, for example. Sort by addedDate desc,
             # fall back to due date asc when addedDate is missing.
             def _fu_sort_key(f):
                 added = f.get('addedDate') or ''
@@ -2556,10 +2556,10 @@ def main(dry_run: bool = False):
 
     # ── Follow-up near-duplicate suppression ─────────────────────────────
     # Transcript processors can emit the same action twice with minor wording
-    # differences or inconsistent who-attribution ("Yoni" vs "Yoni Gontownik").
+    # differences or inconsistent who-attribution (first name vs full name).
     # Dedup on (normalized_who, content_stem_8tok), keeping first occurrence.
-    # 2026-05-12: added after PNGTS Granite State analysis appeared twice from
-    # the same Tomac Cove weekly call.
+    # 2026-05-12: added after a deal action appeared twice from
+    # the same weekly call due to name normalization mismatch.
     _PRINCIPAL_FIRST = (_fc.principal_first_name(_CTX) or '').lower()
     _PRINCIPAL_FULL  = ((_CTX.get('principal') or {}).get('name') or '').lower()
 
@@ -2592,8 +2592,8 @@ def main(dry_run: bool = False):
     # When two items share (normalized_who, source, linkedTo) keep the richer one
     # (longer `what`). linkedTo is the specific doc/transcript URL, so this key
     # uniquely identifies "same person, same call" without needing content similarity.
-    # 2026-05-12: added after PNGTS Granite State action appeared twice from
-    # "Tomac Cove Weekly Call" with different wording, foiling the stem dedup.
+    # 2026-05-12: added after a deal action appeared twice from
+    # the same weekly call with different wording, foiling the stem dedup.
     by_transcript: dict = {}
     for fu in deduped_fus:
         lt = (fu.get('linkedTo') or '').strip()

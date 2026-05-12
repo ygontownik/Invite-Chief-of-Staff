@@ -72,6 +72,32 @@ def _load_cleanup_cfg() -> dict:
 
 _CLEANUP_CFG = _load_cleanup_cfg()
 
+
+def _merge_registered_deals(pipeline_deals: list, registered_deals: list) -> list:
+    """Inject dealPortfolio.deals entries (rich, from deal-system-data.json) into
+    the pipeline-doc deal tile when absent, filtering out Auto-promoted ghosts.
+    Deduplication: exact id match, exact lowercased name match, or first-token match.
+    """
+    import re as _re
+    def _first_token(s: str) -> str:
+        return (_re.split(r'[\s/(]', s.strip())[0] or '').lower()
+    clean = [d for d in pipeline_deals if 'Auto' not in d.get('stage', '')]
+    if not registered_deals:
+        return clean
+    existing_ids    = {d.get('id', '') for d in clean if d.get('id')}
+    existing_names  = {(d.get('name') or '').lower() for d in clean}
+    existing_tokens = {_first_token(d.get('name', '')) for d in clean}
+    for rd in registered_deals:
+        rid  = rd.get('id', '')
+        rnam = (rd.get('name') or '').lower()
+        rtok = _first_token(rd.get('name', ''))
+        if (rid not in existing_ids
+                and rnam not in existing_names
+                and (not rtok or rtok not in existing_tokens)):
+            clean.append(rd)
+    return clean
+
+
 _HERE               = Path(__file__).parent    # ~/dashboards/app/
 _ROOT               = _HERE.parent                       # ~/dashboards/
 # HTML strip P2 paths (Track 1.7):
@@ -494,7 +520,10 @@ def assemble_data():
         # Deal-tile bucket (frontend reads DATA[<deal_tile_key>]). Key name
         # comes from tenant_slug so the field name doesn't hardcode any
         # tenant string in this module.
-        _DEAL_TILE_KEY:     state.get(_DEAL_TILE_KEY,     []),
+        _DEAL_TILE_KEY:     _merge_registered_deals(
+                                state.get(_DEAL_TILE_KEY, []),
+                                (state.get('dealPortfolio') or {}).get('deals', [])
+                            ),
         # Fundraising block: user-state (buckets) wins over compile output
         # (siblings) per Operating Principle #1. Falls back to compile output
         # if user-state file is missing.

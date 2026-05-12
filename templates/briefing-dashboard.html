@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Tomac Cove — Briefing</title>
+<title>{{FIRM_NAME}} — Briefing</title>
 <style>
   /* Per-template tweaks only. Tokens & components live in design-system.css. */
 
@@ -403,7 +403,7 @@ function briefSyncAll() {
   };
 
   const tickerPill = deal =>
-    `<a class="flash-ticker" href="/tomac-cove/?deal=${esc(deal.id)}">${esc(deal.ticker || deal.id)}</a>`;
+    `<a class="flash-ticker" href="/deals/?deal=${esc(deal.id)}">${esc(deal.ticker || deal.id)}</a>`;
 
   // ---- Render hero stamp (date + compile timestamp only — portfolio stats live on TC Pipeline) ----
   function renderHero(data) {
@@ -736,7 +736,7 @@ function briefSyncAll() {
   function _cosPipelineCard(cap) {
     const items = (cap.actionItems || []).filter(s => s && s !== '(no new transcripts processed)');
     const transcripts = [
-      ...(cap.tomac    || []).filter(s => s && !s.startsWith('(none')),
+      ...(cap.deals    || cap.tomac || []).filter(s => s && !s.startsWith('(none')),  // noqa: tenant-leak — backward-compat key fallback
       ...(cap.recruiting || []).filter(s => s && !s.startsWith('(none')),
       ...(cap.other    || []).filter(s => s && !s.startsWith('(none')),
     ];

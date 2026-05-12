@@ -7,8 +7,8 @@ Run this whenever the firm engages a new deal.
 
 USAGE:
   python tcip_new_deal.py \
-    --deal-name "Black Bayou Energy Hub" \
-    --deal-id "black_bayou" \
+    --deal-name "Lakeview Wind Farm" \
+    --deal-id "lakeview_wind" \
     --lead "Jane Smith" \
     --support "John Doe" \
     --docs-folder "/path/to/deal/documents"   # optional
@@ -1222,7 +1222,7 @@ def prompt_interactive():
     print("  {FIRM_SHORT} NEW DEAL SETUP")
     print("═" * 60)
 
-    deal_name = input("\nDeal name (e.g. 'Black Bayou Energy Hub'): ").strip()
+    deal_name = input("\nDeal name (e.g. 'Lakeview Wind Farm'): ").strip()
     deal_id = input("Deal ID (e.g. 'black_bayou', lowercase, underscores): ").strip()
     _default_lead = PRINCIPAL_NAME
     _default_support = TEAM_NAMES[0] if TEAM_NAMES else ""

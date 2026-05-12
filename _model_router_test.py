@@ -7,7 +7,7 @@ Run:
 
 No pytest dependency; uses unittest. Mocks the anthropic SDK so the
 suite runs offline. Writes cost JSONL into a temp dir (overrides
-_PIPELINE_ROOT) so it never touches the live data-tomac/costs/ tree.
+_PIPELINE_ROOT) so it never touches the live data-<slug>/costs/ tree.
 
 POST-CUTOVER VERSION (subscription dispatch is wired). Differences vs
 the prior live test file:

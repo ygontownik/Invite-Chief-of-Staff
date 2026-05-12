@@ -46,7 +46,7 @@ Sub-commands (each prints structured output the slash command can parse):
         Set last_run for the deal to now (called after a successful
         cycle, even if no files were processed).
 
-    list-deals [--filter cholla,pngts]
+    list-deals [--filter <deal_id>,<deal_id>]
         Print JSON list of {deal_id, status_id, brief_id, folder_id}
         for each deal in deal_docs registry.
 
@@ -57,9 +57,9 @@ Sub-commands (each prints structured output the slash command can parse):
 
 Usage examples:
     python3 deal_extract_helpers.py list-deals
-    python3 deal_extract_helpers.py list-new-files pngts
+    python3 deal_extract_helpers.py list-new-files <deal_id>
     python3 deal_extract_helpers.py read-file 1abc...
-    cat new_status.md | python3 deal_extract_helpers.py write-deal-doc pngts status
+    cat new_status.md | python3 deal_extract_helpers.py write-deal-doc <deal_id> status
 """
 import argparse
 import io

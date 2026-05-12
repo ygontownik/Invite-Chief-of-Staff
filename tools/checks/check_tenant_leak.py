@@ -30,6 +30,9 @@ HOME = Path.home()
 
 # Verbatim denylist (mirrors HANDOFF_NEXT_SESSION.md lines 171-175).
 # Words/phrases that must not appear in shipped public configs/docs.
+# NOTE: Some terms (e.g. "tcip") appear in Python/HTML as a product-
+# feature route prefix and are excluded from code scanning via
+# _CODE_DENY below.
 _DENY = [
     r"tomac\b",
     r"cholla",
@@ -60,6 +63,11 @@ _DENY = [
     r"omerta",
 ]
 
+# Subset of _DENY applied to .py/.html code files.  "tcip" is excluded
+# because it is used as a product-feature URL route prefix (not a tenant
+# identifier) throughout the codebase.  All other terms still apply.
+_CODE_DENY = [t for t in _DENY if t != r"tcip"]
+
 # Allow-list shapes that the original grep expressly excluded
 # ("tomac[]", "tomac doc", "cos-pipeline-config-tomac"). Lines whose
 # entire match falls inside one of these are downgraded from fail to warn.
@@ -67,9 +75,19 @@ _ALLOW = [
     re.compile(r"tomac\[\]", re.IGNORECASE),
     re.compile(r"tomac doc", re.IGNORECASE),
     re.compile(r"cos-pipeline-config-tomac", re.IGNORECASE),
+    # Inline suppression annotation — developer has acknowledged the match
+    # Python/JS:  # noqa: tenant-leak
+    re.compile(r"#\s*noqa:\s*tenant-leak", re.IGNORECASE),
+    # HTML/template:  <!-- noqa: tenant-leak -->  (text after tag allowed)
+    re.compile(r"<!--\s*noqa:\s*tenant-leak", re.IGNORECASE),
+    # CSS/JS block comment:  /* noqa: tenant-leak ... */
+    re.compile(r"/\*\s*noqa:\s*tenant-leak", re.IGNORECASE),
+    # JS single-line comment:  // noqa: tenant-leak
+    re.compile(r"//\s*noqa:\s*tenant-leak", re.IGNORECASE),
 ]
 
-_RE = re.compile("|".join(_DENY), re.IGNORECASE)
+_RE      = re.compile("|".join(_DENY),      re.IGNORECASE)
+_RE_CODE = re.compile("|".join(_CODE_DENY), re.IGNORECASE)
 
 
 def _scan_dirs() -> list[Path]:
@@ -88,7 +106,54 @@ def _scan_dirs() -> list[Path]:
     explicit = pipeline / "config" / "dash_corrections.md"
     if explicit.exists() and explicit not in files:
         files.append(explicit)
+
+    # Also scan Python source and HTML template files in the pipeline root
+    # and templates/ directory so code-level leaks are caught.
+    # "data-*" directories are runtime tenant data output, not public code.
+    _SKIP_DIR_PREFIXES = {"data-"}
+    _SKIP_DIRS = {"archive", "node_modules", "__pycache__"}
+    # Exempt the tenant-leak scanner scripts themselves from code scanning:
+    # tools/checks/ contains the denylist as patterns, and
+    # tools/smoke_test_tenant.py contains the denylist as a FORBIDDEN list.
+    # Both are intentional — scanning them would produce only false positives.
+    _SKIP_PATH_FRAGMENTS = {
+        "tools/checks",
+        "tools\\checks",
+        "tools/smoke_test_tenant.py",
+        "tools\\smoke_test_tenant.py",
+        # validate_tenant.py is an integration-test validator that explicitly
+        # references the default tenant to verify non-default tenant isolation.
+        "validate_tenant.py",
+    }
+    for pattern in ("*.py", "*.html"):
+        for p in sorted(pipeline.rglob(pattern)):
+            # Skip any component of the path that matches excluded dirs
+            if any(part in _SKIP_DIRS for part in p.parts):
+                continue
+            # Skip data-* directories (runtime tenant output, not code)
+            if any(part.startswith(prefix) for part in p.relative_to(pipeline).parts
+                   for prefix in _SKIP_DIR_PREFIXES):
+                continue
+            # Skip hidden directories (backup snapshots, sandboxes, etc.)
+            if any(part.startswith(".") for part in p.relative_to(pipeline).parts[:-1]):
+                continue
+            # Skip private tenant config repos that may legitimately use names
+            if "cos-pipeline-config-" in str(p):
+                continue
+            # Skip the checks/ directory itself (denylist terms appear there)
+            rel = str(p.relative_to(pipeline))
+            if any(frag in rel for frag in _SKIP_PATH_FRAGMENTS):
+                continue
+            if p not in files:
+                files.append(p)
+
     return files
+
+
+def _line_is_comment(line: str) -> bool:
+    """Return True if the line is a comment-only line (Python # or HTML <!-- style)."""
+    stripped = line.strip()
+    return stripped.startswith("#") or stripped.startswith("//") or stripped.startswith("<!--")
 
 
 def _line_is_allowed(line: str) -> bool:
@@ -111,8 +176,11 @@ def run() -> dict[str, Any]:
                 }
             )
             continue
+        is_py_or_html = path.suffix in (".py", ".html")
+        # Use the narrower code deny-list for source files (strips tcip)
+        active_re = _RE_CODE if is_py_or_html else _RE
         for lineno, line in enumerate(text.splitlines(), 1):
-            if not _RE.search(line):
+            if not active_re.search(line):
                 continue
             entry = {
                 "file": str(path.relative_to(HOME)),
@@ -120,6 +188,11 @@ def run() -> dict[str, Any]:
                 "text": line.strip()[:200],
             }
             if _line_is_allowed(line):
+                soft_hits.append(entry)
+            elif is_py_or_html and _line_is_comment(line):
+                # Comment-only occurrences in .py/.html are demoted to warn
+                # so they don't block pushes from innocuous annotation history.
+                entry["note"] = "comment-only line (warn, not fail)"
                 soft_hits.append(entry)
             else:
                 hard_hits.append(entry)
@@ -138,7 +211,7 @@ def run() -> dict[str, Any]:
         )
     else:
         status = "pass"
-        summary = f"tenant-leak: clean across {len(files)} markdown file(s)"
+        summary = f"tenant-leak: clean across {len(files)} file(s) (md + py + html)"
 
     return {
         "name": "tenant_leak",

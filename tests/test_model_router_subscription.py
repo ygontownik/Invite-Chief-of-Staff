@@ -260,7 +260,7 @@ class TestModelHonored(_SubBase):
     def test_route_model_flows_into_options(self):
         _install_fake_sdk(chunks=[_FakeResultMessage({})])
         route = self.mr.ModelRoute(
-            task_type="tomac-deal-compile",
+            task_type="tomac-deal-compile",  # noqa: tenant-leak (task_type key test)
             model=self.mr.MODEL_OPUS_4_7,
             mode="subscription",
             max_tokens=4096,

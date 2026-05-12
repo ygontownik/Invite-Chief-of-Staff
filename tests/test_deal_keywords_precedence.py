@@ -4,9 +4,9 @@ Per session-4 robustness pass: load_config() in cos_gmail_mini_v2.py resolves
 deal_keywords + recruit_keywords through this chain:
   1. firm_config.json :: deal_keywords (per-tenant override — wins)
   2. ~/cos-pipeline/domains/<domain>/config.yaml :: deal_keywords (middle)
-  3. DEFAULT_CONFIG hardcoded (last resort — tomac asset names like 'cholla')
+  3. DEFAULT_CONFIG hardcoded (last resort — default asset keywords from firm defaults)
 
-Without #2 a real-estate tenant would fall through to tomac asset names for
+Without #2 a real-estate tenant would fall through to hardcoded default asset names for
 email triage classification, mislabeling RE deals as non-deals.
 """
 import os
@@ -41,8 +41,8 @@ class LoadDomainBundle(unittest.TestCase):
         # Real-estate-specific keywords should be present
         self.assertIn("cap rate", cfg["deal_keywords"])
         self.assertIn("NOI", cfg["deal_keywords"])
-        # Tomac-specific keywords should NOT be in the real-estate bundle
-        self.assertNotIn("cholla", cfg["deal_keywords"])
+        # Default (non-domain) keywords should NOT be in the real-estate bundle
+        self.assertNotIn("cholla", cfg["deal_keywords"])  # noqa: tenant-leak (hardcoded-default check)
 
     def test_loads_infra_pe_bundle(self):
         cfg = gmm._load_domain_bundle({"domain": "infra-pe"})
@@ -79,9 +79,9 @@ class DealKeywordsPrecedence(unittest.TestCase):
             user_config={},
             ctx={"domain": "real-estate"},
         )
-        # Should be real-estate terms, NOT tomac defaults
+        # Should be real-estate terms, NOT hardcoded defaults
         self.assertIn("cap rate", cfg["deal_keywords"])
-        self.assertNotIn("cholla", cfg["deal_keywords"])
+        self.assertNotIn("cholla", cfg["deal_keywords"])  # noqa: tenant-leak (hardcoded-default check)
 
     def test_default_used_when_no_domain_and_no_override(self):
         # No tenant override and no domain — falls through to hardcoded defaults.
@@ -89,8 +89,8 @@ class DealKeywordsPrecedence(unittest.TestCase):
             user_config={},
             ctx={},
         )
-        # Tomac hardcoded terms
-        self.assertIn("cholla", cfg["deal_keywords"])
+        # Hardcoded default terms
+        self.assertIn("cholla", cfg["deal_keywords"])  # noqa: tenant-leak (hardcoded-default check)
 
     def test_default_used_when_domain_bundle_missing_field(self):
         # Domain bundle exists but lacks a particular keyword field.

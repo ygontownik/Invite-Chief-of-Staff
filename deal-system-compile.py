@@ -368,7 +368,7 @@ def _emit_g5_candidates_sidecar() -> None:
         return
 
     # Build the "known firms" set from configs + deal directories.
-    # Plus alias needles (so "gideon powell" → Cholla resolves), team members
+    # Plus alias needles (so alias → deal resolves), team members
     # (so "Mark Saxe" doesn't surface as a candidate firm), and peer-firm
     # denylist (so "LS Power" / "Stonepeak" don't either).
     known = set()
@@ -1040,7 +1040,7 @@ def main():
 
     # ── Step 3.5: cross-pollinate fresh transcript/email signals ──
     # Read-only against dashboard-data.json; mutates deal-system-data.json
-    # in place. Fixes the Cholla case where Status shows fresh and the
+    # in place. Fixes the case where Status shows fresh and the
     # React portfolio shows stale because they're fed by different
     # compilers.
     print('→ Overlaying fresh signals from dashboard-data.json...', flush=True)

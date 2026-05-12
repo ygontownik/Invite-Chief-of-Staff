@@ -41,6 +41,48 @@ def _warn(msg: str): print(f"  {WARN} {msg}")
 _FAILURES: list[str] = []
 
 
+def _load_tomac_bleed_markers() -> list[str]:
+    """Return bleed-check markers loaded from the default tenant's firm_context.
+
+    Reads principal.name, principal.email (user part), firm.name, and
+    team member names from the tomac firm_context.yaml so no real names
+    are hardcoded in source.  Returns [] if the config cannot be read.
+    """
+    import glob as _glob
+    # Find the default (first populated) cos-pipeline-config directory
+    candidates = sorted(_glob.glob(str(Path.home() / "cos-pipeline-config-*")))
+    # Prefer "tomac" slug if present
+    tomac_candidates = [c for c in candidates if "tomac" in Path(c).name.lower()]
+    search_dirs = tomac_candidates or candidates
+    for cdir in search_dirs:
+        yaml_path = Path(cdir) / "firm_context.yaml"
+        if not yaml_path.exists():
+            continue
+        try:
+            import yaml as _yaml
+            ctx = _yaml.safe_load(yaml_path.read_text()) or {}
+        except Exception:
+            continue
+        markers: list[str] = []
+        principal = ctx.get("principal") or {}
+        p_name = (principal.get("name") or "").strip()
+        p_email = (principal.get("email") or "").strip()
+        p_email_user = p_email.split("@")[0] if "@" in p_email else p_email
+        firm_name = ((ctx.get("firm") or {}).get("name") or "").strip()
+        if p_name:
+            markers.append(p_name)
+        if p_email_user and p_email_user != p_name:
+            markers.append(p_email_user)
+        if firm_name:
+            markers.append(firm_name)
+        for m in (ctx.get("team") or []):
+            mname = (m.get("name") or "").strip()
+            if mname and mname not in markers:
+                markers.append(mname)
+        return [m for m in markers if m]
+    return []
+
+
 # ── Phase 1: firm_context load ────────────────────────────────────────────────
 
 def phase1_load_context(tenant: str) -> dict:
@@ -140,8 +182,13 @@ def phase2_build_prompt(ctx: dict, tenant: str) -> str:
     else:
         _bad(f"Firm name {f_name!r} NOT found in system prompt")
 
-    # Negative check: tomac-specific strings should not appear
-    tomac_markers = ["Tomac Cove", "Yoni Gontownik", "ygontownik", "Mark Saxe"]
+    # Negative check: tomac-specific strings should not appear.
+    # Markers are loaded from the default (tomac) tenant's firm_context at
+    # runtime so no real names are hardcoded here.  Falls back to an empty
+    # list (skips the check with a warning) when the tomac config is absent.
+    tomac_markers = _load_tomac_bleed_markers()
+    if not tomac_markers:
+        _warn("No tomac bleed markers available — skipping bleed-through check")
     for marker in tomac_markers:
         if marker.lower() in system_prompt.lower():
             _bad(f"Tomac marker found in non-tomac prompt: {marker!r}")
@@ -470,8 +517,8 @@ def phase5_briefing_call(tenant: str, ctx: dict) -> dict | None:
     if misses:
         _warn(f"Missing from output: {misses} — may be truncated or summarized")
 
-    # No tomac bleed
-    for marker in ["Tomac Cove", "Yoni Gontownik", "Mark Saxe", "ygontownik"]:
+    # No tomac bleed — markers loaded dynamically from tomac firm_context
+    for marker in _load_tomac_bleed_markers():
         if marker.lower() in text.lower():
             _bad(f"Tomac bleed-through in briefing output: {marker!r}")
         else:

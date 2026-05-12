@@ -2390,7 +2390,7 @@ def _merge_registered_deals(pipeline_deals: list, registered_deals: list) -> lis
     (from dealPortfolio.deals) that are absent from the live list.
 
     Uses first-token matching to catch variants like
-    'PNGTS (Portland Natural Gas...)' vs 'PNGTS / Granite State'.
+    'DealX (Full Legal Name...)' vs 'DealX / Asset Name'.
     """
     import re as _re
 
@@ -2914,9 +2914,11 @@ class Handler(BaseHTTPRequestHandler):
             html = ALL_DASHBOARD.read_text()
         except Exception:
             self.send_response(500); self.end_headers(); return
+        _all_firm_name = str(((_FC_CTX or {}).get('firm') or {}).get('name', 'Firm')).strip()
         html = (html.replace('{{USER}}', user)
                     .replace('{{TILE_COUNT}}', str(len(tiles)))
-                    .replace('{{TILES}}', '\n'.join(cards)))
+                    .replace('{{TILES}}', '\n'.join(cards))
+                    .replace('{{FIRM_NAME}}', _all_firm_name))
         self._serve_html(html, inject_chrome=True, user=user)
 
     # Admin tabs that can be granted to non-owner users
@@ -3414,6 +3416,24 @@ class Handler(BaseHTTPRequestHandler):
             html = ADMIN_DASHBOARD.read_text()
         except Exception:
             self.send_response(500); self.end_headers(); return
+        # Build principal/team options dynamically so no tenant names are
+        # hardcoded in the template.
+        _adm_p_name = str(((_FC_CTX or {}).get('principal') or {}).get('name', 'Principal')).strip()
+        _adm_team = (_FC_CTX or {}).get('team', [])
+        _adm_members = [_adm_p_name] + [
+            str(m.get('name', '')).strip()
+            for m in _adm_team
+            if str(m.get('name', '')).strip() and str(m.get('name', '')).strip() != _adm_p_name
+        ]
+        _adm_lead_opts = '\n                '.join(
+            f'<option value="{n}"{"  selected" if i == 0 else ""}>{n}</option>'
+            for i, n in enumerate(_adm_members)
+        )
+        _adm_support_opts = '\n                '.join(
+            f'<option value="{n}">{n}</option>'
+            for n in _adm_members
+        )
+        _adm_firm_name = str(((_FC_CTX or {}).get('firm') or {}).get('name', 'Firm')).strip()
         html = (html.replace('{{DASHBOARD_SECTIONS}}', dashboard_sections)
                     .replace('{{USERS_TABLE}}', table)
                     .replace('{{FLASH}}', flash_html)
@@ -3422,7 +3442,10 @@ class Handler(BaseHTTPRequestHandler):
                     .replace('{{SCHEDULED_CALLS_JSON}}', json.dumps(sched_calls))
                     .replace('{{PROCESSED_CALLS_JSON}}', json.dumps(proc_calls))
                     .replace('{{RUN_STATE_JSON}}', json.dumps(run_state_slim))
-                    .replace('{{DELETIONS_PANEL}}', deletions_panel))
+                    .replace('{{DELETIONS_PANEL}}', deletions_panel)
+                    .replace('__LEAD_OPTIONS__', _adm_lead_opts)
+                    .replace('__SUPPORT_OPTIONS__', _adm_support_opts)
+                    .replace('{{FIRM_NAME}}', _adm_firm_name))
         self._serve_html(html, inject_chrome=True, user='owner')
 
     def _handle_data(self, user: str = 'owner'):
@@ -3495,7 +3518,7 @@ class Handler(BaseHTTPRequestHandler):
             # before serving. These are auto-extracted contacts from transcripts
             # that should live in originationInbox, not the live-deals list.
             # Then inject any registered deals from dealPortfolio that are
-            # missing (e.g. Cholla, Unitil not yet in the Deal Pipeline doc).
+            # missing (deals registered but not yet in the Deal Pipeline doc).
             COS_TENANT_SLUG:    _merge_registered_deals(
                                     state.get(COS_TENANT_SLUG, []),
                                     (state.get('dealPortfolio') or {}).get('deals', [])
@@ -4079,6 +4102,10 @@ class Handler(BaseHTTPRequestHandler):
                 html = tmpl.read_text()
             else:
                 self.send_response(404); self.end_headers(); return
+        # Inject firm name into any template that uses {{FIRM_NAME}}
+        if '{{FIRM_NAME}}' in html:
+            _tmpl_firm = str(((_FC_CTX or {}).get('firm') or {}).get('name', 'Firm')).strip()
+            html = html.replace('{{FIRM_NAME}}', _tmpl_firm)
         self._serve_html(html, inject_chrome=True, user=user)
 
     def do_POST(self):
@@ -4289,29 +4316,25 @@ class Handler(BaseHTTPRequestHandler):
     <h2>Deal Identity</h2>
     <div class="field">
       <label>Deal Name</label>
-      <input id="f-name" type="text" placeholder="e.g. Black Bayou Energy Hub" autocomplete="off">
+      <input id="f-name" type="text" placeholder="e.g. Lakeview Wind Farm" autocomplete="off">
     </div>
     <div class="field">
       <label>Deal ID <span style="font-weight:400;text-transform:none;letter-spacing:0">(auto-generated — edit if needed)</span></label>
-      <input id="f-id" type="text" placeholder="e.g. black_bayou" autocomplete="off" style="font-family:var(--font-data)">
+      <input id="f-id" type="text" placeholder="e.g. lakeview_wind" autocomplete="off" style="font-family:var(--font-data)">
       <div class="hint">Lowercase, underscores only. Used as the key in deal-system-data.json.</div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
       <div class="field">
         <label>Lead Principal</label>
         <select id="f-lead">
-          <option value="Yoni Gontownik">Yoni Gontownik</option>
-          <option value="Mark Saxe">Mark Saxe</option>
-          <option value="Nikola Trkulja">Nikola Trkulja</option>
+          __LEAD_OPTIONS__
         </select>
       </div>
       <div class="field">
         <label>Support Principal</label>
         <select id="f-support">
           <option value="">— none —</option>
-          <option value="Mark Saxe">Mark Saxe</option>
-          <option value="Yoni Gontownik">Yoni Gontownik</option>
-          <option value="Nikola Trkulja">Nikola Trkulja</option>
+          __SUPPORT_OPTIONS__
         </select>
       </div>
     </div>
@@ -4495,6 +4518,25 @@ function pollResult() {
 </script>
 </body>
 </html>"""
+        # Build principal/team options dynamically from firm_context so no
+        # tenant names are hardcoded in source.
+        _p_name = str(((_FC_CTX or {}).get('principal') or {}).get('name', 'Principal')).strip()
+        _team_members = (_FC_CTX or {}).get('team', [])
+        _all_members = [_p_name] + [
+            str(m.get('name', '')).strip()
+            for m in _team_members
+            if str(m.get('name', '')).strip() and str(m.get('name', '')).strip() != _p_name
+        ]
+        _lead_opts = '\n          '.join(
+            f'<option value="{n}"{"  selected" if i == 0 else ""}>{n}</option>'
+            for i, n in enumerate(_all_members)
+        )
+        _support_opts = '\n          '.join(
+            f'<option value="{n}">{n}</option>'
+            for n in _all_members
+        )
+        html = html.replace('__LEAD_OPTIONS__', _lead_opts)
+        html = html.replace('__SUPPORT_OPTIONS__', _support_opts)
         self._serve_html(html, inject_chrome=True, user=user)
 
     def _handle_tcip_stream(self):
@@ -4749,7 +4791,7 @@ function copyInstructions() {{
         body = self._read_json_body() or {}
         deal_name = str(body.get('dealName') or '').strip()
         deal_id   = str(body.get('dealId')   or '').strip()
-        lead      = str(body.get('lead')      or 'Yoni Gontownik').strip()
+        lead      = str(body.get('lead')      or ((_FC_CTX or {}).get('principal') or {}).get('name', 'Principal')).strip()
         support   = str(body.get('support')   or '').strip()
         drive_id  = str(body.get('driveId')   or '').strip()
         docs_path = str(body.get('docsPath')  or '').strip()

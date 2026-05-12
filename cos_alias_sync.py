@@ -76,8 +76,8 @@ def _generate_needles(raw_counterparty: str) -> list[str]:
       "NextDecade"
       "Rio Grande LNG"
       "Black Mountain — Rhett Bennett"   → "black mountain", "rhett bennett"
-      "Austin Risley / Pacific Fleet"    → "austin risley", "pacific fleet"
-      "Cholla Digital (Gideon Powell)"   → "cholla digital", "gideon powell"
+      "John Smith / Acme Energy"         → "john smith", "acme energy"
+      "Riverside Power (Jane Doe)"       → "riverside power", "jane doe"
     """
     # Split on em-dash, en-dash, slash, parens, pipe — these separate phrases
     parts = re.split(r"\s*[—–/|()\[\]]\s*", raw_counterparty)
