@@ -1040,6 +1040,64 @@ def load_pipeline_context():
         except Exception:
             pass
 
+    # ── Recent confirmed deal intel (raw log.json, no embedding) ──────────────
+    # Last 5 captured log entries per active deal — gives the extractor
+    # established facts so new actions reference the right context.
+    # Raw text only (no embedding at extraction time = no latency hit).
+    # BUDGET: 5 entries × ~150 chars × 6 deals ≈ 4.5KB max; skip if entry is empty.
+    if _deals_dir.exists():
+        try:
+            import yaml as _yaml2
+            intel_lines = ["\nRECENT CONFIRMED DEAL INTEL — established facts per deal (newest first):"]
+            intel_lines.append(
+                "Use these when framing action context. Do NOT create new_action for facts already captured here."
+            )
+            any_intel = False
+            for _dm in sorted(_deals_dir.glob("*/deal.md")):
+                if _dm.parent.name.startswith("_"):
+                    continue
+                deal_id = _dm.parent.name
+                log_path = _dm.parent / "log.json"
+                if not log_path.exists():
+                    continue
+                try:
+                    raw_log = json.loads(log_path.read_text())
+                    # Handle both flat list and dict-wrapped {"entries": [...]} formats
+                    if isinstance(raw_log, dict):
+                        log_entries = raw_log.get("entries", [])
+                    else:
+                        log_entries = raw_log
+                except Exception:
+                    continue
+                # Captured entries only, newest first
+                captured = [
+                    e for e in log_entries
+                    if e.get("captured") is True or e.get("source") == "intel"
+                ]
+                captured.sort(key=lambda e: e.get("date", ""), reverse=True)
+                captured = captured[:5]
+                if not captured:
+                    continue
+                any_intel = True
+                intel_lines.append(f"\n[{deal_id}]")
+                for e in captured:
+                    date_s  = (e.get("date") or "")[:10]
+                    # Handle both spec schema (title/summary/facts) and actual schema (who/what)
+                    title   = (e.get("title") or e.get("what") or "")[:80]
+                    summary = (e.get("summary") or "")[:120]
+                    line = f"  {date_s}: {title}"
+                    if summary and summary not in title:
+                        line += f" — {summary}"
+                    intel_lines.append(line)
+                    # Add top 2 facts if they add material detail
+                    for fact in (e.get("facts") or [])[:2]:
+                        if fact and len(fact) > 10:
+                            intel_lines.append(f"    • {fact[:100]}")
+            if any_intel:
+                sections.append("\n".join(intel_lines))
+        except Exception:
+            pass
+
     # Note: peer/co-investor firms are listed in BACKFILL_PREAMBLE (cached block 1)
     # and are not duplicated here to keep the pipeline context block lean.
 
