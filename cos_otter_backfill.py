@@ -414,9 +414,11 @@ def consolidate_transcript_siblings(token, files, tracker, parent_folder):
     """
     # Group by identity key
     groups = {}
+    no_key_survivors = []  # files with empty identity key can't be grouped; pass through
     for f in files:
         key = _transcript_identity_key(f["name"])
         if not key:
+            no_key_survivors.append(f)  # don't drop — pass through individually
             continue
         groups.setdefault(key, []).append(f)
 
@@ -508,7 +510,9 @@ def consolidate_transcript_siblings(token, files, tracker, parent_folder):
         print(f"  🔀  Consolidated {consolidated} duplicate transcript(s)", flush=True)
         save_dedup(tracker)
 
-    return survivors
+    # Prepend files that had no identity key (all-separator names, etc.) —
+    # they can't be sibling-grouped but must still reach the processing loop.
+    return no_key_survivors + survivors
 
 # ── Intel / conference call pre-classifier ────────────────────────────────────
 # Titles matching these patterns indicate market intel calls where Yoni is a
@@ -1025,6 +1029,12 @@ EXTRACTION TASKS:
    DISTINGUISH action_type carefully:
      "new_action" — a genuine new commitment not yet tracked anywhere; WILL be written to the Follow-ups doc.
      "status_update" — the call just provided a status on something already being tracked (e.g. "proposal expected this week", "call already scheduled"). Do NOT write to Follow-ups; include in the PROCESSED header only.
+   TEAM MEMBER NAMING — CRITICAL: Always use FIRST NAME ONLY for the firm's own team members
+   in both `who` and `owner` fields. Never use full names like "{_OWNERS.replace('|', ' Lastname, ')} Lastname".
+   Inconsistent naming (e.g. "Yoni" vs "Yoni Gontownik") creates duplicate actions on the dashboard.
+   Canonical first names: {_OWNERS}. Use these exactly — no last names, no initials, no variants.
+   Codified 2026-05-12 after PNGTS action appeared twice from same call due to "Yoni" vs "Yoni Gontownik".
+
    Each item: {{
      "who": "person/firm being actioned",
      "what": "verb-first specific action",
