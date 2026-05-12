@@ -286,6 +286,30 @@ def run_deal_entry_sync():
         return False
 
 
+def run_deal_intel_index():
+    """Index newly captured deal log.json entries into ChromaDB deal_intel collection.
+    Runs after run_deal_entry_sync() on the same 2h cadence — keeps deal_intel
+    collection fresh for /knowledge-query --collection deal_intel and load_pipeline_context()."""
+    indexer = os.path.expanduser("~/cos-pipeline/tools/deal_intel_indexer.py")
+    if not os.path.exists(indexer):
+        return False
+    try:
+        result = subprocess.run(
+            ["/opt/homebrew/bin/python3", indexer],
+            capture_output=True, text=True, timeout=120
+        )
+        output = result.stdout.strip()
+        # Only log if something was actually indexed
+        for line in output.splitlines():
+            if "indexed" in line and "0 indexed" not in line:
+                print(f"[dash-state-hook] Deal intel index: {line}")
+                break
+        return True
+    except Exception as e:
+        print(f"[dash-state-hook] Deal intel index error (non-fatal): {e}", file=sys.stderr)
+        return False
+
+
 # ── Deal extract sync (/deal-sync slash command in headless session) ──────────
 
 def seconds_since_deal_extract_sync():
@@ -716,6 +740,7 @@ def main():
     # Deal entry sync — pulls per-deal dashboard_entry.json from Drive (every 2h)
     if seconds_since_deal_entry_sync() >= DEAL_ENTRY_SYNC_INTERVAL:
         run_deal_entry_sync()
+        run_deal_intel_index()
 
     # Deal extract sync — runs /deal-sync slash command in a headless Claude
     # Code session. Reactive: fires whenever any deal has new files OR another
