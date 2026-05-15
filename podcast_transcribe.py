@@ -428,7 +428,20 @@ def generate_memo(show: str, title: str,
         })
         full_memo = clean_memo(result["text"].strip())
     except Exception as e:
-        fallback = f"(memo generation failed: {e})"
+        # Classify so the auto-recovery preflight knows whether to retry.
+        # Retryable: rate limit, overloaded, transient 5xx, timeouts, API usage caps.
+        msg = str(e).lower()
+        retryable_markers = (
+            'specified api usage limits',   # Anthropic per-account usage cap
+            'rate_limit', 'rate limit',
+            'overloaded',
+            'timed out', 'timeout',
+            'connection',
+            'error code: 5',                # 5xx upstream
+            'service unavailable',
+        )
+        kind = '[retryable]' if any(m in msg for m in retryable_markers) else '[permanent]'
+        fallback = f"(memo generation failed {kind}: {e})"
         return fallback, "Summary unavailable."
 
     # Extract one-sentence summary from the memo
@@ -571,6 +584,193 @@ def _extract_one_liner(memo: str) -> str:
         if line.strip():
             return line.strip()[:200]
     return "No summary available."
+
+
+# ── Auto-recovery of orphaned failed memos ───────────────────────────────────
+#
+# When `generate_memo()` fails (API limit, transient 5xx, timeout, etc.) the
+# pipeline writes a `(memo generation failed [retryable]: ...)` placeholder and
+# marks the episode processed. Without recovery, the placeholder is permanent.
+# This preflight runs at the top of every main() pass: it finds the
+# placeholders, regenerates from the existing transcript already in the show
+# doc (no AssemblyAI re-spend), and patches both the summary doc and the show
+# doc in place. Idempotent — no placeholders → no-op.
+
+_TOC_END_MARKER = 'END OF TABLE OF CONTENTS'
+_FAILED_RE      = re.compile(r'\(memo generation failed(\s+\[(retryable|permanent)\])?:',
+                              re.IGNORECASE)
+
+
+def _parse_doc_paragraphs(docs_svc, doc_id: str):
+    """Return [(style, text, startIndex, endIndex), ...]."""
+    body = docs_svc.documents().get(documentId=doc_id).execute() \
+                  .get('body', {}).get('content', [])
+    out = []
+    for el in body:
+        p = el.get('paragraph')
+        if not p:
+            continue
+        style = p.get('paragraphStyle', {}).get('namedStyleType', 'NORMAL_TEXT')
+        text  = ''.join(r.get('textRun', {}).get('content', '')
+                        for r in p.get('elements', []))
+        out.append((style, text, el.get('startIndex'), el.get('endIndex')))
+    return out
+
+
+def _replace_doc_range(docs_svc, doc_id: str, start_idx: int, end_idx: int,
+                        new_text: str):
+    insertion = new_text.rstrip() + '\n'
+    docs_svc.documents().batchUpdate(documentId=doc_id, body={
+        'requests': [
+            {'deleteContentRange': {'range': {'startIndex': start_idx,
+                                              'endIndex':   end_idx}}},
+            {'insertText':         {'location': {'index': start_idx},
+                                    'text': insertion}},
+        ],
+    }).execute()
+
+
+def _parse_summary_title_and_date(title_line: str):
+    """Episode lines in summary doc look like 'Title  (May 14 2026)'.
+    Returns (title_without_date, datetime). Falls back to (raw, None)."""
+    m = re.match(r'^(.*?)\s*\(([A-Z][a-z]{2})\s+(\d{1,2})\s+(\d{4})\)\s*$',
+                 title_line or '')
+    if not m:
+        return (title_line or '').strip(), None
+    title = m.group(1).strip()
+    try:
+        dt = datetime.strptime(f'{m.group(2)} {m.group(3)} {m.group(4)}',
+                                '%b %d %Y')
+    except ValueError:
+        dt = None
+    return title, dt
+
+
+def _find_failed_in_summary(paras):
+    """Return list of (show_heading, title_heading, sIdx, eIdx, kind) tuples
+    for every placeholder in the Podcast Summaries doc."""
+    out, cur_show, cur_title = [], None, None
+    for style, text, sIdx, eIdx in paras:
+        if style == 'HEADING_1' and text.strip():
+            cur_show, cur_title = text.strip(), None
+        elif style == 'HEADING_2' and text.strip():
+            cur_title = text.strip()
+        else:
+            m = _FAILED_RE.search(text)
+            if m:
+                kind = (m.group(2) or 'unknown').lower()
+                out.append((cur_show, cur_title, sIdx, eIdx, kind))
+    return out
+
+
+def _extract_show_doc_block(paras, target_title: str):
+    """In a show doc, locate the target episode body region (past the TOC).
+    Returns (transcript_text, placeholder_range_or_None)."""
+    title_low = target_title.lower()[:50]
+    past_toc = in_ep = transcript_on = False
+    transcript_lines, placeholder = [], None
+    for style, text, sIdx, eIdx in paras:
+        if not past_toc:
+            if _TOC_END_MARKER in text.upper():
+                past_toc = True
+            continue
+        if not in_ep:
+            if style == 'HEADING_1' and title_low in text.lower():
+                in_ep = True
+            continue
+        if style == 'HEADING_1':
+            break
+        if _FAILED_RE.search(text):
+            placeholder = (sIdx, eIdx)
+        if transcript_on:
+            transcript_lines.append(text.rstrip())
+        elif 'FULL TRANSCRIPT' in text.upper():
+            transcript_on = True
+    return '\n'.join(transcript_lines).strip(), placeholder
+
+
+def recover_failed_memos(docs_svc, doc_index: dict, only_retryable: bool = True) -> int:
+    """Scan the Podcast Summaries doc for (memo generation failed ...) placeholders,
+    regenerate each from the existing show-doc transcript, and patch both docs.
+
+    Returns the number of episodes recovered. Idempotent.
+
+    Set only_retryable=False to also retry [permanent] placeholders (e.g. after a
+    code fix that addresses a structural error).
+    """
+    if '__summary__' not in doc_index:
+        return 0
+    summary_doc_id = doc_index['__summary__']
+
+    summary_paras = _parse_doc_paragraphs(docs_svc, summary_doc_id)
+    failures = _find_failed_in_summary(summary_paras)
+    if only_retryable:
+        failures = [f for f in failures if f[4] in ('retryable', 'unknown')]
+    if not failures:
+        return 0
+
+    print(f"\n♻️   Auto-recovery: {len(failures)} orphaned memo placeholder(s) to retry")
+    recovered = 0
+    # Work back-to-front so earlier patches don't shift later offsets.
+    for show_heading, title_line, _, _, kind in reversed(failures):
+        show = (show_heading or '').strip()
+        if show not in doc_index:
+            print(f"   [{show}] no doc ID in podcast_doc_index.json — skipping")
+            continue
+        title, pub_dt = _parse_summary_title_and_date(title_line or '')
+        if not title:
+            print(f"   [{show}] could not parse title from '{title_line}' — skipping")
+            continue
+
+        show_doc_id = doc_index[show]
+        show_paras  = _parse_doc_paragraphs(docs_svc, show_doc_id)
+        transcript, show_placeholder = _extract_show_doc_block(show_paras, title)
+        if len(transcript) < 200:
+            print(f"   [{show}] {title[:50]} — transcript too short ({len(transcript)} chars), skipping")
+            continue
+
+        print(f"   [{show}] {title[:60]}  ({kind}) → regenerating memo from "
+              f"{len(transcript):,}-char transcript")
+        try:
+            memo, _ = generate_memo(show, title, pub_dt, transcript)
+        except Exception as e:
+            print(f"     generate_memo() raised: {e}")
+            continue
+        if memo.startswith('(memo generation failed') or memo.startswith('(memo skipped'):
+            print(f"     still failing: {memo[:120]}")
+            continue
+
+        # Patch show doc first — its offsets are independent
+        if show_placeholder:
+            _replace_doc_range(docs_svc, show_doc_id, *show_placeholder, memo)
+            print(f"     ✓ show doc patched")
+            time.sleep(0.5)
+
+        # Re-fetch summary doc and find this episode's placeholder freshly —
+        # offsets shifted if we patched an earlier (later-in-doc) episode.
+        summary_paras_now = _parse_doc_paragraphs(docs_svc, summary_doc_id)
+        cur_show2 = cur_title2 = None
+        sIdx = eIdx = None
+        for style, text, s, e in summary_paras_now:
+            if style == 'HEADING_1' and text.strip():
+                cur_show2, cur_title2 = text.strip(), None
+            elif style == 'HEADING_2' and text.strip():
+                cur_title2 = text.strip()
+            elif (cur_title2 == title_line
+                  and cur_show2 == show_heading
+                  and _FAILED_RE.search(text)):
+                sIdx, eIdx = s, e
+                break
+        if sIdx is None:
+            print(f"     summary placeholder vanished mid-run — already patched?")
+            continue
+        _replace_doc_range(docs_svc, summary_doc_id, sIdx, eIdx, memo)
+        print(f"     ✓ summary doc patched")
+        time.sleep(0.5)
+        recovered += 1
+
+    print(f"♻️   Auto-recovery complete: {recovered}/{len(failures)} memos restored\n")
+    return recovered
 
 
 # ── Transcript formatter ──────────────────────────────────────────────────────
@@ -1376,6 +1576,12 @@ def main():
                              "Default for LaunchAgent. Manual runs are sync by default.")
     parser.add_argument("--retrieve-batches", action="store_true",
                         help="Retrieve any pending batch results and write memos to Google Docs")
+    parser.add_argument("--recover-only", action="store_true",
+                        help="Skip transcription. Only run the failed-memo auto-recovery pass.")
+    parser.add_argument("--recover-permanent", action="store_true",
+                        help="Also retry [permanent] placeholders (default: only [retryable]).")
+    parser.add_argument("--no-recover", action="store_true",
+                        help="Skip the failed-memo auto-recovery preflight on this run.")
     args = parser.parse_args()
 
     processed    = load_json(PROCESSED_PATH)
@@ -1387,6 +1593,17 @@ def main():
         if args.backfill else
         datetime.now(timezone.utc) - timedelta(days=2)
     )
+
+    # ── Recover-only mode: just the failed-memo preflight, no transcription ──
+    if args.recover_only:
+        print(f"\n{'='*60}")
+        print(f"  Podcast Transcriber — RECOVER FAILED MEMOS")
+        print(f"  {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+        print(f"{'='*60}")
+        drive_svc, docs_svc = get_services()
+        recover_failed_memos(docs_svc, doc_index,
+                              only_retryable=not args.recover_permanent)
+        return
 
     # ── Retrieve pending batch results ──
     if args.retrieve_batches:
@@ -1432,6 +1649,16 @@ def main():
     print("\n🔑  Authenticating Google…")
     drive_svc, docs_svc = get_services()
     print("    ✅  Authenticated.")
+
+    # ── Auto-recovery preflight: heal any orphaned failed-memo placeholders
+    # from prior runs before doing new work. Idempotent — no-op if nothing
+    # to recover. Skipped only via --no-recover.
+    if not args.no_recover:
+        try:
+            recover_failed_memos(docs_svc, doc_index,
+                                  only_retryable=not args.recover_permanent)
+        except Exception as e:
+            print(f"⚠️   Auto-recovery preflight raised: {e} — continuing with main run")
 
     total_new = total_done = total_failed = 0
 
