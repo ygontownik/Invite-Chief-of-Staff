@@ -363,7 +363,7 @@ def clean_follow_ups(fus: list, cutoff_days: int = 14, dismissed_set: set = None
             removed += 1; continue
         if _too_old(f):
             removed += 1; continue
-        if _is_principal_self_ref(f):
+        if _is_principal_self_ref(f) and not f.get('_manual'):
             removed += 1; continue
         if _is_blocklisted(f):
             removed += 1; continue
