@@ -2253,6 +2253,15 @@ function buildTeamActionsCard() {
   const { urgencyLabel } = _ptHelpers(today);
   const awaitFilter = location.pathname.indexOf('/personal') === 0 ? 'job-tc' : 'tc-only';
 
+  function fmtDate(d) {
+    if (!d) return '';
+    const parts = d.split('-');
+    if (parts.length < 3) return d;
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const m = parseInt(parts[1], 10) - 1;
+    return months[m] + ' ' + parseInt(parts[2], 10);
+  }
+
   // ── My Team actions ───────────────────────────────────────────────
   let allItems = [
     ...(tc.liveDeals             || []).map(t => ({ ...t, category: 'Live Deal' })),
@@ -2266,11 +2275,11 @@ function buildTeamActionsCard() {
     return !state.dismissedActions.includes(k) && !__isDel('team-action', k);
   });
 
-  // Overdue first within each section (H5)
+  // Reverse chronological by lastAction (most recently updated first)
   allItems.sort((a, b) => {
-    const aOv = (a.nextTouchBase && a.nextTouchBase <= today) ? 1 : 0;
-    const bOv = (b.nextTouchBase && b.nextTouchBase <= today) ? 1 : 0;
-    return bOv - aOv;
+    const ad = a.lastAction || '0000-00-00';
+    const bd = b.lastAction || '0000-00-00';
+    return bd.localeCompare(ad);
   });
 
   const MEMBER_ORDER = TEAM_FIRST_NAMES;
@@ -2311,7 +2320,7 @@ function buildTeamActionsCard() {
       ${dot}
       <div style="flex:1">
         <div style="font-size:10.5px;color:#1e293b">${esc(actionText)}</div>
-        <div style="font-size:9px;color:#94a3b8;margin-top:1px">${esc(t.name)} · <span style="color:#64748b">${esc(t.category)}</span></div>
+        <div style="font-size:9px;color:#94a3b8;margin-top:1px">${esc(t.name)} · <span style="color:#64748b">${esc(t.category)}</span>${t.lastAction ? ` · <span style="color:#b0b8c4">Updated ${fmtDate(t.lastAction)}</span>` : ''}</div>
       </div>
       ${urgPrompt}
       ${urgLbl ? `<span style="font-size:9px;font-weight:700;color:${urgColor};white-space:nowrap;letter-spacing:0.05em;text-transform:uppercase;flex-shrink:0">${esc(urgLbl)}</span>` : ''}
@@ -2338,6 +2347,13 @@ function buildTeamActionsCard() {
     const ws = (f.workstream || '').toLowerCase();
     if (awaitFilter === 'tc-only' && ws && ws.indexOf('job') !== -1) return false;
     return true;
+  });
+
+  // Reverse chronological by addedDate (most recently captured first)
+  callFus.sort((a, b) => {
+    const ad = a.addedDate || '0000-00-00';
+    const bd = b.addedDate || '0000-00-00';
+    return bd.localeCompare(ad);
   });
 
   // Group by owner (normalise to first-name key)
@@ -2376,6 +2392,7 @@ function buildTeamActionsCard() {
         <div style="font-size:9px;color:#94a3b8;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
           ${srcLabel ? `<span title="${esc(srcRaw)}">${esc(srcLabel)}</span>` : ''}
           ${ctxLabel ? `<span style="color:#64748b"> · ${esc(ctxLabel.slice(0,50))}</span>` : ''}
+          ${f.addedDate ? `<span style="color:#b0b8c4"> · Updated ${fmtDate(f.addedDate)}</span>` : ''}
           ${linkedHtml}
         </div>
       </div>
