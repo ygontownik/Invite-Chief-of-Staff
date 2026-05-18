@@ -2394,8 +2394,11 @@ function buildTeamActionsCard() {
     return true;
   });
 
-  // Reverse chronological by addedDate (most recently captured first)
+  // Deal-tied first, then reverse chronological by addedDate
   callFus.sort((a, b) => {
+    const aDeal = a.deal ? 0 : 1;
+    const bDeal = b.deal ? 0 : 1;
+    if (aDeal !== bDeal) return aDeal - bDeal;
     const ad = a.addedDate || '0000-00-00';
     const bd = b.addedDate || '0000-00-00';
     return bd.localeCompare(ad);
@@ -2416,6 +2419,12 @@ function buildTeamActionsCard() {
   const callFuSectionId = 'call-fu-expanded';
   const callFuExpanded  = !!state.expanded[callFuSectionId];
 
+  // Deal ticker/name lookup from portfolio
+  const _dealMap = {};
+  ((DATA.dealPortfolio || {}).deals || []).forEach(d => {
+    if (d.id) _dealMap[d.id] = (d.ticker && d.ticker.trim()) || (d.name || d.id).split('/')[0].trim().toUpperCase();
+  });
+
   function callFuRow(f) {
     const { label: urgLbl, cls: urgCls } = urgencyLabel(f.due);
     const urgColor  = urgCls === 'overdue' ? '#dc2626' : urgCls === 'soon' ? '#f59e0b' : '#64748b';
@@ -2425,15 +2434,20 @@ function buildTeamActionsCard() {
     const srcLabel  = srcClean.length > 50 ? srcClean.slice(0, 48) + '…' : srcClean;
     const ctxLabel  = (f.context || '').replace(/^deal diligence\s*[—-]\s*/i, '').replace(/^deal origination\s*[—-]\s*/i, '');
     const fkey      = actionKey(f);
+    const dealLabel = f.deal ? (_dealMap[f.deal] || f.deal.toUpperCase()) : '';
+    const dealChip  = dealLabel
+      ? `<span style="display:inline-block;font-size:8.5px;font-weight:700;letter-spacing:0.07em;color:#0ea5e9;background:rgba(14,165,233,0.08);border:1px solid rgba(14,165,233,0.25);border-radius:3px;padding:0px 4px;margin-right:4px;vertical-align:middle">${esc(dealLabel)}</span>`
+      : '';
+    const dotColor  = f.deal ? '#0ea5e9' : '#94a3b8';
     const linkedHtml = f.linkedTo
       ? `<a href="${esc(f.linkedTo)}" target="_blank" style="color:#94a3b8;font-size:9px;margin-left:4px;text-decoration:none" title="Open source doc">↗</a>`
       : '';
     const overdueStyle = urgCls === 'overdue' ? 'border-left:3px solid #dc2626;background:rgba(220,38,38,0.04);' : '';
     return `
     <div style="padding:5px 0 5px 6px;border-bottom:1px solid rgba(148,163,184,0.08);${overdueStyle}display:flex;gap:8px;align-items:flex-start">
-      <div style="flex-shrink:0;width:6px;height:6px;border-radius:50%;background:#0ea5e9;margin-top:6px;display:inline-block"></div>
+      <div style="flex-shrink:0;width:6px;height:6px;border-radius:50%;background:${dotColor};margin-top:6px;display:inline-block"></div>
       <div style="flex:1;min-width:0">
-        <div style="font-size:10.5px;color:#1e293b">${esc(f.what || '')}</div>
+        <div style="font-size:10.5px;color:#1e293b">${dealChip}${esc(f.what || '')}</div>
         <div style="font-size:9px;color:#94a3b8;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
           ${srcLabel ? `<span title="${esc(srcRaw)}">${esc(srcLabel)}</span>` : ''}
           ${ctxLabel ? `<span style="color:#64748b"> · ${esc(ctxLabel.slice(0,50))}</span>` : ''}
