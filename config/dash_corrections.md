@@ -2448,3 +2448,13 @@ The correct function is `dismissAwaitingItem(rawId, cpLabel)` added 2026-05-18.
 extraction, not content-derived hashes), write a dedicated dismiss function — do not
 reuse `dismissAction`. Check the schema: if `item.id` is an 8-char hex, it's a
 stable-id item and needs this treatment.
+
+### 2026-05-18 — _manual followUps require self-ref exemption to survive cleanup
+
+`clean_follow_ups()` drops any `followUp` where `who` matches `self_ref_names` (e.g., "yoni"). This silently removes hand-crafted Yoni-solo tasks (analysis, commitments from calls) even when `_manual: True` is set, because the self-ref filter runs unconditionally.
+
+**Rule**: the self-ref filter must check `and not f.get('_manual')` — manual items bypass cleanup regardless of who field. Fixed in `cos-dashboard-refresh.py` 2026-05-18.
+
+**How to apply**: any followUp added directly to `dashboard-data.json` with `who="Yoni"` and `_manual: True` (verbal commitments, analysis tasks, weekly call items) will now survive every pipeline cycle. If a Yoni-owned item disappears after refresh and `_manual` is set correctly, the exemption is missing from the cleanup logic.
+
+**Also**: items added directly to `dashboard-data.json` followUps are lost on server kickstart if the refresh runs before the item is added. Add the item, THEN trigger `POST /refresh` (not kickstart). Kickstart re-runs the full startup warmup which can overwrite state.
