@@ -810,6 +810,26 @@ body { padding: 0 !important; }
   color: var(--ink-ghost);
   flex-shrink: 0;
 }
+.tc-mini-outputs-header {
+  margin-bottom: 3px;
+}
+.tc-mini-outputs-label {
+  font-family: var(--font-data);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.tc-mini-outputs-folder {
+  font-family: var(--font-data);
+  font-size: 8px;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+  letter-spacing: 0.03em;
+}
+.tc-mini-outputs-folder:hover { text-decoration: underline; }
 .tc-mini-stage {
   font-family: var(--font-data);
   font-size: 9px;
@@ -3189,14 +3209,17 @@ function buildTomacPanel() {
           return `<span class="tc-mini-ws-tag${critCls}">${esc(wg.workstream)} <span class="tc-mini-ws-ct">${wg.count}</span></span>`;
         }).join('')}
       </div>` : ''}
-      ${(d.claude_outputs && d.claude_outputs.length > 0) ? (() => {
-        const items = [...d.claude_outputs].sort((a,b) => (b.date||'').localeCompare(a.date||'')).slice(0,3);
-        return `<span class="tc-mini-outputs" style="display:block">${items.map(o => {
+      ${(d.claude_outputs_folder_id || (d.claude_outputs && d.claude_outputs.length > 0)) ? (() => {
+        const folderUrl = d.claude_outputs_folder_id ? `https://drive.google.com/drive/folders/${d.claude_outputs_folder_id}` : '';
+        const folderLink = folderUrl ? `<span onclick="event.preventDefault();event.stopPropagation();window.open('${folderUrl}','_blank')" class="tc-mini-outputs-folder" style="cursor:pointer" title="Open _Outputs/ folder in Drive">_Outputs/ ↗</span>` : '';
+        const items = d.claude_outputs ? [...d.claude_outputs].sort((a,b) => (b.date||'').localeCompare(a.date||'')).slice(0,3) : [];
+        const rows = items.map(o => {
           const link = o.file_id ? `https://drive.google.com/file/d/${o.file_id}/view` : (o.url || '');
           const typeTag = o.type ? `<span class="tc-mini-output-type">${esc(o.type)}</span>` : '';
           const clickHandler = link ? `onclick="event.preventDefault();event.stopPropagation();window.open('${link}','_blank')"` : `onclick="event.preventDefault();event.stopPropagation()"`;
           return `<span class="tc-mini-output-row" style="display:flex"><span ${clickHandler} class="tc-mini-output-link" style="cursor:pointer">${typeTag}${esc(o.title||'Untitled')}</span><span class="tc-mini-output-date">${esc(o.date||'')}</span></span>`;
-        }).join('')}</span>`;
+        }).join('');
+        return `<span class="tc-mini-outputs" style="display:block"><span class="tc-mini-outputs-header" style="display:flex;justify-content:space-between;align-items:center"><span class="tc-mini-outputs-label">OUTPUTS${items.length > 0 ? ' (' + items.length + ')' : ''}</span>${folderLink}</span>${rows}</span>`;
       })() : ''}
     </a>`;
   }
