@@ -283,13 +283,29 @@ def create_drive_folder(service, name, parent_id=None):
     return f["id"]
 
 
+def create_drive_text_file(service, name, content, parent_id=None):
+    """Upload a plain-text file to Drive (NOT a Google Doc). Appendable via get_media/update."""
+    meta = {"name": name}
+    if parent_id:
+        meta["parents"] = [parent_id]
+    media = MediaInMemoryUpload(content.encode("utf-8"), mimetype="text/plain", resumable=False)
+    f = service.files().create(body=meta, media_body=media, fields="id,webViewLink").execute()
+    return f["id"], f.get("webViewLink", "")
+
+
 def create_drive_doc(service, title, content, parent_id=None):
-    meta = {"name": title}
+    """Create a native Google Doc from text content (Drive auto-converts text/plain upload).
+    Produces mimeType=application/vnd.google-apps.document — readable in Drive without download.
+    """
+    meta = {
+        "name": title,
+        "mimeType": "application/vnd.google-apps.document",
+    }
     if parent_id:
         meta["parents"] = [parent_id]
     media = MediaInMemoryUpload(
         content.encode("utf-8"),
-        mimetype="text/plain",
+        mimetype="text/plain",  # upload as plain text; Drive converts to Google Doc
         resumable=False
     )
     f = service.files().create(
@@ -635,7 +651,9 @@ Output ONLY the master brief content, no other text."""
 
 def generate_project_instructions(deal_name, deal_id, lead, support,
                                    status_file_id, brief_file_id,
-                                   drive_folder_name, triggers, rules):
+                                   drive_folder_name, triggers, rules,
+                                   outputs_folder_id='', session_log_file_id='',
+                                   dashboard_entry_file_id='DASHBOARD_ENTRY_FILE_ID_PLACEHOLDER'):
     """Generate populated Project instructions from template."""
 
     trigger_text = "\n".join(TRIGGER_LIBRARY.get(t, "") for t in triggers)
@@ -674,6 +692,12 @@ def generate_project_instructions(deal_name, deal_id, lead, support,
     Do not ask {PRINCIPAL_FIRST} to re-explain the deal or his role.
     Do not proceed with any response until Level 1 is complete.
 
+    ════════════════════════════════
+    DEAL CONSTANTS (for session tooling -- do not modify)
+    ════════════════════════════════
+    outputs_folder_id:       {outputs_folder_id}
+    session_log_file_id:     {session_log_file_id}
+    dashboard_entry_file_id: {dashboard_entry_file_id}
 
     ════════════════════════════════
     LEVEL 1 — SESSION START
@@ -698,6 +722,10 @@ def generate_project_instructions(deal_name, deal_id, lead, support,
     Read anything that looks time-sensitive or new.
 
     Step 3. Run Level 2 before responding to anything.
+
+    Step 0d. (LAZY) _Outputs/ folder and session_log.md IDs are in
+    DEAL CONSTANTS above. Do NOT load at session start.
+    Use them only at session end when save_session_output() runs.
 
     After Level 2, open every session with:
     "{deal_name} — [date]. Since last session: [delta].
@@ -845,6 +873,31 @@ def generate_project_instructions(deal_name, deal_id, lead, support,
     what was rejected and why, key counterparty quotes.
     Label: "SESSION NARRATIVE — append to master brief Part VII"
 
+    BLOCK 5 — SESSION OUTPUT SAVE (automatic, no prompt needed):
+    If this session produced a named deliverable (analysis, memo,
+    brief, transcript_summary, research_report, or deal_update):
+
+    Call save_session_output() using Drive MCP:
+    1. Create a Google Doc in _Outputs/ folder
+       (outputs_folder_id from DEAL CONSTANTS above)
+       Named: "{TODAY} -- <title>"
+       Content: the full deliverable text
+    2. Download session_log.md (session_log_file_id from DEAL CONSTANTS),
+       append row: "| {TODAY} | <type> | <title> | <description> | [Open](url) |"
+       Re-upload with updated content.
+    3. Download dashboard_entry.json (dashboard_entry_file_id from DEAL CONSTANTS),
+       append to claude_outputs array:
+       {{"date":"{TODAY}","type":"<type>","title":"<title>",
+         "description":"<description (<=25 words)>",
+         "file_id":"<new doc id>","url":"<doc url>"}}
+       Update _last_updated_from_session to "{TODAY}". Re-upload JSON.
+
+    Valid types: analysis | memo | brief | transcript_summary |
+                 research_report | deal_update
+
+    Execute automatically. Do not ask. Do not skip on short sessions
+    -- if a deliverable was produced, save it.
+
 
     ════════════════════════════════
     ANALYTICAL RULES
@@ -902,7 +955,8 @@ def update_compile_writeback(deal_id, file_id):
 
 
 def update_deal_system_data(deal_id, deal_name, lead, support,
-                             drive_folder_id, status_file_id, brief_file_id):
+                             drive_folder_id, status_file_id, brief_file_id,
+                             outputs_folder_id='', session_log_file_id=''):
     """Add new deal entry to deal-system-data.json."""
     if not DEAL_SYSTEM_DATA.exists():
         data = {"deals": []}
@@ -923,6 +977,8 @@ def update_deal_system_data(deal_id, deal_name, lead, support,
         "drive_folder_id": drive_folder_id,
         "status_file_id": status_file_id,
         "brief_file_id": brief_file_id,
+        "outputs_folder_id": outputs_folder_id,
+        "session_log_file_id": session_log_file_id,
         "project_url": None,
         "created": TODAY,
         "last_session": TODAY,
@@ -1320,6 +1376,20 @@ def main():
         create_drive_folder(drive, subfolder, drive_folder_id)
         print(f"   ✓ Subfolder: {subfolder}/")
 
+    # _Outputs/ — session deliverables go here, one Google Doc per output
+    outputs_folder_id = create_drive_folder(drive, "_Outputs", drive_folder_id)
+    print(f"   ✓ Subfolder: _Outputs/ — {outputs_folder_id}")
+
+    log_header = (
+        f"# {deal_name} — Session Output Log\n\n"
+        f"| Date | Type | Title | Description | File |\n"
+        f"|------|------|-------|-------------|------|\n"
+    )
+    session_log_file_id, _ = create_drive_text_file(
+        drive, "session_log.md", log_header, outputs_folder_id
+    )
+    print(f"   ✓ session_log.md — {session_log_file_id}")
+
     # ── PHASE 2: CREATE TEMPLATE .md FILES IN DRIVE ──────────────────────────
     print("\n─────────────────────────────────")
     print("PHASE 2 — Drive .md File Setup")
@@ -1377,7 +1447,9 @@ def main():
     print("─────────────────────────────────")
     update_deal_system_data(
         deal_id, deal_name, lead, support,
-        drive_folder_id, status_id, brief_id
+        drive_folder_id, status_id, brief_id,
+        outputs_folder_id=outputs_folder_id,
+        session_log_file_id=session_log_file_id,
     )
     update_sync_state(deal_id, deal_name)
 
@@ -1394,7 +1466,9 @@ def main():
     instructions = generate_project_instructions(
         deal_name, deal_id, lead, support,
         status_id, brief_id,
-        drive_folder_name, triggers, rules
+        drive_folder_name, triggers, rules,
+        outputs_folder_id=outputs_folder_id,
+        session_log_file_id=session_log_file_id,
     )
     instructions_path = save_instructions_locally(deal_id, instructions)
 
@@ -1419,9 +1493,11 @@ def main():
 DEAL: {deal_name} ({deal_id})
 
 FILE IDs (permanent -- never change):
-  Status:       {status_id}
-  Master brief: {brief_id}
-  Drive folder: https://drive.google.com/drive/folders/{drive_folder_id}
+  Status:          {status_id}
+  Master brief:    {brief_id}
+  Drive folder:    https://drive.google.com/drive/folders/{drive_folder_id}
+  Outputs folder:  {outputs_folder_id}
+  session_log.md:  {session_log_file_id}
 
 REMAINING MANUAL STEPS (~1 minute)
 -------------------------------------
@@ -1449,6 +1525,8 @@ deal_name: {deal_name}
 instructions_path: {instructions_path}
 status_id: {status_id}
 brief_id: {brief_id}
+outputs_folder_id: {outputs_folder_id}
+session_log_file_id: {session_log_file_id}
 action: paste_project_instructions_and_wire_url
 awaiting: project_url
 ---END---""")

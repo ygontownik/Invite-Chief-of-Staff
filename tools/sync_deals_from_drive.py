@@ -24,6 +24,7 @@ from googleapiclient.discovery import build
 
 CREDENTIALS_PATH  = os.path.expanduser('~/credentials/gdrive_token.pickle')
 DEAL_REGISTRY_PATH = os.path.expanduser('~/cos-pipeline/tools/deal-system-data.json')
+DRIVE_DOCS_YAML   = Path.home() / 'dashboards' / 'config' / 'drive-docs.yaml'
 OVERLAY_PATH      = Path.home() / 'dashboards' / 'data' / '_drive_overlay.json'
 DEALS_DIR         = Path.home() / 'dashboards' / 'data' / 'deals'
 COMPILE_SCRIPT    = Path.home() / 'dashboards' / 'routines' / 'compile' / 'compile-dashboard.py'
@@ -53,10 +54,38 @@ def find_drive_file(service, folder_id, filename):
     return files[0]['id'] if files else None
 
 
+def _load_drive_docs_deal_map() -> dict:
+    """Return {deal_id: {claude_context_folder_id: ..., ...}} from drive-docs.yaml."""
+    if not DRIVE_DOCS_YAML.exists():
+        return {}
+    try:
+        with open(DRIVE_DOCS_YAML) as f:
+            cfg = yaml.safe_load(f)
+        result = {}
+        for did, fields in cfg.get('deal_docs', {}).items():
+            entry = {}
+            if 'claude_context_folder_id' in fields:
+                entry['claude_context_folder_id'] = fields['claude_context_folder_id']
+            if entry:
+                result[did] = entry
+        return result
+    except Exception:
+        return {}
+
+
 def load_registry():
     with open(DEAL_REGISTRY_PATH) as f:
         data = json.load(f)
-    return data.get('deals', [])
+    deals = data.get('deals', [])
+    # Enrich with claude_context_folder_id from drive-docs.yaml (not stored in deal-system-data.json)
+    yaml_map = _load_drive_docs_deal_map()
+    for deal in deals:
+        did = deal.get('deal_id') or deal.get('id', '')
+        if did in yaml_map:
+            for k, v in yaml_map[did].items():
+                if k not in deal:
+                    deal[k] = v
+    return deals
 
 
 def _update_deal_md(deal_id: str, entry: dict) -> bool:
@@ -95,7 +124,7 @@ def _update_deal_md(deal_id: str, entry: dict) -> bool:
     drive_thesis = entry.get('thesis') or []
     local_thesis = fm.get('thesis') or []
     if drive_thesis and local_thesis:
-        drive_by_label = {p['label']: p for p in drive_thesis if p.get('label')}
+        drive_by_label = {p['label']: p for p in drive_thesis if isinstance(p, dict) and p.get('label')}
         for pillar in local_thesis:
             lbl = pillar.get('label')
             if lbl and lbl in drive_by_label:
@@ -127,7 +156,11 @@ def sync_deal(service, deal_reg: dict) -> dict | None:
     fname = f'{deal_id}_dashboard_entry.json'
     file_id = find_drive_file(service, folder_id, fname)
     if not file_id:
-        print(f'  {deal_id}: {fname} not found in Drive folder — skip')
+        ctx_folder = deal_reg.get('claude_context_folder_id')
+        if ctx_folder:
+            file_id = find_drive_file(service, ctx_folder, fname)
+    if not file_id:
+        print(f'  {deal_id}: {fname} not found in drive folder or _Claude Context/ — skip')
         return None
 
     try:

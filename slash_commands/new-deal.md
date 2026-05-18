@@ -19,14 +19,36 @@ If empty, you will collect inputs interactively in Phase 1.
 If $ARGUMENTS contains a deal name and ID, parse them. Otherwise ask Yoni for:
 - Deal name (e.g. "Black Bayou Energy Hub")
 - Deal ID (lowercase underscores, e.g. "black_bayou")
-- Lead principal (default: from firm_context.yaml `principal.name`) — lead = who drives this deal day-to-day, not necessarily the firm principal
-- Support principal (default: first team member from firm_context.yaml `team`)
+- **Deal type** — one of: `investment` (standard TCIP deal), `co-founding` (Yoni evaluating joining as co-founder/partner), `partnership-eval` (evaluating a firm/platform relationship), `other`
+- Lead principal (default: from firm_context.yaml `principal.name`) — lead = who drives this deal day-to-day
+- Support principal — **no default; leave blank unless explicitly named**. Do NOT default to Mark Saxe. Ask: "Is there a support principal?" and leave empty if none.
 - Path to local deal documents folder (optional — press Enter to skip)
 - Existing Google Drive folder ID (optional — press Enter to create new)
 - Deal-specific triggers to add (options: cash_runway, regulatory_vote, disintermediation, process_deadline, relationship_tension, market_news)
 - Deal-specific rules to add (options: regulated_asset, development_asset, relationship_sensitive)
 
-Confirm the collected inputs with Yoni before proceeding.
+**Before confirming:** check whether `deal_id` already exists in `~/cos-pipeline/tools/deal-system-data.json`:
+
+```python
+import json
+with open('/Users/ygontownik/cos-pipeline/tools/deal-system-data.json') as f:
+    data = json.load(f)
+deals = data['deals'] if isinstance(data, dict) and 'deals' in data else data
+existing = [d for d in deals if d.get('deal_id') == '{DEAL_ID}']
+print(existing)
+```
+
+If a stub entry exists (fields empty or partial), warn Yoni and confirm before running the script. The script will skip updating an existing entry — you will need to manually merge the real IDs afterward (see Phase 2 note).
+
+**Deal-type gate:** If `deal_type` is `other` (or `co-founding` / `partnership-eval` where pipeline wiring is unclear), show this warning before confirming:
+
+> ⚠️ Deal type is `{deal_type}`. `/new-deal` wires this entity into the TCIP deal registry (deal-system-data.json, sync-state.json, drive-docs.yaml, /deal-sync). For job interviews, personal tracking, or anything that isn't a true TCIP investment deal, a plain Claude project with custom instructions is cleaner and won't pollute the deal pipeline.
+>
+> Proceed with **full /new-deal wiring** (registry + project), or **plain project only** (just create the Claude project — skip all registry steps)?
+
+If Yoni chooses **plain project only**: skip Phases 2, 6, and 6b entirely. Run only Phases 3 (create project) and 5 (paste instructions). Use a simplified instruction template focused on the actual use case rather than the TCIP Level 1/2/3/4 framework.
+
+Confirm all inputs with Yoni before proceeding.
 
 ---
 
@@ -51,15 +73,39 @@ Stream output to the terminal. Watch for:
 - `⚠️` lines (report any warnings immediately)
 - The `---BROWSER-STEP---` block at the end (capture it)
 
-**If you see** `⚠️ Could not download firm context from Drive` in the output: the script failed to write the TCIP firm context File ID into the project instructions. After Phase 5, patch it manually:
+**If you see** `⚠️ Could not download firm context from Drive` in the output: the script failed to write the TCIP firm context File ID into the project instructions. After Phase 5, patch it using a line-by-line approach (literal string replace is fragile due to whitespace differences):
 
 ```python
-content = open(instructions_path).read()
-content = content.replace(
-    'Step 0. Read firm context from Google Drive:\n    File ID: \n',
-    'Step 0. Read firm context from Google Drive:\n    File ID: 1oqvRhNq-MRS9sBT-wtZxqoZiwOC5GfCQHM1K0DuC6Pk\n'
-)
-open(instructions_path, 'w').write(content)
+lines = open(instructions_path).readlines()
+for i, line in enumerate(lines):
+    if 'Step 0. Read firm context from Google Drive:' in line:
+        # Next non-empty line should be "File ID: " — patch it
+        for j in range(i+1, min(i+4, len(lines))):
+            if 'File ID:' in lines[j] and lines[j].strip() == 'File ID:':
+                lines[j] = lines[j].rstrip() + ' 1oqvRhNq-MRS9sBT-wtZxqoZiwOC5GfCQHM1K0DuC6Pk\n'
+                print(f"Patched line {j}: {lines[j].rstrip()}")
+                break
+        break
+open(instructions_path, 'w').writelines(lines)
+```
+
+Also check if `deal-system-data.json` had a pre-existing stub: if so, the script skipped updating it. Manually set the real IDs:
+
+```python
+import json
+path = '/Users/ygontownik/cos-pipeline/tools/deal-system-data.json'
+with open(path) as f:
+    data = json.load(f)
+deals = data['deals'] if isinstance(data, dict) and 'deals' in data else data
+for d in deals:
+    if d.get('deal_id') == '{DEAL_ID}':
+        d['drive_folder_id'] = '{drive_folder_id}'
+        d['status_file_id'] = '{status_id}'
+        d['brief_file_id'] = '{brief_id}'
+        d['lead'] = '{lead}'
+        d['support'] = '{support}'  # empty string if none
+with open(path, 'w') as f:
+    json.dump(data if isinstance(data, dict) else deals, f, indent=2)
 ```
 
 Then re-run the ASCII-strip and re-paste the instructions in Phase 5.
@@ -87,26 +133,18 @@ Open the browser and navigate to https://claude.ai/projects.
 
 ---
 
-## PHASE 4 — Confirm Google Drive connector + add firm context
+## PHASE 4 — Check Google Drive connector (likely skip)
 
-Within the new Project, click the `+` button next to "Files" and confirm "Drive" appears as an option. If it does, the connector is active.
+**This account does not have the Google Drive connector enabled in Claude Projects.** The `+` button next to Files shows only: Upload from device, Add text content, GitHub.
 
-**Add TCIP context docs to Project Files** (every TCIP deal project gets all three):
+**Expected behavior:** Skip this phase entirely. TCIP projects do not use pinned Drive files — all Drive reads happen via File IDs embedded in the project instructions (Steps 0, 1, 1b). No action needed.
 
-1. Click `+` → Drive
-2. Paste each URL in turn:
-   - TCIP Firm Context: `https://docs.google.com/document/d/1oqvRhNq-MRS9sBT-wtZxqoZiwOC5GfCQHM1K0DuC6Pk/edit`
-   - Yoni Personal Context: `https://docs.google.com/document/d/1DMlnylTPI4OArDYaXVDqsS22AhbQvcwbTxJnoHp0wyA/edit`
-   - TCIP Deal Presentation Standards: `https://docs.google.com/document/d/1kb_Uwt6G_F-VuzLsLTyTZcO8ZNPJfFuLWre-W3FIlek/edit`
-3. Confirm all three appear in the Files section.
+**If Drive unexpectedly appears as an option** (connector was enabled): add these three docs:
+- TCIP Firm Context: `https://docs.google.com/document/d/1oqvRhNq-MRS9sBT-wtZxqoZiwOC5GfCQHM1K0DuC6Pk/edit`
+- Yoni Personal Context: `https://docs.google.com/document/d/1DMlnylTPI4OArDYaXVDqsS22AhbQvcwbTxJnoHp0wyA/edit`
+- TCIP Deal Presentation Standards: `https://docs.google.com/document/d/1kb_Uwt6G_F-VuzLsLTyTZcO8ZNPJfFuLWre-W3FIlek/edit`
 
-All three live in the `_Claude Context` Drive folder
-(`1fReGbo5FikVDYUZ06BKzHKhV-A9QRItR`) and are mirrored to git in
-`~/cos-pipeline-config-tomac/` by the dashboard Stop hook.
-
-Do NOT add the status, brief, or dashboard_entry files to the Project's Files section. They are read live from Drive via File IDs in the project instructions. Pinning them creates a stale cached copy that diverges from the live version.
-
-If the Drive option is missing entirely, take a screenshot and report — Yoni may need to connect Drive from account settings first.
+Do NOT add status, brief, or dashboard_entry files — they are read live from Drive and pinning creates stale cached copies.
 
 ---
 
@@ -130,8 +168,28 @@ import subprocess
 subprocess.run(['pbcopy'], input=content.encode('ascii', 'replace'), check=True)
 ```
 
-3. In the Claude Project page, click the pencil icon next to "Instructions".
-4. Select all existing text (Cmd+A) and paste (Cmd+V).
+3. In the Claude Project page, click the `+` next to "Instructions" to open the editor.
+4. **Do NOT use Cmd+A / Cmd+V** — clipboard paste into the textarea does not trigger React state updates and the field will appear empty. Use JavaScript injection instead:
+
+```javascript
+// Run via javascript_tool in the browser tab
+const instructions = "<SANITIZED_CONTENT_AS_JS_STRING>";
+const ta = document.querySelector('textarea');
+const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+setter.call(ta, instructions);
+ta.dispatchEvent(new Event('input', { bubbles: true }));
+`Set: ${ta.value.length} chars`;
+```
+
+To generate the JS string, run in bash:
+```python
+import json, subprocess
+content = open(instructions_path).read()
+# ... (apply replacements) ...
+print(json.dumps(content.encode('ascii','replace').decode('ascii')))
+```
+Copy the output (including surrounding quotes) as the value for `instructions` in the JS above.
+
 5. Click "Save instructions".
 6. Verify the saved instructions preview starts with `===` separators (not garbled characters).
 
@@ -226,30 +284,57 @@ under `deal_docs:` with all four IDs:
 ```yaml
 deal_docs:
   {deal_id}:
-    status:       { doc_id: {status_id}, name: "{deal_id}_status.md" }
-    master_brief: { doc_id: {brief_id}, name: "{deal_id}_master_brief.md" }
+    status:       { doc_id: {status_id}, name: "{deal_id}_status" }
+    master_brief: { doc_id: {brief_id}, name: "{deal_id}_master_brief" }
     drive_folder_id: {drive_folder_id}
     claude_context_folder_id: {claude_context_folder_id}
+```
+
+Note: status and master_brief are created as **native Google Docs** (mimeType=application/vnd.google-apps.document) by `tcip_new_deal.py`. Names have no `.md` extension. `write-deal-doc` uses the Docs API (`docs_overwrite_native`) for all subsequent writes.
+
+**Patch the local instructions file** to replace the placeholder written by `tcip_new_deal.py`:
+
+```python
+content = open(instructions_path).read()
+if 'DASHBOARD_ENTRY_FILE_ID_PLACEHOLDER' in content:
+    content = content.replace('DASHBOARD_ENTRY_FILE_ID_PLACEHOLDER', dashboard_entry_file_id)
+    open(instructions_path, 'w').write(content)
+    print(f"Patched DASHBOARD_ENTRY_FILE_ID_PLACEHOLDER → {dashboard_entry_file_id}")
+else:
+    print("Placeholder not found — instructions may already be patched")
 ```
 
 Record `dashboard_entry_file_id` and `claude_context_folder_id` — both
 needed for project instructions in Phase 5.
 
-**After Phase 5 (instructions paste):** Add a Step block to the instructions for reading/updating the dashboard entry. Use the Python injection approach from the PNGTS onboarding — find "Step 1." anchor and insert after it. The block text is:
+**After Phase 5 (instructions paste):** Inject the dashboard entry step. Anchor on the **status File ID line** (stable) rather than Step 2's description text (which varies per deal):
 
-```
-    Step 2. Fetch your dashboard entry from Google Drive:
-    File ID: {dashboard_entry_file_id}
-    This is your structured deal card used by the TCIP dashboard.
-    Read it to understand current deal state (stage, health, thesis scores,
-    next milestone, key risk, tcip_edge).
+```python
+import subprocess
 
-    When deal state changes during a session, output an update block:
-    ---DEAL-UPDATE---
-    { paste full updated JSON here }
-    ---END---
-    Yoni will run: python3 ~/cos-pipeline/tools/sync_deals_from_drive.py --deal-id {deal_id}
-    to push it to the dashboard. Always output the full entry, never partial.
+dashboard_block = (
+    "\n    Step 1b. Fetch your dashboard entry from Google Drive:\n"
+    f"    File ID: {dashboard_entry_file_id}\n"
+    "    This is your structured deal card used by the TCIP dashboard.\n"
+    "    Read it to understand current deal state (stage, health,\n"
+    "    next milestone, key risk, tcip_edge).\n\n"
+    "    When deal state changes during a session, output an update block:\n"
+    "    ---DEAL-UPDATE---\n"
+    "    { paste full updated JSON here }\n"
+    "    ---END---\n"
+    f"    Yoni will run: python3 ~/cos-pipeline/tools/sync_deals_from_drive.py --deal-id {deal_id}\n"
+    "    to push it to the dashboard. Always output the full entry, never partial.\n"
+)
+
+content = open(instructions_path).read()
+# Anchor: the line immediately after Step 1's status File ID — always stable
+anchor = f"    File ID: {status_id}\n"
+if anchor in content:
+    content = content.replace(anchor, anchor + dashboard_block, 1)  # replace first occurrence only
+    open(instructions_path, 'w').write(content)
+    print("Dashboard step injected after status File ID line")
+else:
+    print(f"Anchor not found — search for '{status_id}' in {instructions_path}")
 ```
 
 Re-sanitize and re-paste instructions after injection.
@@ -272,22 +357,29 @@ import json
 PROJECT_URL = "{project_url}"
 DEAL_ID = "{deal_id}"
 
-# deal-system-data.json — list of objects
-with open('~/cos-pipeline/tools/deal-system-data.json') as f:
+# deal-system-data.json — may be {"deals": [...]} dict OR flat list
+path1 = '/Users/ygontownik/cos-pipeline/tools/deal-system-data.json'
+with open(path1) as f:
     data = json.load(f)
-for item in data:
+deals = data['deals'] if isinstance(data, dict) and 'deals' in data else data
+for item in deals:
     if item.get('deal_id') == DEAL_ID:
         item['project_url'] = PROJECT_URL
         break
-with open('~/cos-pipeline/tools/deal-system-data.json', 'w') as f:
-    json.dump(data, f, indent=2)
+with open(path1, 'w') as f:
+    json.dump(data, f, indent=2)  # write original structure (dict or list)
 
 # sync-state.json — dict keyed by deal_id
-with open('~/cos-pipeline/tools/sync-state.json') as f:
+path2 = '/Users/ygontownik/cos-pipeline/tools/sync-state.json'
+with open(path2) as f:
     ss = json.load(f)
-ss[DEAL_ID]['project_url'] = PROJECT_URL
-with open('~/cos-pipeline/tools/sync-state.json', 'w') as f:
+if DEAL_ID in ss:
+    ss[DEAL_ID]['project_url'] = PROJECT_URL
+else:
+    ss[DEAL_ID] = {'project_url': PROJECT_URL}
+with open(path2, 'w') as f:
     json.dump(ss, f, indent=2)
+print("Both registries updated.")
 ```
 
 Confirm both files written.
