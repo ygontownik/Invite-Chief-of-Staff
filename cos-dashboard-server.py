@@ -3049,6 +3049,54 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _get_spend_data(self, days: int = 30) -> dict:
+        """Aggregate Anthropic API spend — shared by admin tab and /admin/spend page."""
+        from collections import defaultdict as _dd
+        from datetime import datetime as _dt2, timedelta as _td2, timezone as _tz2
+        log_path = Path.home() / 'dashboards' / 'data' / 'anthropic-usage.jsonl'
+        prices = {'claude-opus': (15.00, 75.00), 'claude-sonnet': (3.00, 15.00), 'claude-haiku': (0.80, 4.00)}
+        def _pr(model):
+            for pfx, p in prices.items():
+                if model.startswith(pfx): return p
+            return (3.0, 15.0)
+        cutoff   = _dt2.now(_tz2.utc) - _td2(days=days)
+        agg_day  = _dd(lambda: {'calls': 0, 'cost': 0.0})
+        agg_key  = _dd(lambda: {'calls': 0, 'cost': 0.0})
+        agg_pipe = _dd(lambda: {'calls': 0, 'cost': 0.0})
+        total_cost = 0.0; total_calls = 0
+        if log_path.exists():
+            try:
+                with open(log_path) as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line: continue
+                        try:
+                            d  = json.loads(line)
+                            ts = _dt2.fromisoformat(d['ts'].replace('Z', '+00:00'))
+                        except Exception: continue
+                        if ts < cutoff: continue
+                        in_t = int(d.get('in', 0)); out_t = int(d.get('out', 0))
+                        cr   = int(d.get('cache_read', 0)); cc = int(d.get('cache_create', 0))
+                        pi, po = _pr(d.get('model', ''))
+                        cost = ((in_t/1e6)*pi + (out_t/1e6)*po + (cr/1e6)*pi*.10 + (cc/1e6)*pi*1.25)
+                        day = ts.astimezone(_tz2.utc).strftime('%Y-%m-%d')
+                        agg_day[day]['calls'] += 1; agg_day[day]['cost'] += cost
+                        kn = d.get('key_name', '(default)')
+                        agg_key[kn]['calls'] += 1; agg_key[kn]['cost'] += cost
+                        site = d.get('site', '?')
+                        agg_pipe[site]['calls'] += 1; agg_pipe[site]['cost'] += cost
+                        total_cost += cost; total_calls += 1
+            except Exception: pass
+        recent = sorted(agg_day.items())[-7:]
+        proj   = round((sum(v['cost'] for _, v in recent) / max(len(recent), 1)) * 30, 2)
+        return {
+            'total_usd': round(total_cost, 4), 'total_calls': total_calls,
+            'projected_monthly_usd': proj, 'days': days,
+            'by_day':  {d: {'calls': v['calls'], 'cost': round(v['cost'], 4)} for d, v in sorted(agg_day.items())},
+            'by_key':  {k: {'calls': v['calls'], 'cost': round(v['cost'], 4)} for k, v in sorted(agg_key.items(), key=lambda kv: -kv[1]['cost'])},
+            'by_pipeline': sorted([{'site': s, 'calls': v['calls'], 'cost': round(v['cost'], 4)} for s, v in agg_pipe.items()], key=lambda x: -x['cost'])[:10],
+        }
+
     def _handle_admin_spend(self, days: int = 7):
         """Owner-only Anthropic API spend dashboard.
 
@@ -3075,6 +3123,7 @@ class Handler(BaseHTTPRequestHandler):
         agg_pair = defaultdict(lambda: {'calls': 0, 'in': 0, 'out': 0,
                                          'cache_read': 0, 'cache_create': 0, 'cost': 0.0})
         agg_day  = defaultdict(lambda: {'calls': 0, 'cost': 0.0})
+        agg_key  = defaultdict(lambda: {'calls': 0, 'cost': 0.0})
         total_cost = 0.0
         total_calls = 0
 
@@ -3114,6 +3163,9 @@ class Handler(BaseHTTPRequestHandler):
                         day = ts.astimezone(_tz.utc).strftime('%Y-%m-%d')
                         agg_day[day]['calls'] += 1
                         agg_day[day]['cost']  += cost
+                        key_name = d.get('key_name', '(default)')
+                        agg_key[key_name]['calls'] += 1
+                        agg_key[key_name]['cost']  += cost
                         total_cost  += cost
                         total_calls += 1
             except Exception as e:
@@ -3129,6 +3181,7 @@ class Handler(BaseHTTPRequestHandler):
         body = []
         body.append('<!doctype html><html><head><meta charset="utf-8">')
         body.append(f'<title>Anthropic API Spend — last {days}d</title>')
+        body.append('<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>')
         body.append('<style>'
                     'body{font:14px/1.45 -apple-system,BlinkMacSystemFont,sans-serif;'
                     'max-width:1100px;margin:24px auto;padding:0 16px;color:#222}'
@@ -3137,6 +3190,10 @@ class Handler(BaseHTTPRequestHandler):
                     '.tot{background:#f5f6f7;padding:10px 14px;border-radius:6px;margin:12px 0;'
                     'display:flex;gap:24px;font-size:13px}'
                     '.tot b{font-size:16px}'
+                    '.charts{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin:18px 0 28px}'
+                    '.chart-box{background:#fafafa;border:1px solid #e8e9ea;border-radius:8px;padding:14px}'
+                    '.chart-box h4{margin:0 0 10px;font-size:13px;color:#444;font-weight:600}'
+                    '@media(max-width:700px){.charts{grid-template-columns:1fr}}'
                     'table{border-collapse:collapse;width:100%;margin:8px 0 24px;font-size:13px}'
                     'th,td{padding:6px 10px;text-align:right;border-bottom:1px solid #eee}'
                     'th:first-child,td:first-child,th:nth-child(2),td:nth-child(2){text-align:left}'
@@ -3167,6 +3224,21 @@ class Handler(BaseHTTPRequestHandler):
                         f'<div>Calls <b>{total_calls}</b></div>'
                         f'<div>Avg/call <b>${(total_cost/total_calls):.4f}</b></div>'
                         f'</div>')
+
+            # Prepare chart data
+            _day_labels = sorted(agg_day.keys())
+            _day_costs  = [round(agg_day[d]['cost'], 4) for d in _day_labels]
+            _key_items  = sorted(agg_key.items(), key=lambda kv: -kv[1]['cost'])
+            _key_labels = [k for k, _ in _key_items]
+            _key_costs  = [round(v['cost'], 4) for _, v in _key_items]
+            body.append(
+                '<div class="charts">'
+                '<div class="chart-box"><h4>Daily Spend (USD)</h4>'
+                '<canvas id="chartDay"></canvas></div>'
+                '<div class="chart-box"><h4>By API Key</h4>'
+                '<canvas id="chartKey"></canvas></div>'
+                '</div>'
+            )
 
             body.append('<h3>By pipeline + model</h3>')
             body.append('<table><thead><tr>'
@@ -3203,6 +3275,24 @@ class Handler(BaseHTTPRequestHandler):
                         'Opus $15/$75, Sonnet $3/$15, Haiku $0.80/$4 per Mtok '
                         '(input/output). Cache reads billed at 10% of input, '
                         'cache creation at 125%.</p>')
+            body.append(
+                '<script>(function(){'
+                'var dL=' + json.dumps(_day_labels) + ';'
+                'var dC=' + json.dumps(_day_costs) + ';'
+                'var kL=' + json.dumps(_key_labels) + ';'
+                'var kC=' + json.dumps(_key_costs) + ';'
+                'new Chart(document.getElementById("chartDay"),{'
+                'type:"bar",data:{labels:dL,datasets:[{label:"USD",data:dC,'
+                'backgroundColor:"rgba(10,102,194,0.72)",borderRadius:4}]},'
+                'options:{plugins:{legend:{display:false}},'
+                'scales:{y:{ticks:{callback:function(v){return"$"+v.toFixed(3)}}}}}});'
+                'new Chart(document.getElementById("chartKey"),{'
+                'type:"bar",data:{labels:kL,datasets:[{label:"USD",data:kC,'
+                'backgroundColor:"rgba(60,150,80,0.72)",borderRadius:4}]},'
+                'options:{indexAxis:"y",plugins:{legend:{display:false}},'
+                'scales:{x:{ticks:{callback:function(v){return"$"+v.toFixed(3)}}}}}});'
+                '})();</script>'
+            )
 
         body.append('</body></html>')
         payload = ''.join(body).encode('utf-8')
@@ -3434,6 +3524,7 @@ class Handler(BaseHTTPRequestHandler):
             for n in _adm_members
         )
         _adm_firm_name = str(((_FC_CTX or {}).get('firm') or {}).get('name', 'Firm')).strip()
+        spend_data = self._get_spend_data(30)
         html = (html.replace('{{DASHBOARD_SECTIONS}}', dashboard_sections)
                     .replace('{{USERS_TABLE}}', table)
                     .replace('{{FLASH}}', flash_html)
@@ -3443,6 +3534,7 @@ class Handler(BaseHTTPRequestHandler):
                     .replace('{{PROCESSED_CALLS_JSON}}', json.dumps(proc_calls))
                     .replace('{{RUN_STATE_JSON}}', json.dumps(run_state_slim))
                     .replace('{{DELETIONS_PANEL}}', deletions_panel)
+                    .replace('{{SPEND_JSON}}', json.dumps(spend_data))
                     .replace('__LEAD_OPTIONS__', _adm_lead_opts)
                     .replace('__SUPPORT_OPTIONS__', _adm_support_opts)
                     .replace('{{FIRM_NAME}}', _adm_firm_name))

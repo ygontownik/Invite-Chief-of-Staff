@@ -24,7 +24,7 @@ Output paths:
   ~/cos-pipeline/dashboard/deal-system-data.json   ← read by cos-dashboard-fetch.py
   ~/cos-pipeline/dashboard/deal-briefing-latest.md ← for reference
 """
-import json, shutil, subprocess, sys, time, urllib.request
+import json, os, shutil, subprocess, sys, time, urllib.request
 from pathlib import Path
 
 # New home layout (post-consolidation):
@@ -1070,8 +1070,35 @@ def main():
     print(f'  {n_ov} deal(s) carry user overrides')
 
     # ── Step 4: push deal HTML inject ───────────────────────────
+    # Call deal-dashboard-refresh.py directly rather than POST /refresh-deals.
+    # Background: the server's /refresh-deals handler also runs
+    # compile-dashboard.py as a subprocess before injecting HTML, which
+    # rebuilds deal-system-data.json from YAML/Drive sources and silently
+    # drops the recent_readthroughs[], recent_log[], and override fields
+    # we just layered on (Steps 3.5b, 3.5c, 3.6). Skipping the redundant
+    # server-side recompile preserves those arrays. The compile already
+    # happened in Step 1 of this script, so the file is current.
     print('→ Refreshing Deal Pipeline Dashboard...', flush=True)
-    _post('/refresh-deals')
+    _refresh_script = _HERE / 'deal-dashboard-refresh.py'
+    if not _refresh_script.exists():
+        # Fallback path — script also lives in ~/dashboards/app/ via symlink
+        _refresh_script = Path.home() / 'dashboards' / 'app' / 'deal-dashboard-refresh.py'
+    if _refresh_script.exists():
+        _refresh_env = {**os.environ, 'SKIP_HAIKU_CLASSIFY': '1'}
+        _r = subprocess.run(
+            [sys.executable, str(_refresh_script)],
+            env=_refresh_env, capture_output=True, text=True,
+            timeout=15, check=False,
+        )
+        if _r.returncode != 0:
+            # Soft fallback to server endpoint if direct invocation failed.
+            print(f'  (direct refresh failed: {_r.stderr.strip()[:120]}; '
+                  f'falling back to /refresh-deals)')
+            _post('/refresh-deals')
+    else:
+        # Script not found — use server endpoint (will wipe readthroughs,
+        # but at least dashboard updates).
+        _post('/refresh-deals')
 
     # ── Step 5: kick warmup so CoS data embeds dealPortfolio ────
     # Non-blocking: server does this in background; we don't wait.
@@ -1101,7 +1128,7 @@ def main():
     import subprocess as _ps, sys as _sys
     _ps.run(
         [_sys.executable,
-         str(Path(__file__).parent / 'compile-project-sync.py')],
+         str(Path.home() / 'dashboards' / 'routines' / 'compile' / 'compile-project-sync.py')],
         check=False
     )
 

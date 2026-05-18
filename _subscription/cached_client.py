@@ -153,9 +153,67 @@ def complete(
     else:
         user_content = f"Today's date: {today}\n\nSource content:\n{source_content}"
 
+    system_blocks = _build_system_blocks(tenant_bundle, routine_prompt=routine_prompt)
+
+    # auth_mode routing — when subscription mode is active, dispatch via
+    # _claude_dispatch (zero per-token billing). Falls back to direct SDK
+    # path automatically inside _claude_dispatch.call() on subscription failure.
+    pipeline_dir = _HERE.parent
+    sys.path.insert(0, str(pipeline_dir))
+    try:
+        import _claude_dispatch  # type: ignore
+        _CACHED_DISPATCH_MODE = _claude_dispatch._resolve_auth_mode()
+    except Exception:
+        _CACHED_DISPATCH_MODE = "api"
+    finally:
+        if str(pipeline_dir) in sys.path:
+            try:
+                sys.path.remove(str(pipeline_dir))
+            except ValueError:
+                pass
+
+    if _CACHED_DISPATCH_MODE == "subscription":
+        # Subscription path — no per-token billing, no prompt caching benefit
+        # (caching only applies to direct API calls). Returns shape compatible
+        # with the api path so all callers (cos_capture_pipeline, podcast_transcribe,
+        # cos_personal_briefing) keep working unchanged.
+        sys.path.insert(0, str(pipeline_dir))
+        try:
+            import _claude_dispatch  # type: ignore
+            t0 = time.monotonic()
+            text = _claude_dispatch.call(
+                task_type="cached_client_complete",
+                model=model,
+                max_tokens=max_tokens,
+                system=system_blocks,
+                messages=[{"role": "user", "content": user_content}],
+                cache=False,
+            )
+            latency_ms = int((time.monotonic() - t0) * 1000)
+        finally:
+            if str(pipeline_dir) in sys.path:
+                try:
+                    sys.path.remove(str(pipeline_dir))
+                except ValueError:
+                    pass
+        cache_metrics = {"creation": 0, "read": 0, "uncached_input": 0, "output": 0}
+        _write_telemetry({
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "model": model,
+            "tenant_bundle_hash": _bundle_hash(tenant_bundle),
+            "routine_prompt_tokens": len(routine_prompt.split()) * 4 // 3 if routine_prompt else 0,
+            "cache_creation_tokens": 0,
+            "cache_read_tokens": 0,
+            "uncached_input_tokens": 0,
+            "output_tokens": 0,
+            "latency_ms": latency_ms,
+            "mode": "subscription",
+        })
+        return {"text": text, "usage": None, "cache_metrics": cache_metrics}
+
+    # api path (preserved verbatim — prompt caching + telemetry)
     api_key = _load_api_key()
     client = anthropic.Anthropic(api_key=api_key)
-    system_blocks = _build_system_blocks(tenant_bundle, routine_prompt=routine_prompt)
 
     t0 = time.monotonic()
     response = client.messages.create(

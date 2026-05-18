@@ -129,7 +129,7 @@ RECRUITING_DOC  = _DOCS.get("recruiting",     "1ZnTCVoA0ID7XTDFy27yDnrEVhBqx75ka
 DEAL_PIPELINE_DOC       = _DOCS.get("deal_pipeline", _DOCS.get("tomac_pipeline", "1LHorixPs8ppwSvQzGfA_B6609YZA8dSpR4rmppENzpc"))  # noqa: tenant-leak — backward-compat key
 DASHBOARD_URL   = "http://localhost:7777/warmup"
 CLAUDE_MODEL    = "claude-sonnet-4-6"
-MEMO_MODEL      = "claude-opus-4-7"
+MEMO_MODEL      = "claude-sonnet-4-6"
 ANTHROPIC_KEY   = os.environ.get("ANTHROPIC_API_KEY", "")
 
 # ── Legacy folder constants — used only by consolidate_transcript_siblings ─────

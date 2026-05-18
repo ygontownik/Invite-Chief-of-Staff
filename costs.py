@@ -88,6 +88,8 @@ def aggregate(entries: list[dict]) -> dict:
     by_day = defaultdict(float)
     by_script = defaultdict(float)
     by_model = defaultdict(float)
+    by_key = defaultdict(float)
+    by_key_calls = defaultdict(int)
     total = 0.0
     total_calls = 0
     total_in_tokens = 0
@@ -99,6 +101,9 @@ def aggregate(entries: list[dict]) -> dict:
         by_day[day] += c
         by_script[e.get("site", "unknown")] += c
         by_model[e.get("model", "unknown")] += c
+        kn = e.get("key_name", "(unset / pre-taxonomy)")
+        by_key[kn] += c
+        by_key_calls[kn] += 1
         total += c
         total_calls += 1
         total_in_tokens += e.get("in", 0) or 0
@@ -112,6 +117,8 @@ def aggregate(entries: list[dict]) -> dict:
         "by_day":    dict(sorted(by_day.items())),
         "by_script": dict(sorted(by_script.items(), key=lambda x: -x[1])),
         "by_model":  dict(sorted(by_model.items(),  key=lambda x: -x[1])),
+        "by_key":    dict(sorted(by_key.items(),    key=lambda x: -x[1])),
+        "by_key_calls": dict(by_key_calls),
     }
 
 
@@ -124,7 +131,7 @@ def project_monthly(by_day: dict) -> float:
     return round(avg * 30, 2)
 
 
-def print_human(summary: dict, days: int, by_script: bool, by_model: bool):
+def print_human(summary: dict, days: int, by_script: bool, by_model: bool, by_key: bool = False):
     """Pretty-print to terminal."""
     total = summary["total_usd"]
     monthly = project_monthly(summary["by_day"])
@@ -162,6 +169,13 @@ def print_human(summary: dict, days: int, by_script: bool, by_model: bool):
         print("  By model:")
         for m, c in summary["by_model"].items():
             print(f"    {m:<35} ${c:6.2f}")
+
+    if by_key:
+        print()
+        print("  By API key (taxonomy):")
+        for k, c in summary.get("by_key", {}).items():
+            calls = summary.get("by_key_calls", {}).get(k, 0)
+            print(f"    {k:<40} ${c:6.2f}  ({calls} calls)")
     print()
 
 
@@ -297,6 +311,7 @@ def main():
     p.add_argument("--json", action="store_true", help="JSON output for dashboard")
     p.add_argument("--by-script", action="store_true", help="Show per-script breakdown")
     p.add_argument("--by-model",  action="store_true", help="Show per-model breakdown")
+    p.add_argument("--by-key",    action="store_true", help="Show per-API-key breakdown (taxonomy)")
     p.add_argument("--tenant",    default=os.environ.get("COS_TENANT_SLUG", "default"),
                    help="Tenant slug for subscription dispatch panel "
                         "(default $COS_TENANT_SLUG or 'default')")
@@ -320,7 +335,7 @@ def main():
     if args.json:
         print(json.dumps(summary, indent=2, default=str))
     else:
-        print_human(summary, args.days, args.by_script, args.by_model)
+        print_human(summary, args.days, args.by_script, args.by_model, args.by_key)
         if not args.no_subscription:
             print_subscription_panel(summary["subscription"], args.tenant)
 

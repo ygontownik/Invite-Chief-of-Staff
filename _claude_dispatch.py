@@ -49,6 +49,22 @@ from typing import Any, Optional
 
 
 _CACHED_AUTH_MODE: Optional[str] = None
+_CACHED_DAILY_CAP: Optional[float] = None
+
+
+def _daily_cap_usd() -> float:
+    """Read daily_api_cap_usd from firm_context.yaml. Cached for the process lifetime."""
+    global _CACHED_DAILY_CAP
+    if _CACHED_DAILY_CAP is not None:
+        return _CACHED_DAILY_CAP
+    try:
+        import _firm_context as _fc  # noqa: PLC0415
+        ctx = _fc.load_firm_context()
+        val = (ctx or {}).get("daily_api_cap_usd")
+        _CACHED_DAILY_CAP = float(val) if val is not None else 0.0
+    except Exception:
+        _CACHED_DAILY_CAP = 0.0
+    return _CACHED_DAILY_CAP
 
 
 def _resolve_auth_mode() -> str:
@@ -105,12 +121,23 @@ def _resolve_auth_mode() -> str:
 
 def _api_call(*, model: str, system: Any, messages: list,
               max_tokens: int, task_type: str, cache: bool,
-              api_key: str, timeout: int) -> str:
+              api_key: str, timeout: int, key_name: str = "") -> str:
     """Direct POST to api.anthropic.com — the legacy raw-urllib path.
 
-    Preserved verbatim so api-mode tenants see identical behavior to
-    pre-migration. Includes prompt-caching beta header when cache=True.
+    Includes prompt-caching beta header when cache=True.
+    Enforces daily_api_cap_usd from firm_context.yaml when set.
     """
+    # Daily spend cap check — bail before billing if cap is hit.
+    try:
+        from _usage import check_daily_cap  # type: ignore  # noqa: PLC0415
+        cap = _daily_cap_usd()
+        if cap and cap > 0:
+            check_daily_cap(cap, site=task_type, key_name=key_name)
+    except RuntimeError:
+        raise
+    except Exception:
+        pass
+
     payload: dict = {
         "model": model,
         "max_tokens": max_tokens,
@@ -133,10 +160,10 @@ def _api_call(*, model: str, system: Any, messages: list,
     )
     with urllib.request.urlopen(req, timeout=timeout) as r:
         resp = json.loads(r.read())
-    # Optional usage logging — best-effort, swallow failures.
+    # Usage logging — includes key_name for per-key cost tracking.
     try:
         from _usage import log_usage  # type: ignore  # noqa: PLC0415
-        log_usage(task_type, model, resp)
+        log_usage(task_type, model, resp, key_name=key_name)
     except Exception:
         pass
     return resp["content"][0]["text"].strip()
@@ -176,6 +203,14 @@ def call(*, task_type: str, model: str, messages: list,
     """
     active_mode = mode or _resolve_auth_mode()
 
+    # Resolve the named API key for this task (used on api-mode path and fallback).
+    try:
+        from _usage import resolve_api_key  # type: ignore  # noqa: PLC0415
+        _resolved_key, _resolved_key_name = resolve_api_key(site=task_type)
+    except Exception:
+        _resolved_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        _resolved_key_name = "ANTHROPIC_API_KEY"
+
     if active_mode == "subscription":
         try:
             return _subscription_call(
@@ -183,40 +218,37 @@ def call(*, task_type: str, model: str, messages: list,
                 max_tokens=max_tokens, cache=cache, tenant=tenant,
             )
         except Exception as e:
-            api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-            if not api_key:
+            if not _resolved_key:
                 raise RuntimeError(
                     f"subscription dispatch failed ({e}) and "
-                    "ANTHROPIC_API_KEY is not set in env, so no api "
-                    "fallback is possible. Either install claude-agent-"
-                    "sdk + run `claude /login`, or set "
-                    "auth_mode=api in firm_context.yaml + ensure the "
-                    "key is in keychain."
+                    "no API key found in env (checked key taxonomy). "
+                    "Either fix OAuth (`claude /login`) or set "
+                    "auth_mode=api in firm_context.yaml + add a key to keychain."
                 ) from e
             print(
                 f"  [_claude_dispatch] subscription failed ({e!r}); "
-                f"falling back to api for task={task_type}",
+                f"falling back to api for task={task_type} key={_resolved_key_name}",
                 file=sys.stderr,
             )
             return _api_call(
                 model=model, system=system, messages=messages,
                 max_tokens=max_tokens, task_type=task_type, cache=cache,
-                api_key=api_key, timeout=api_timeout,
+                api_key=_resolved_key, key_name=_resolved_key_name,
+                timeout=api_timeout,
             )
 
     if active_mode == "api":
-        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-        if not api_key:
+        if not _resolved_key:
             raise RuntimeError(
-                "auth_mode=api but ANTHROPIC_API_KEY is not set in env. "
-                "Confirm load-secrets.sh exported it (it does so under "
-                "auth_mode=api OR in non-interactive shells without "
-                "CLAUDE_CODE_OAUTH_TOKEN), or set FORCE_LOAD_ANTHROPIC_KEYS=1."
+                f"auth_mode=api but no API key found for task={task_type}. "
+                "Set the appropriate ANTHROPIC_API_KEY_* env var or "
+                "ANTHROPIC_API_KEY as fallback (see _usage.KEY_TAXONOMY)."
             )
         return _api_call(
             model=model, system=system, messages=messages,
             max_tokens=max_tokens, task_type=task_type, cache=cache,
-            api_key=api_key, timeout=api_timeout,
+            api_key=_resolved_key, key_name=_resolved_key_name,
+            timeout=api_timeout,
         )
 
     raise ValueError(f"unknown auth_mode={active_mode!r}")

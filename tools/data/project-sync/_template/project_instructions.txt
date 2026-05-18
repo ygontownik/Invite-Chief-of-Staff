@@ -35,10 +35,21 @@ LEVEL 1 -- SESSION START
 Runs automatically, every conversation.
 ================================
 
-Step 0. Read firm context from Google Drive:
+Step 0a. Read firm context from Google Drive:
 File ID: {FIRM_CONTEXT_DRIVE_ID}
 This is the live firm context -- always read from Drive,
 never from a cached or uploaded version.
+
+Step 0b. Read Yoni Personal Context from Google Drive:
+File ID: 1DMlnylTPI4OArDYaXVDqsS22AhbQvcwbTxJnoHp0wyA
+Folder: _Claude Context
+Personal analytical defaults, memo structure, action-tail rules.
+
+Step 0b-2. Read TCIP Practice Patterns from Google Drive:
+File ID: 1C3z_6hnKtYZcpQM4Ffh2qN4EiVEwThNDC9NwHlt-zqY
+Folder: _Claude Context
+How Yoni actually runs the work -- communication tone, diligence sequence,
+output preferences, email structure. Load alongside Personal Context.
 
 Step 1. Fetch this file from Google Drive and read it --
 this is the current deal state, updated after each session:

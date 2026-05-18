@@ -105,11 +105,14 @@ def _classify_all_items_haiku(items: list, theme_map: dict) -> int:
     Writes confirmed theme_ids[] on each item in-place.
     Returns count of items matched to at least one theme.
     """
+    # Route through _claude_dispatch so subscription mode is honored.
+    _HERE_DDR = Path(__file__).resolve().parent
+    if str(_HERE_DDR) not in sys.path:
+        sys.path.insert(0, str(_HERE_DDR))
     try:
-        import anthropic as _ant
-        client = _ant.Anthropic(api_key=os.environ.get('ANTHROPIC_API_KEY'))
+        import _claude_dispatch  # noqa: PLC0415
     except ImportError:
-        print('  WARNING: anthropic package not installed — skipping Haiku classification')
+        print('  WARNING: _claude_dispatch not on path — skipping Haiku classification')
         return 0
 
     import json as _json
@@ -148,12 +151,13 @@ def _classify_all_items_haiku(items: list, theme_map: dict) -> int:
         )
 
         try:
-            resp = client.messages.create(
+            raw = _claude_dispatch.call(
+                task_type='deal_dashboard_refresh_classify',
                 model='claude-haiku-4-5-20251001',
                 max_tokens=512,
                 messages=[{'role': 'user', 'content': prompt}],
-            )
-            raw = resp.content[0].text.strip()
+                cache=False,
+            ).strip()
             if raw.startswith('```'):
                 raw = raw.split('```')[1]
                 if raw.startswith('json'):

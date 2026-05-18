@@ -1966,15 +1966,22 @@ def parse_market_commentary(text):
         cur_date = None; cur_takeaway = ''; cur_sections = []
         cur_sec_title = ''; cur_sec_items = []; in_entry = False
 
+    # Strip a leading bullet/dash marker. Handles "• ", "◦ ", "- ", "* ", "– "
+    # plus optional surrounding whitespace. Returns (stripped_line, was_bullet).
+    _BULLET_RE = re.compile(r'^[•◦*\-–]+\s+')
+    def _strip_bullet(s):
+        m = _BULLET_RE.match(s)
+        if m:
+            return s[m.end():], True
+        return s, False
+
     for raw_line in lines:
         line = raw_line.strip()
         if not line:
             continue
-        # Skip TOC sub-bullet lines (start with • or ◦) — not actual content
-        if line.startswith('•') or line.startswith('◦'):
-            continue
 
         # Date heading: "April 14, 2026 — Daily Market Briefing"
+        # Must check before stripping bullets — date lines never start with a bullet.
         d = _parse_month_date(line)
         if d and re.search(r'(briefing|update|market)', line, re.IGNORECASE):
             _flush_entry()
@@ -2002,15 +2009,26 @@ def parse_market_commentary(text):
             cur_sec_items = []
             continue
 
-        # Item header: "Title: content"  (plain text — no ** bold markers)
-        # Must start with capital letter, title part 5-70 chars with no period, followed by ": content"
+        # Item: try the bullet/dash format first (current briefing convention),
+        # then fall back to the legacy "Title: content" colon format. Either
+        # way, populate cur_sec_items as a single string for downstream
+        # readthrough matching in _compute_deal_readthroughs().
+        stripped, was_bullet = _strip_bullet(line)
+        if was_bullet and cur_sec_title and len(stripped) >= 20:
+            content = stripped
+            # Strip trailing source citation e.g. "[Jefferies — General]"
+            content = re.sub(r'\s*\[[^\]]{3,}\]\.?$', '', content).strip()
+            # Cap at 280 chars — matches downstream truncation in
+            # _compute_deal_readthroughs (kept generous for token matching).
+            cur_sec_items.append(content[:280])
+            continue
+
+        # Legacy bold-header format: "Title: content" (plain text)
         m = re.match(r'^([A-Z][^.:\n]{4,70}):\s{1,2}(.{40,})', line)
         if m and cur_sec_title:
             title   = m.group(1).strip()
             content = m.group(2).strip()
-            # Strip trailing citation brackets e.g. "[Jefferies - Power & Utilities]"
             content = re.sub(r'\s*\[[^\]]{3,}\]\.?$', '', content)
-            # Take first sentence only (cap at 160 chars)
             first = (content.split('.')[0] + '.') if '.' in content else content
             cur_sec_items.append(f"{title}: {first[:160]}")
 
@@ -2479,6 +2497,28 @@ def main(dry_run: bool = False):
                 manual_fus.append(fu)
     if manual_fus:
         followups = manual_fus + followups
+
+    # Preserve envelope my_action items written directly by _envelope_writer.append_items().
+    # These are written to dashboard-data.json with content_type="my_action" but NOT to the
+    # Follow-ups Google Doc, so parse_followups() above silently drops them on every fetch.
+    # Re-merge any that aren't already covered by the doc parse.
+    envelope_fu_keys = {(f.get('who',''), f.get('what','')[:40]) for f in followups}
+    envelope_fus = []
+    for fu in state.get('followUps', []):
+        if fu.get('content_type') == 'my_action':
+            what = (fu.get('content') or fu.get('what') or '')
+            who  = (fu.get('owner') or fu.get('who') or '')
+            key  = (who, what[:40])
+            if key not in envelope_fu_keys:
+                normalised = dict(fu)
+                if not normalised.get('who'):
+                    normalised['who'] = who
+                if not normalised.get('what'):
+                    normalised['what'] = what
+                envelope_fus.append(normalised)
+    if envelope_fus:
+        followups = followups + envelope_fus
+        print(f'cos-dashboard-fetch: {len(envelope_fus)} envelope my_action item(s) re-merged')
 
     # Apply manual workstream/category overrides — persists dashboard drag-and-drop moves across refreshes.
     # Written by dashboard UI as: dashboard-data.json._workstreamOverrides = { "who|what_prefix": "newWorkstream" }

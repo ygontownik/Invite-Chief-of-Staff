@@ -461,42 +461,23 @@ def extract_all(transcript_text, title, category, attendees=None):
 
     dashboard_paths = build_dashboard_path_reference()
 
-    payload = {
-        "model": CLAUDE_MODEL,
-        "max_tokens": 3000,
-        "messages": [{
+    # Route through _claude_dispatch (subscription-aware).
+    import _claude_dispatch  # noqa: PLC0415
+    raw = _claude_dispatch.call(
+        task_type="cos_transcript_hook",
+        model=CLAUDE_MODEL,
+        max_tokens=3000,
+        messages=[{
             "role": "user",
             "content": [
-                {
-                    "type": "text",
-                    "text": EXTRACTION_PREAMBLE,
-                    "cache_control": {"type": "ephemeral"},
-                },
-                {
-                    "type": "text",
-                    "text": dashboard_paths,
-                    "cache_control": {"type": "ephemeral"},
-                },
+                {"type": "text", "text": EXTRACTION_PREAMBLE, "cache_control": {"type": "ephemeral"}},
+                {"type": "text", "text": dashboard_paths,    "cache_control": {"type": "ephemeral"}},
                 {"type": "text", "text": dynamic},
             ],
         }],
-    }
-    req = urllib.request.Request(
-        "https://api.anthropic.com/v1/messages",
-        data=json.dumps(payload).encode(),
-        headers={
-            "x-api-key":          ANTHROPIC_KEY,
-            "anthropic-version":  "2023-06-01",
-            "anthropic-beta":     "prompt-caching-2024-07-31",
-            "content-type":       "application/json",
-        },
-        method="POST",
+        api_timeout=90,
     )
-    with urllib.request.urlopen(req, timeout=90) as r:
-        resp = json.loads(r.read())
-    log_usage("cos_transcript_hook", CLAUDE_MODEL, resp)
-    raw = resp["content"][0]["text"].strip()
-    raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.MULTILINE).strip()
+    raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw.strip(), flags=re.MULTILINE).strip()
     return json.loads(raw)
 
 

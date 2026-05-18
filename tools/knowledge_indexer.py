@@ -47,6 +47,15 @@ DEAL_REGISTRY = Path('~/cos-pipeline/tools/deal-system-data.json').expanduser()
 EMBEDDING_MODEL = 'all-MiniLM-L6-v2'
 COLLECTION_NAME = 'intelligence'
 
+# ── extra intel docs ──────────────────────────────────────────────────────────
+# Docs that are excluded from generate_briefing.py (they are outputs, not raw
+# sources) but should still be indexed here — they contain pre-synthesised,
+# attributed intel that is valuable for per-deal knowledge retrieval.
+# Format: { google_doc_id: tracker_key }
+EXTRA_INTEL_DOCS = {
+    '1UZ1t4bhgzll5VcAuP3Mj1CyYb-4xjgmbUK1xg6oUS_k': 'Daily Market Update',
+}
+
 # ── sector tag map ────────────────────────────────────────────────────────────
 SECTOR_TAG_MAP = [
     (['GS — Power', 'Jefferies — Power', 'RBN Energy', 'Texas Energy',
@@ -63,6 +72,10 @@ SECTOR_TAG_MAP = [
       'Infrastructure Research', 'a16z', 'AI Grid Insider',
       'GS — Technology', 'GS — Telecom'],                     ['digital_infra', 'data_centers']),
     (['Podcast Summaries'],                                    ['podcast', 'mixed']),
+    # Daily Market Update spans all sectors — pre-synthesised attributed intel
+    (['Daily Market Update'],
+                             ['power', 'utilities', 'midstream', 'energy',
+                              'macro', 'digital_infra', 'data_centers']),
 ]
 
 # ── date extraction ───────────────────────────────────────────────────────────
@@ -98,6 +111,113 @@ def make_chunk_id(doc_id: str, article_title: str, chunk_index: int = 0) -> str:
     short = doc_id[:8]
     h = hashlib.md5(article_title.encode()).hexdigest()[:8]
     return f'{short}_{h}_{chunk_index:02d}'
+
+
+# ── Daily Market Update custom parser ────────────────────────────────────────
+_DMU_ENTRY_RE    = re.compile(r'^(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*'
+                               r'\s+\d{1,2},?\s+\d{4}\s*[—–-].*Briefing\b', re.I)
+_DMU_DATE_RE     = re.compile(r'^(\d{4}-\d{2}-\d{2})\s*[—–-]')
+_DMU_SECTION_RE  = re.compile(r'^\d+\.\s+\S')
+_DMU_NAMED_RE    = re.compile(
+    r'^(COMPANY WATCH|MACRO CROSSCURRENTS?|POWER MARKETS?)\b', re.I)
+_DMU_KT_RE       = re.compile(r'^KEY TAKEAWAY[:\s]', re.I)
+
+DMU_MAX_SECTION_CHARS = 6000   # sections can be long; allow more than default
+
+
+def extract_daily_market_update(docs_svc, doc_id: str) -> list[dict]:
+    """
+    Custom parser for the Daily Market Update archive doc.
+
+    The doc is NORMAL_TEXT throughout (no heading styles). Each daily entry
+    starts with a bold "Month DD, YYYY — [Daily|Weekly] Market Briefing" line,
+    followed by a bold KEY TAKEAWAY and numbered/named thematic sections.
+
+    Returns one article per thematic section per day:
+        title   = "YYYY-MM-DD — SECTION NAME"
+        content = all bullet text in that section
+
+    TOC entries at the top look identical (bold + date) but end with the key-
+    takeaway summary rather than "Briefing" — we skip them.
+    """
+    try:
+        doc = docs_svc.documents().get(documentId=doc_id).execute()
+    except Exception as e:
+        raise RuntimeError(f'Drive API error: {e}') from e
+
+    content = doc.get('body', {}).get('content', [])
+    paras: list[tuple[str, bool]] = []   # (text, first_run_is_bold)
+    for el in content:
+        para = el.get('paragraph')
+        if not para:
+            continue
+        elements = para.get('elements', [])
+        first_bold = bool(
+            elements and
+            elements[0].get('textRun', {}).get('textStyle', {}).get('bold', False)
+        )
+        text = ''.join(
+            r.get('textRun', {}).get('content', '') for r in elements
+        ).strip()
+        if text:
+            paras.append((text, first_bold))
+
+    articles: list[dict] = []
+    current_date: str | None    = None
+    current_section: str | None = None
+    current_body: list[str]     = []
+
+    def flush():
+        if current_date and current_section and current_body:
+            body = '\n'.join(current_body).strip()
+            if body:
+                articles.append({
+                    'title':   f'{current_date} — {current_section}',
+                    'content': body[:DMU_MAX_SECTION_CHARS],
+                })
+
+    for text, is_bold in paras:
+        # ── entry header: "May 18, 2026 — Weekly Market Briefing" (bold) ──
+        if is_bold and _DMU_ENTRY_RE.match(text):
+            flush()
+            current_date    = None   # reset; date anchor comes later
+            current_section = None
+            current_body    = []
+            continue
+
+        # ── date anchor: "2026-05-18 — Weekly Briefing" sets the ISO date ──
+        m = _DMU_DATE_RE.match(text)
+        if m:
+            current_date = m.group(1)
+            continue
+
+        # ── KEY TAKEAWAY line (bold) ──
+        if is_bold and _DMU_KT_RE.match(text):
+            flush()
+            current_section = 'KEY TAKEAWAY'
+            current_body    = [text]
+            continue
+
+        # ── numbered section header: "1. US DIGITAL INFRA …", "2. REGULATORY …" ──
+        if _DMU_SECTION_RE.match(text):
+            flush()
+            current_section = text[:120]
+            current_body    = []
+            continue
+
+        # ── named section header: COMPANY WATCH, MACRO CROSSCURRENTS, etc. ──
+        if _DMU_NAMED_RE.match(text):
+            flush()
+            current_section = text[:120]
+            current_body    = []
+            continue
+
+        # ── body text ──
+        if current_section and len('\n'.join(current_body)) < DMU_MAX_SECTION_CHARS:
+            current_body.append(text)
+
+    flush()
+    return articles
 
 
 # ── full-doc extraction (all articles, no title filter) ───────────────────────
@@ -252,6 +372,9 @@ def main():
         f['name']: f['id'] for f in folder_docs
         if f['name'] not in EXCLUDE_DOC_NAMES
     }
+    # Add extra intel docs (excluded from generate_briefing.py but indexed here)
+    for doc_id, tracker_key in EXTRA_INTEL_DOCS.items():
+        drive_name_to_id[tracker_key] = doc_id
     print(f'Folder: {len(drive_name_to_id)} eligible docs')
 
     # Build reverse map: tracker_key → drive_name
@@ -270,7 +393,10 @@ def main():
 
         print(f'\n[{tracker_key}] reading…', end=' ', flush=True)
         try:
-            articles = extract_all_articles_from_doc(docs_svc, doc_id)
+            if doc_id in EXTRA_INTEL_DOCS:
+                articles = extract_daily_market_update(docs_svc, doc_id)
+            else:
+                articles = extract_all_articles_from_doc(docs_svc, doc_id)
         except Exception as e:
             print(f'ERROR: {e}')
             total_errors += 1
