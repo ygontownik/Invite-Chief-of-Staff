@@ -2385,3 +2385,20 @@ by the browser never suppress the item at the server layer (they're still includ
 `window.__PERSONAL_ITEMS_INITIAL__`). The client-side JS filter still works so UX is
 unaffected, but it's wasteful. Fix: update `_load_personal_items()` to use `djb2_js`.
 Not urgent — no user-visible regression currently.
+
+### 2026-05-18 — dismissAction is wrong for stable-id items; use dismissAwaitingItem
+
+`dismissAction(key, srvKey)` always calls `window.__deleteItem('followup', key)` which
+stores `djb2_js('followup|' + key)`. For stable-id items (awaitingExternal, deal actions,
+build-backlog) the filter checks `dels.has(item.id)` — raw ID, NOT a computed hash. The
+two never match, so `dismissAction` produces tombstones that are silently ignored for
+these item types.
+
+**Rule**: never wire a stable-id item's X button to `dismissAction`. Use a dedicated
+function that calls `/item/delete` with `{id: rawId, source: 'awaitingExternal', ...}`.
+The correct function is `dismissAwaitingItem(rawId, cpLabel)` added 2026-05-18.
+
+**How to apply**: when adding any new card that has stable `id` fields (hex IDs from
+extraction, not content-derived hashes), write a dedicated dismiss function — do not
+reuse `dismissAction`. Check the schema: if `item.id` is an 8-char hex, it's a
+stable-id item and needs this treatment.
