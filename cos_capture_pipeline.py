@@ -218,9 +218,21 @@ def build_system_prompt(ctx: dict) -> str:
         "  - Any 'Send notes / Send recap / Email summary / Distribute action items'\n"
         "    from ANY recurring weekly/biweekly internal call. DELETE.",
 
-        "\nTwo-party rule: every follow-up must involve a clear action between\n"
-        f"{p_first} (or {dl.get('name', '').split()[0] if dl else 'a teammate'}) and a SPECIFIC NAMED external party.\n"
-        "Reject if Who is just '{p_first}' alone, counterparty is unnamed, or it's purely internal.",
+        f"\nTwo-party rule: every my_action follow-up must involve a clear action between\n"
+        f"{p_first} (or a teammate) and a SPECIFIC NAMED external party.\n"
+        f"HARD REJECT for my_action if: (a) who='{p_first}' alone with no external party named,\n"
+        f"(b) counterparty is unnamed ('a contact', 'the team'), or (c) purely internal.\n"
+        f"Exception: if {p_first} explicitly committed on a call to deliver something to a\n"
+        f"named person by a named date, emit it as my_action even if analytical — but ONLY\n"
+        f"emit ONE consolidated item per commitment, not sub-tasks.\n"
+        f"\nPER-SOURCE ITEM CAP (rule PC1) — for any single call transcript or email thread:\n"
+        f"  - Emit at most 3 my_action items. If the source touched 10 topics, consolidate\n"
+        f"    to the 3 highest-priority external-facing actions.\n"
+        f"  - If multiple sub-tasks serve the same objective, merge them into ONE item.\n"
+        f"    Put the specifics in the `what` field, not as separate rows.\n"
+        f"  - Example: 'analyze capacity, distance, and incremental value for an asset'\n"
+        f"    is ONE item: 'Work up pipeline integration analysis for <asset>\n"
+        f"    (capacity, distance, incremental value)' — not three rows.",
 
         f"\nACTION-DIRECTION INVERSION CHECK (rule Y2) — when the action verb is a\n"
         f"transmission verb (`send`, `share`, `forward`, `deliver`, `provide`,\n"
@@ -299,7 +311,9 @@ def build_system_prompt(ctx: dict) -> str:
         "    no specific external deadline or named recipient.\n"
         "    Key test: could Yoni do this alone, without any specific counterparty?\n\n"
         "  GRAY AREA: if an action involves both coordination AND analysis,\n"
-        "    emit TWO items (one TEAM + one DEAL).\n\n"
+        "    emit ONE my_action item covering the external-facing commitment.\n"
+        "    Only split into two if the analytical and coordination parts have\n"
+        "    genuinely different deadlines AND different named parties.\n\n"
         "  DUPLICATE SUPPRESSION: if the same who+what combination was already\n"
         "    extracted within the last 2 weeks, DO NOT re-emit it. Check the\n"
         "    existing follow-up rows before emitting.\n",

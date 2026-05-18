@@ -2386,6 +2386,52 @@ by the browser never suppress the item at the server layer (they're still includ
 unaffected, but it's wasteful. Fix: update `_load_personal_items()` to use `djb2_js`.
 Not urgent — no user-visible regression currently.
 
+### 2026-05-18 — Verbal deal updates must flow to all four persistence layers, not just tombstones
+
+When Yoni gives a verbal update during a session ("call complete", "materials received",
+"still outstanding", "status changed"), write to ALL of the following — not just tombstones:
+
+**Layer 1 — deal log.json** (PRIMARY — source of truth for future compiles)
+Path: `~/dashboards/data/deals/{deal_id}/log.json`, `entries` array.
+- `source`: `"intel"` for outcomes/facts, `"awaitingExternal"` for new counterparty obligations,
+  `"followup"` for new internal actions.
+- `who`:
+  - Intel: `"call outcome — {Counterparty}"` or `"deal diligence — {one-line context}"`
+  - Followup: `"{Person Name / Firm}"`
+  - AwaitingExternal: `"{Counterparty}"`
+- `what`: Substantive — NOT a one-liner receipt. Include: what happened, key facts with names/numbers,
+  what it means for the deal, what's still outstanding.
+- `source_title`: `"verbal update — YYYY-MM-DD"` when Yoni told you directly (no doc/email source).
+- `id`: `djb2_js("{date}|{who[:40]}|{what[:40]}")` for deduplication.
+- `match`: deal token (e.g., `"<Deal Name>"`, `"<Deal Ticker>"`). <!-- noqa: tenant-leak -->
+
+**Layer 2 — deal.md frontmatter** (update on meaningful state change)
+- `last_activity: YYYY-MM-DD` — update on every new activity.
+- `last_updated: YYYY-MM-DD` — update when editing the file.
+- `stage`, `health` — update only when deal state genuinely changes.
+
+**Layer 3 — actions.md** (human-facing only, not compiled)
+- Mark completed rows `closed` in the status column.
+- Add new rows for actions created by the update.
+- Not read by the compiler; skip if no action state changes.
+
+**Layer 4 — deletions.json** (tombstone resolved awaiting items)
+- Tombstone using the raw 8-char hex `id` for awaitingExternal items.
+- Tombstone computed hashes for followup/rel/recruit items (use djb2_js rules above).
+
+**NEVER edit `compiled/dashboard-data.json` directly** — it's generated on refresh.
+Changes to log.json + deal.md are picked up on the next `/refresh` cycle.
+
+**Non-deal CoS-level items** (relationship calls not tied to a deal folder):
+`~/dashboards/data/deals/_inbox/log.json` — created 2026-05-18. Use for investor
+intros, relationship calls, and LP conversations that span multiple deals or have
+no current deal anchor. Same schema as other deal logs. Promote entries to a specific
+deal log once a deal anchor is identified.
+
+**Why this matters**: tombstoning alone suppresses the dashboard view but loses the
+intel. The next pipeline compile re-derives awaitingExternal from source emails/docs and
+the item reappears unless the source is also resolved (or the log entry confirms closure).
+
 ### 2026-05-18 — dismissAction is wrong for stable-id items; use dismissAwaitingItem
 
 `dismissAction(key, srvKey)` always calls `window.__deleteItem('followup', key)` which

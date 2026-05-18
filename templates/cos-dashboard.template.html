@@ -3175,6 +3175,15 @@ function buildTomacPanel() {
           return `<span class="tc-mini-ws-tag${critCls}">${esc(wg.workstream)} <span class="tc-mini-ws-ct">${wg.count}</span></span>`;
         }).join('')}
       </div>` : ''}
+      ${(d.claude_outputs && d.claude_outputs.length > 0) ? (() => {
+        const items = [...d.claude_outputs].sort((a,b) => (b.date||'').localeCompare(a.date||'')).slice(0,3);
+        return `<span class="tc-mini-outputs" style="display:block">${items.map(o => {
+          const link = o.file_id ? `https://drive.google.com/file/d/${o.file_id}/view` : (o.url || '');
+          const typeTag = o.type ? `<span class="tc-mini-output-type">${esc(o.type)}</span>` : '';
+          const clickHandler = link ? `onclick="event.preventDefault();event.stopPropagation();window.open('${link}','_blank')"` : `onclick="event.preventDefault();event.stopPropagation()"`;
+          return `<span class="tc-mini-output-row" style="display:flex"><span ${clickHandler} class="tc-mini-output-link" style="cursor:pointer">${typeTag}${esc(o.title||'Untitled')}</span><span class="tc-mini-output-date">${esc(o.date||'')}</span></span>`;
+        }).join('')}</span>`;
+      })() : ''}
     </a>`;
   }
 
