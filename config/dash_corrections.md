@@ -2345,3 +2345,43 @@ construction zones against PFS site pipeline" was incorrectly assigned to Yoni (
 listener). Marc Borzykowski has the Vector data and must do the mapping.
 
 Correction applied: `who=Yoni, Map Vector's bus shelter zones` → `who=Marc Borzykowski / Vector`.
+
+---
+
+## TOPIC — TOMBSTONE SYSTEM
+
+### 2026-05-18 — Python _djb2 (XOR) ≠ JS __itemId (addition); always use JS algorithm for manual tombstones
+
+`cos-dashboard-server.py::_djb2()` uses XOR: `h = ((h << 5) + h) ^ ord(c)`.
+The browser's `window.__itemId` uses addition: `h = (((h<<5) + h) + charCode)|0`.
+These produce DIFFERENT hashes for the same string.
+
+`window.__DELETIONS__` is populated at page-render time from `deletions.json` IDs.
+Client-side filters check `window.__DELETIONS__.has(window.__itemId(source, content))`,
+which uses the JS (addition) hash. If a manual tombstone is added to `deletions.json`
+using the Python XOR hash, the filter will NEVER match and the item will keep appearing.
+
+**Rule**: when adding tombstones to `deletions.json` manually (e.g. to permanently
+suppress an item the user can't dismiss via UI), compute the ID using the JS algorithm:
+
+```python
+def djb2_js(s):
+    h = 5381
+    for c in s:
+        h = (h * 33 + ord(c)) & 0xFFFFFFFF
+        if h >= 0x80000000:
+            h -= 0x100000000
+    return format(h & 0xFFFFFFFF, '08x')
+```
+
+For followup items: `djb2_js('followup|' + actionKey)` where `actionKey = who + '|' + due`.
+For rel items: `djb2_js('rel|' + name)`.
+For recruit items: `djb2_js('recruit|' + key)`.
+For personal_items: `djb2_js('recruit|personal_items|' + name)`.
+
+**Known secondary issue**: `_load_personal_items()` in the server uses Python XOR to
+check tombstones server-side (line 434). This means personal_item tombstones written
+by the browser never suppress the item at the server layer (they're still included in
+`window.__PERSONAL_ITEMS_INITIAL__`). The client-side JS filter still works so UX is
+unaffected, but it's wasteful. Fix: update `_load_personal_items()` to use `djb2_js`.
+Not urgent — no user-visible regression currently.
