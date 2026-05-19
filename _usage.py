@@ -62,6 +62,7 @@ SITE_KEY_MAP: dict[str, str] = {
     "cos_capture_pipeline":     "ANTHROPIC_API_KEY_BRIEFING",
     "cos_personal_briefing":    "ANTHROPIC_API_KEY_BRIEFING",
     "dash_corrections_proposer": "ANTHROPIC_API_KEY_RESEARCH",
+    "call_recorder_memo":        "ANTHROPIC_API_KEY_BRIEFING",
 }
 
 
