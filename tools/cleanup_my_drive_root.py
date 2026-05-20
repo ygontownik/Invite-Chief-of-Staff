@@ -125,7 +125,9 @@ def build_deal_alias_index(registry: dict) -> list[tuple[str, re.Pattern, str]]:
 
 VERSION_TAG = re.compile(r"\bv\d+\b", re.I)
 STATUS_MD_AT_ROOT = re.compile(r"^[a-z_]+(_status|_brief|_master_brief|_lps|_terms|_actions)(\.md)?$", re.I)
-PRESENTATION_STANDARDS = re.compile(r"(presentation\s*standards|practice\s*patterns|firm\s*context)", re.I)
+PRESENTATION_STANDARDS = re.compile(
+    r"(presentation\s*standards|practice\s*patterns|firm\s*context|"
+    r"tcip\s*project\s*context|project\s*context)", re.I)
 GSCRIPT = re.compile(r"\.gscript$", re.I)
 
 
@@ -153,8 +155,12 @@ def classify(file: dict, registered_ids: set[str], deal_index: list) -> dict:
                 "reason": "gscript -> 00 Tomac Cove/_Context/"}
 
     # 4. Filename matches a deal alias -> that deal's _Outputs/ (or Drafts/)
+    # Normalize underscores -> spaces so regex \b boundaries fire on filenames
+    # like "IMEC_Milken_v7_ALIGN_Capital.pdf". _ is \w, so without this, terms
+    # like "imec" or "align" wedged between underscores never match.
+    name_for_match = name.replace('_', ' ')
     for deal_id, pattern, outputs_folder_id in deal_index:
-        if outputs_folder_id and pattern.search(name):
+        if outputs_folder_id and pattern.search(name_for_match):
             if VERSION_TAG.search(name):
                 return {"file_id": fid, "name": name, "action": "MOVE_TO_DRAFTS",
                         "dest_folder_id": outputs_folder_id,
