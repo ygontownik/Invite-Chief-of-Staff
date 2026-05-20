@@ -108,6 +108,13 @@ CHAT_CAPTURE_LOCK = Path("/tmp/dash-state-hook-chat-capture.last")
 CHAT_CAPTURE_INTERVAL = 14400  # 4 hours
 CHAT_CAPTURE_LOG = str(COS_DATA_DIR / "logs" / "chat_capture.log")
 
+# Artifact pull — Chrome MCP walks each deal's claude.ai project, downloads new
+# artifacts to ~/Downloads; local_file_router.py (30s daemon) routes them.
+ARTIFACT_PULL_LOCK     = Path("/tmp/dash-state-hook-artifact-pull.last")
+ARTIFACT_PULL_INTERVAL = 14400  # 4 hours (matches CHAT_CAPTURE_INTERVAL)
+ARTIFACT_PULL_LOG      = str(COS_DATA_DIR / "logs" / "artifact_pull.log")
+ARTIFACT_PULL_STATE    = Path(os.path.expanduser("~/credentials/processed_artifacts.json"))
+
 RATE_LIMIT_SECONDS = 1800   # 30 min — max write frequency
 HEARTBEAT_SECONDS  = 3600   # 60 min — write even with no commits (heartbeat)
 
@@ -640,6 +647,134 @@ def run_chat_capture():
         return False
 
 
+def seconds_since_artifact_pull() -> float:
+    if not ARTIFACT_PULL_LOCK.exists():
+        return float("inf")
+    try:
+        return datetime.now().timestamp() - float(ARTIFACT_PULL_LOCK.read_text().strip())
+    except Exception:
+        return float("inf")
+
+
+def _load_artifact_state() -> dict:
+    if ARTIFACT_PULL_STATE.exists():
+        try:
+            import json as _json
+            return _json.loads(ARTIFACT_PULL_STATE.read_text())
+        except Exception:
+            pass
+    return {}
+
+
+def _save_artifact_state(state: dict) -> None:
+    import json as _json
+    # Bracket the write with a coordination lock so concurrent runs don't race.
+    try:
+        _tool_dir = os.path.dirname(os.path.abspath(__file__))
+        if _tool_dir not in sys.path:
+            sys.path.insert(0, _tool_dir)
+        from coordination import lock as _coord_lock
+        def _write():
+            ARTIFACT_PULL_STATE.parent.mkdir(parents=True, exist_ok=True)
+            tmp = ARTIFACT_PULL_STATE.with_suffix(".tmp")
+            tmp.write_text(_json.dumps(state, indent=2))
+            tmp.replace(ARTIFACT_PULL_STATE)
+        with _coord_lock("processed-artifacts", holder="dash-state-hook.py", ttl_seconds=30):
+            _write()
+    except ImportError:
+        # coordination.py not importable — write directly (graceful degradation)
+        ARTIFACT_PULL_STATE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = ARTIFACT_PULL_STATE.with_suffix(".tmp")
+        tmp.write_text(_json.dumps(state, indent=2))
+        tmp.replace(ARTIFACT_PULL_STATE)
+
+
+def run_artifact_pull(dry_run: bool = False) -> bool:
+    """Walk each registered deal's claude.ai project via Chrome MCP, download any
+    new artifacts to ~/Downloads. local_file_router.py (running every 30s) picks
+    them up and routes by deal alias — zero extra routing code needed here.
+
+    Uses the same Chrome MCP profile as /capture-deal-chats (ensure_real_chrome.sh
+    backs both, keeping the headless Chrome session alive on Desktop 2).
+
+    State: ~/credentials/processed_artifacts.json  (keyed by deal_id)
+    Log:   ~/dashboards/logs/artifact_pull.log
+    """
+    if not DRIVE_DOCS_YAML or not os.path.exists(DRIVE_DOCS_YAML):
+        return False
+
+    try:
+        import yaml as _yaml
+        cfg = _yaml.safe_load(open(DRIVE_DOCS_YAML))
+    except Exception as e:
+        print(f"[dash-state-hook] artifact-pull: cannot load drive-docs.yaml — {e}",
+              file=sys.stderr)
+        return False
+
+    deal_docs = (cfg or {}).get("deal_docs") or {}
+    targets = [
+        (deal_id, entry["project_url"])
+        for deal_id, entry in deal_docs.items()
+        if entry.get("project_url")
+    ]
+
+    if not targets:
+        return True  # nothing to pull
+
+    state = _load_artifact_state()
+
+    if dry_run:
+        from datetime import datetime as _dt
+        print(f"[dash-state-hook] artifact-pull [dry-run]: {len(targets)} deal(s) with project_url:")
+        for deal_id, url in targets:
+            last = state.get(deal_id, {}).get("last_pull", "never")
+            print(f"  {deal_id:20}  last_pull={last}  url={url[:60]}")
+        return True
+
+    if not os.path.exists(CLAUDE_BIN):
+        print(f"[dash-state-hook] artifact-pull: claude CLI not found at {CLAUDE_BIN} — skip",
+              file=sys.stderr)
+        return False
+
+    env = os.environ.copy()
+    env["DEAL_SYNC_CHILD"] = "1"
+    os.makedirs(os.path.dirname(ARTIFACT_PULL_LOG), exist_ok=True)
+    started = datetime.now().isoformat()
+
+    try:
+        with open(ARTIFACT_PULL_LOG, "a") as logf:
+            logf.write(f"\n=== {started} artifact-pull START ({len(targets)} deals) ===\n")
+            result = subprocess.run(
+                [
+                    CLAUDE_BIN, "-p", "/capture-deal-chats all --include-artifacts",
+                    "--allow-dangerously-skip-permissions",
+                ],
+                env=env,
+                stdout=logf, stderr=subprocess.STDOUT,
+                timeout=1200,  # 20 min cap — same as chat-capture
+            )
+            ended = datetime.now().isoformat()
+            logf.write(f"=== {ended} artifact-pull END (exit={result.returncode}) ===\n")
+
+        ARTIFACT_PULL_LOCK.write_text(str(datetime.now().timestamp()))
+
+        # Record pull timestamp per deal
+        now_iso = datetime.now().isoformat()
+        for deal_id, _ in targets:
+            state.setdefault(deal_id, {})["last_pull"] = now_iso
+        _save_artifact_state(state)
+
+        return result.returncode == 0
+
+    except subprocess.TimeoutExpired:
+        print("[dash-state-hook] artifact-pull timed out (20 min)", file=sys.stderr)
+        ARTIFACT_PULL_LOCK.write_text(str(datetime.now().timestamp()))
+        return False
+    except Exception as e:
+        print(f"[dash-state-hook] artifact-pull error (non-fatal): {e}", file=sys.stderr)
+        return False
+
+
 def maybe_mirror_actions_to_drive():
     """For each registered deal, if its local data/deals/<deal>/actions.md is
     newer than the tracker, push the content to the Drive actions doc
@@ -726,6 +861,16 @@ def get_drive_service_for_refsync():
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
+    import argparse as _argparse
+    _parser = _argparse.ArgumentParser(
+        description="dash-state-hook — Claude Code Stop hook",
+        add_help=False,  # keep silent for normal invocations from the hook
+    )
+    _parser.add_argument("--dry-run", action="store_true",
+                         help="Print what would run without spawning subprocesses")
+    _args, _ = _parser.parse_known_args()
+    _dry_run = _args.dry_run
+
     # Recursion guard: this hook fires at the end of every Claude Code turn.
     # When run_deal_extract_sync() spawns a child `claude -p /deal-sync` session,
     # that child fires its own Stop hook on exit. Without this guard, that would
@@ -736,6 +881,18 @@ def main():
         return 0
 
     elapsed = seconds_since_last_run()
+
+    if _dry_run:
+        print("[dash-state-hook] [dry-run] Checking which jobs would fire:")
+        print(f"  deal_entry_sync:     {'WOULD RUN' if seconds_since_deal_entry_sync() >= DEAL_ENTRY_SYNC_INTERVAL else 'skip (too soon)'}")
+        print(f"  deal_extract_sync:   {'WOULD RUN' if seconds_since_deal_extract_sync() >= DEAL_EXTRACT_SYNC_INTERVAL else 'skip (too soon)'}")
+        print(f"  ref_doc_sync:        {'WOULD RUN' if seconds_since_ref_doc_sync() >= REF_DOC_SYNC_INTERVAL else 'skip (too soon)'}")
+        print(f"  project_inst_sync:   {'WOULD RUN' if should_run_project_inst_sync() else 'skip'}")
+        print(f"  chat_capture:        {'WOULD RUN' if seconds_since_chat_capture() >= CHAT_CAPTURE_INTERVAL else 'skip (too soon)'}")
+        print(f"  artifact_pull:       {'WOULD RUN' if seconds_since_artifact_pull() >= ARTIFACT_PULL_INTERVAL else 'skip (too soon)'}")
+        print()
+        run_artifact_pull(dry_run=True)
+        return 0
 
     # Deal entry sync — pulls per-deal dashboard_entry.json from Drive (every 2h)
     if seconds_since_deal_entry_sync() >= DEAL_ENTRY_SYNC_INTERVAL:
@@ -773,6 +930,12 @@ def main():
     # intel_capture.py to per-deal log.json. /deal-sync folds them in next cycle.
     if seconds_since_chat_capture() >= CHAT_CAPTURE_INTERVAL:
         run_chat_capture()
+
+    # Artifact pull — every 4h, walk each deal's claude.ai project via Chrome MCP,
+    # download new artifacts to ~/Downloads. local_file_router.py routes them by
+    # deal alias within its next 30s poll. State in processed_artifacts.json.
+    if seconds_since_artifact_pull() >= ARTIFACT_PULL_INTERVAL:
+        run_artifact_pull()
 
     # DEAL-INTEL capture from Claude Code transcripts — cheap (file grep).
     # Routes any ---DEAL-INTEL--- blocks emitted during CC sessions into the

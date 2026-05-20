@@ -2458,3 +2458,33 @@ stable-id item and needs this treatment.
 **How to apply**: any followUp added directly to `dashboard-data.json` with `who="Yoni"` and `_manual: True` (verbal commitments, analysis tasks, weekly call items) will now survive every pipeline cycle. If a Yoni-owned item disappears after refresh and `_manual` is set correctly, the exemption is missing from the cleanup logic.
 
 **Also**: items added directly to `dashboard-data.json` followUps are lost on server kickstart if the refresh runs before the item is added. Add the item, THEN trigger `POST /refresh` (not kickstart). Kickstart re-runs the full startup warmup which can overwrite state.
+
+---
+
+## TOPIC — TOOL / SCRIPT LOCATIONS
+
+### 2026-05-20 — dash-state-hook.py lives in ~/cos-pipeline/tools/, not ~/dashboards/scripts/
+
+The Stop hook in `~/.claude/settings.json` resolves to
+`~/cos-pipeline/tools/dash-state-hook.py`. DRIVE-ARCHITECTURE.md §9f and
+DRIVE-RECOMMENDATIONS.md both write `~/dashboards/scripts/dash-state-hook.py` —
+that path does not exist. When a task references that file, `find ~ -name
+"dash-state-hook.py"` before assuming its location from the docs.
+
+**How to apply**: whenever a task says "edit dash-state-hook.py", look it up via
+`find` first. Architecture docs may carry the old/planned path rather than the real one.
+
+### 2026-05-20 — New pipeline tools scheduled as LaunchAgents must carry from __future__ import annotations
+
+Any new `.py` file in `~/cos-pipeline/tools/` that uses PEP 604 union syntax
+(`X | None`, `list[str]`, etc.) and will be called by a LaunchAgent plist must
+have `from __future__ import annotations` as its first import. LaunchAgent plists
+often reference `/usr/bin/python3` (macOS 3.9), not Homebrew 3.14. The PEP 604
+syntax is a runtime `TypeError` on 3.9 without the future import. The existing
+PYTHON RUNTIME COMPATIBILITY rule covers `routines/`; this extends it to `tools/`
+for anything getting a launchd job.
+
+**How to apply**: before wiring a LaunchAgent for any `tools/*.py`, grep the file
+for `| None` / `list[`. If found, add `from __future__ import annotations` at the
+top (after the shebang/docstring, before other imports). `coordination.py` is the
+template — it already carries this guard.
