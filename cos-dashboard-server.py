@@ -1816,15 +1816,24 @@ def _warmup_in_background():
 
 def _auto_warmup_loop():
     """Background loop: warm cache immediately on startup, then every N minutes.
-    Each cycle runs the full warmup (compile + fetch + broadcast) so open browser
-    tabs receive fresh data without manual refresh."""
+    Each cycle refreshes data and broadcasts to open browser tabs.
+
+    NOTE: _run_email_resolver() is intentionally EXCLUDED from this loop.
+    The resolver calls the Anthropic API (raw, billed) and running it every
+    10 min during business hours costs ~$6/day.  It runs via launchd at 7:30am
+    and 6pm, and on explicit POST /warmup triggers (post-capture-pipeline,
+    post-briefing).  Auto-warmup only needs data freshness, not re-resolution.
+    """
     # Initial warmup — delay 5s to let server finish starting
     time.sleep(5)
     _run_fetch()
-    # Recurring warmup — full cycle including SSE broadcast to open tabs
+    # Recurring warmup — data refresh + SSE broadcast only (no resolver)
     while True:
         time.sleep(WARMUP_INTERVAL_MIN * 60)
-        _warmup_in_background()
+        # Lightweight: fetch → sweep → broadcast (no resolver)
+        _run_fetch()
+        _run_sweep()
+        _broadcast_refresh()
 
 # ── Routines (Claude scheduled-task health) ────────────────
 # Reads ~/Library/LaunchAgents/com.yoni.claude-task.*.plist + per-task
