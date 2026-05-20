@@ -5531,43 +5531,35 @@ function copyInstructions() {{
             self._redirect_admin(('err', f'Failed to save schedule: {e}'))
             return
 
-        # ── Register with focused-exploration Railway recording pipeline ──
-        # This triggers Twilio to dial in and record, then transcribe + upload to Drive.
-        # Only attempt if call_recording is enabled in firm_context.yaml — subscribers
-        # without Twilio don't have a Railway endpoint and shouldn't see the warning.
-        _call_recording_enabled = bool((_FC_CTX or {}).get('call_recording', False))
-        _railway_registered = False
-        if phone and _call_recording_enabled:
-            try:
-                import urllib.request as _urlreq
-                _sh, _sm = int(time_str.split(':')[0]), int(time_str.split(':')[1])
-                _start_12 = f'{_sh % 12 or 12}:{_sm:02d} {"AM" if _sh < 12 else "PM"}'
-                _end_12   = f'{end_dt.hour % 12 or 12}:{end_dt.minute:02d} {"AM" if end_dt.hour < 12 else "PM"}'
-                _body = json.dumps({
-                    'label':     title,
-                    'number':    phone,
-                    'code':      access_code or '',
-                    'pin':       pin or '',
-                    'date':      date_str,
-                    'startTime': _start_12,
-                    'endTime':   _end_12,
-                }).encode()
-                _req = _urlreq.Request(
-                    'https://focused-exploration-production.up.railway.app/api/calls',
-                    data=_body,
-                    headers={'Content-Type': 'application/json'},
-                    method='POST',
-                )
-                with _urlreq.urlopen(_req, timeout=15):
-                    _railway_registered = True
-            except Exception:
-                pass  # Railway failure doesn't block the local launchd schedule
+        # ── Forward to local call_scheduler (port 8765) for launchd plist generation ──
+        # call_scheduler.schedule_meeting() writes a Twilio auto-dial plist if phone
+        # is set, or a BlackHole capture plist for video-only meetings.
+        # Scheduler listens on 127.0.0.1 only and trusts loopback without HMAC.
+        _plist_written = False
+        try:
+            import urllib.request as _urlreq
+            _scheduler_payload = {**meeting, 'has_video': True}
+            _payload_bytes = json.dumps(_scheduler_payload).encode()
+            _req = _urlreq.Request(
+                'http://127.0.0.1:8765/schedule',
+                data=_payload_bytes,
+                headers={'Content-Type': 'application/json'},
+                method='POST',
+            )
+            with _urlreq.urlopen(_req, timeout=10):
+                _plist_written = True
+        except Exception:
+            pass  # scheduler not running — launchd plist not written but JSON saved
 
         detail = f'{date_str} at {time_str} ({dur_min} min)'
         if phone:
             detail += f' · dial {phone}' + (f' PIN {pin}' if pin else '')
-        _pipeline_note = ' Twilio recording pipeline armed.' if _railway_registered else (' (Railway pipeline not reached — check internet)' if (phone and _call_recording_enabled) else '')
-        self._redirect_admin(('ok', f'Scheduled "{title}" for {detail}. Recording will start automatically.{_pipeline_note}'))
+        _pipeline_note = (
+            ' Twilio auto-dial armed.' if (_plist_written and phone) else
+            ' BlackHole capture armed.' if _plist_written else
+            ' ⚠️ Scheduler not reachable — restart call_scheduler.'
+        )
+        self._redirect_admin(('ok', f'Scheduled "{title}" for {detail}.{_pipeline_note}'))
 
     def _handle_admin_schedule_webinar(self):
         import uuid, subprocess as _sp
