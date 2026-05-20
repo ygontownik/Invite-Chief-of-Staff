@@ -120,6 +120,11 @@ SYNC_STATE        = SCRIPT_DIR / "sync-state.json"
 DATA_DIR          = SCRIPT_DIR / "data" / "project-sync"
 FIRM_CONTEXT_PATH = SCRIPT_DIR / "firm_context.md"
 
+# Drive folder where tcip-deals-registry.json lives (TC_CONTEXT).
+# The Drive Organizer reads this file at runtime to auto-expand for new deals.
+TC_CONTEXT_FOLDER_ID = "1IsGHEEeWOFtJ3yDYseJlSHYBprzom1tn"
+DRIVE_REGISTRY_FILE  = "tcip-deals-registry.json"
+
 # Drive folder subfolders to create per deal
 DEAL_SUBFOLDERS = ["Documents", "Transcripts", "Filings", "Correspondence"]
 
@@ -873,30 +878,30 @@ def generate_project_instructions(deal_name, deal_id, lead, support,
     what was rejected and why, key counterparty quotes.
     Label: "SESSION NARRATIVE — append to master brief Part VII"
 
-    BLOCK 5 — SESSION OUTPUT SAVE (automatic, no prompt needed):
-    If this session produced a named deliverable (analysis, memo,
-    brief, transcript_summary, research_report, or deal_update):
+    BLOCK 5 -- SESSION OUTPUT SAVE (automatic, no prompt needed):
+    If this session produced a named deliverable (jsx, html, analysis,
+    memo, brief, transcript_summary, research_report, or deal_update),
+    emit one block per deliverable:
 
-    Call save_session_output() using Drive MCP:
-    1. Create a Google Doc in _Outputs/ folder
-       (outputs_folder_id from DEAL CONSTANTS above)
-       Named: "{TODAY} -- <title>"
-       Content: the full deliverable text
-    2. Download session_log.md (session_log_file_id from DEAL CONSTANTS),
-       append row: "| {TODAY} | <type> | <title> | <description> | [Open](url) |"
-       Re-upload with updated content.
-    3. Download dashboard_entry.json (dashboard_entry_file_id from DEAL CONSTANTS),
-       append to claude_outputs array:
-       {{"date":"{TODAY}","type":"<type>","title":"<title>",
-         "description":"<description (<=25 words)>",
-         "file_id":"<new doc id>","url":"<doc url>"}}
-       Update _last_updated_from_session to "{TODAY}". Re-upload JSON.
+    ---SESSION-OUTPUT---
+    deal: <deal_id>
+    date: YYYY-MM-DD
+    type: <type>
+    title: <title>
+    description: <description (<=25 words)>
+    artifact: <filename.ext>
+    ---END-SESSION-OUTPUT---
 
-    Valid types: analysis | memo | brief | transcript_summary |
+    Valid types: jsx | html | analysis | memo | brief | transcript_summary |
                  research_report | deal_update
 
-    Execute automatically. Do not ask. Do not skip on short sessions
-    -- if a deliverable was produced, save it.
+    The capture pipeline reads this block every 4h and updates
+    session_log.md + dashboard_entry.json in Drive automatically.
+    Do NOT attempt Drive file uploads -- large files cannot be
+    reliably transmitted via claude.ai Drive tools.
+
+    Execute automatically. Emit for every named deliverable.
+    Multiple blocks fine (one per deliverable).
 
 
     ════════════════════════════════
@@ -956,7 +961,8 @@ def update_compile_writeback(deal_id, file_id):
 
 def update_deal_system_data(deal_id, deal_name, lead, support,
                              drive_folder_id, status_file_id, brief_file_id,
-                             outputs_folder_id='', session_log_file_id=''):
+                             outputs_folder_id='', session_log_file_id='',
+                             transcripts_folder_id='', organizer_aliases=None):
     """Add new deal entry to deal-system-data.json."""
     if not DEAL_SYSTEM_DATA.exists():
         data = {"deals": []}
@@ -968,13 +974,18 @@ def update_deal_system_data(deal_id, deal_name, lead, support,
         print(f"   ⚠️  {deal_id} already in deal-system-data.json — skipping")
         return
 
+    if organizer_aliases is None:
+        organizer_aliases = _default_aliases(deal_id, deal_name)
+
     new_deal = {
         "deal_id": deal_id,
         "name": deal_name,
         "stage": "early",
         "lead": lead,
         "support": support,
+        "organizer_aliases": organizer_aliases,
         "drive_folder_id": drive_folder_id,
+        "transcripts_folder_id": transcripts_folder_id,
         "status_file_id": status_file_id,
         "brief_file_id": brief_file_id,
         "outputs_folder_id": outputs_folder_id,
@@ -1271,6 +1282,88 @@ Last updated: {TODAY}
         print(f"   ⚠️  Claude Code error: {e}. Using templates.")
         return None, None
 
+# ── DRIVE REGISTRY ────────────────────────────────────────────────────────────
+
+def _default_aliases(deal_id, deal_name):
+    """Derive filename-matching aliases from deal_id and deal_name.
+
+    These go into organizer_aliases in deal-system-data.json and are read
+    by the Drive Organizer at runtime so new deals are auto-handled without
+    any manual script edits.
+    """
+    aliases = [deal_id]
+    # Add dot-separated version of name words (e.g. "black_bayou" → "black.bayou")
+    words = [w.lower() for w in re.findall(r'[a-zA-Z]+', deal_name) if len(w) > 1]
+    compound = '.'.join(words)
+    if compound and compound != deal_id and compound not in aliases:
+        aliases.append(compound)
+    # Add underscore variant if different (e.g. "align_infra")
+    underscore = '_'.join(words)
+    if underscore and underscore != deal_id and underscore not in aliases:
+        aliases.append(underscore)
+    # Deduplicate preserving order
+    seen = set()
+    return [a for a in aliases if not (a in seen or seen.add(a))]
+
+
+def upload_drive_registry(service, data_path=None):
+    """Rebuild tcip-deals-registry.json from deal-system-data.json and
+    upload/update it in Drive TC_CONTEXT folder.
+
+    Called automatically at end of new deal onboarding.
+    Also callable standalone: python tcip_new_deal.py --rebuild-registry
+    """
+    if data_path is None:
+        data_path = DEAL_SYSTEM_DATA
+    if not data_path.exists():
+        print(f"   ⚠️  {data_path} not found — skipping registry upload")
+        return
+
+    data = json.loads(data_path.read_text())
+    registry_deals = []
+    for d in data.get("deals", []):
+        if d.get("stage") in ("inactive", "closed"):
+            continue
+        # Display name: strip parenthetical (e.g. "Cholla / Venus" → "Cholla")
+        display_name = re.sub(r'\s*/\s*.*', '', d.get("name", d["deal_id"])).strip()
+        aliases = d.get("organizer_aliases")
+        if not aliases:
+            aliases = _default_aliases(d["deal_id"], d.get("name", d["deal_id"]))
+        registry_deals.append({
+            "deal_id":              d["deal_id"],
+            "display_name":         display_name,
+            "aliases":              aliases,
+            "root_folder_id":       d.get("drive_folder_id", ""),
+            "transcripts_folder_id":d.get("transcripts_folder_id", ""),
+            "outputs_folder_id":    d.get("outputs_folder_id", ""),
+        })
+
+    registry = {"updated": TODAY, "deals": registry_deals}
+    registry_json = json.dumps(registry, indent=2)
+
+    # Find existing file or create new
+    results = service.files().list(
+        q=(f"name='{DRIVE_REGISTRY_FILE}' and "
+           f"'{TC_CONTEXT_FOLDER_ID}' in parents and trashed=false"),
+        fields="files(id)"
+    ).execute()
+    media = MediaInMemoryUpload(registry_json.encode("utf-8"),
+                                mimetype="application/json",
+                                resumable=False)
+    if results.get("files"):
+        file_id = results["files"][0]["id"]
+        service.files().update(fileId=file_id, media_body=media).execute()
+        print(f"   ✓ Updated {DRIVE_REGISTRY_FILE} in Drive TC_CONTEXT "
+              f"({len(registry_deals)} deals)")
+    else:
+        meta = {"name": DRIVE_REGISTRY_FILE,
+                "parents": [TC_CONTEXT_FOLDER_ID]}
+        f = service.files().create(body=meta, media_body=media,
+                                   fields="id").execute()
+        print(f"   ✓ Created {DRIVE_REGISTRY_FILE} in Drive TC_CONTEXT "
+              f"— {f['id']} ({len(registry_deals)} deals)")
+
+
 # ── INTERACTIVE INPUT ─────────────────────────────────────────────────────────
 
 def prompt_interactive():
@@ -1322,7 +1415,21 @@ def main():
     parser.add_argument("--drive-folder-id", help="Existing Drive folder ID")
     parser.add_argument("--triggers", nargs="*", default=[])
     parser.add_argument("--rules", nargs="*", default=[])
+    parser.add_argument("--rebuild-registry", action="store_true",
+                        help="Rebuild and upload tcip-deals-registry.json from "
+                             "deal-system-data.json without creating a new deal")
     args = parser.parse_args()
+
+    # Standalone registry rebuild — no deal creation needed
+    if args.rebuild_registry:
+        print("📡 Connecting to Google Drive...")
+        drive = get_drive_service()
+        print("\n─────────────────────────────────")
+        print("Rebuilding Drive Registry")
+        print("─────────────────────────────────")
+        upload_drive_registry(drive)
+        print("\nDone. Drive Organizer will auto-load all deals on next run.")
+        return
 
     # Get inputs
     if args.deal_name and args.deal_id:
@@ -1372,9 +1479,12 @@ def main():
         drive_folder_name = deal_name
         print(f"   ✓ Created: {drive_folder_id}")
 
+    subfolder_ids = {}
     for subfolder in DEAL_SUBFOLDERS:
-        create_drive_folder(drive, subfolder, drive_folder_id)
+        sfid = create_drive_folder(drive, subfolder, drive_folder_id)
+        subfolder_ids[subfolder] = sfid
         print(f"   ✓ Subfolder: {subfolder}/")
+    transcripts_folder_id = subfolder_ids.get("Transcripts", "")
 
     # _Outputs/ — session deliverables go here, one Google Doc per output
     outputs_folder_id = create_drive_folder(drive, "_Outputs", drive_folder_id)
@@ -1450,8 +1560,12 @@ def main():
         drive_folder_id, status_id, brief_id,
         outputs_folder_id=outputs_folder_id,
         session_log_file_id=session_log_file_id,
+        transcripts_folder_id=transcripts_folder_id,
     )
     update_sync_state(deal_id, deal_name)
+    # Upload Drive registry so the Drive Organizer picks up this deal
+    # automatically on its next morning run — no Apps Script edits needed.
+    upload_drive_registry(drive)
 
     # ── PHASE 6: LOCAL DATA FOLDERS ──────────────────────────────────────────
     print("\n─────────────────────────────────")
