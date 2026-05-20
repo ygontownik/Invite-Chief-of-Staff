@@ -607,3 +607,92 @@ code, kbd, samp, pre { font-family: var(--font-data); }
   color: #8a6d18;
   border-color: #e8d28a;
 }
+
+/* ── File system health tile group ─────────────────────────────────────── */
+/* DRIVE-RECOMMENDATIONS.md Category 10. Light backgrounds only per Yoni's
+   UI rule; reads window.__FSH_INITIAL__ hydrated by the server. */
+.fsh-card {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 14px 16px;
+}
+.fsh-bar {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-top: 10px;
+}
+.fsh-tile {
+  background: #FDFCF9;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  padding: 12px 14px;
+  cursor: pointer;
+  transition: border-color .12s ease, background .12s ease;
+}
+.fsh-tile:hover {
+  border-color: var(--ink-faint);
+  background: #FAF7F1;
+}
+.fsh-tile-dim {
+  opacity: 0.7;
+}
+.fsh-tile-count {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.1;
+}
+.fsh-tile-label {
+  font-size: 12px;
+  color: var(--ink-mid);
+  margin-top: 4px;
+  font-weight: 500;
+}
+.fsh-tile-hint {
+  font-size: 10px;
+  color: var(--ink-faint);
+  margin-top: 2px;
+}
+.fsh-detail {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: #FBF8F2;
+  border: 1px solid var(--rule-light);
+  border-radius: 5px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.fsh-detail-empty {
+  color: var(--ink-faint);
+  font-size: 12px;
+  font-style: italic;
+}
+.fsh-row {
+  display: grid;
+  grid-template-columns: 110px 1fr auto;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--rule-light);
+  font-size: 12px;
+  align-items: baseline;
+}
+.fsh-row:last-child { border-bottom: none; }
+.fsh-row-ts {
+  color: var(--ink-faint);
+  font-family: monospace;
+  font-size: 11px;
+}
+.fsh-row-main a { color: var(--ink); text-decoration: underline; }
+.fsh-row-main a:hover { color: var(--ink-mid); }
+.fsh-row-meta {
+  color: var(--ink-faint);
+  font-size: 11px;
+}
+.fsh-foot {
+  color: var(--ink-faint);
+  font-size: 10px;
+  margin-top: 8px;
+  text-align: right;
+}

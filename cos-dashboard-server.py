@@ -553,6 +553,36 @@ def _load_deal_config() -> dict:
 # Pre-rename alias dropped 2026-05-05 (PLAN E1.4). Use _load_deal_config.
 
 
+_FSH_PATH = Path.home() / 'dashboards' / 'data' / 'compiled' / 'file-system-health.json'
+
+
+def _load_file_system_health() -> dict:
+    """Load data/compiled/file-system-health.json — produced by
+    routines/compile/file_system_health.py. Empty-state default if missing
+    so the tile group renders cleanly before the upstream Drive Invariant
+    Log sheet has been created by Drive Organizer Phase 5."""
+    default = {
+        'status': 'no_data',
+        'reason': 'producer has not run yet',
+        'counts': {
+            'invariantViolations': 0, 'awaitingClassification': 0,
+            'staleInbox': 0, 'gasIssues': 0,
+        },
+        'details': {
+            'invariantViolations': [], 'awaitingClassification': [],
+            'staleInbox': [], 'gasIssues': [],
+        },
+        'lastSheetUpdate': None,
+    }
+    if not _FSH_PATH.exists():
+        return default
+    try:
+        return json.loads(_FSH_PATH.read_text())
+    except Exception as e:
+        print(f'[file-system-health] load failed: {e}', flush=True)
+        return default
+
+
 def _assert_cross_config_dedup() -> None:
     """Cross-config dedup invariant: an entity in deal-config.yaml MUST NOT
     also exist in recruit-config.yaml. Logs a stderr warning per overlap.
@@ -1412,6 +1442,15 @@ def _deletions_script(user: str = 'owner') -> str:
     except Exception:
         deal_config = {'liveDeals': [], 'dealOrigination': [], 'capitalRaisingAdvisors': [], 'prospectiveInvestors': []}
     try:
+        fsh_initial = _load_file_system_health()
+    except Exception:
+        fsh_initial = {'status': 'no_data',
+                       'counts': {'invariantViolations': 0, 'awaitingClassification': 0,
+                                  'staleInbox': 0, 'gasIssues': 0},
+                       'details': {'invariantViolations': [], 'awaitingClassification': [],
+                                   'staleInbox': [], 'gasIssues': []},
+                       'lastSheetUpdate': None}
+    try:
         cp_aliases = _fc_srv.cp_aliases(_FC_CTX) if _fc_srv else []
     except Exception:
         cp_aliases = []
@@ -1445,6 +1484,9 @@ def _deletions_script(user: str = 'owner') -> str:
         # for the schema (counterparty_aliases / draft_voice are kept server-side).
         'window.__FIRM_CONTEXT__ = ' + json.dumps(firm_ctx_public) + ';'
         'window.__USER_ROLE__ = ' + json.dumps(user) + ';'
+        # File system health: hydrated from data/compiled/file-system-health.json
+        # (produced by routines/compile/file_system_health.py).
+        'window.__FSH_INITIAL__ = ' + json.dumps(fsh_initial) + ';'
         'window.__CP_ALIASES__ = ' + json.dumps(cp_aliases) + ';'
         'window.__PAGE_FETCHED_AT__ = ' + json.dumps(_page_fetched_at()) + ';'
         'window.__DELETIONS__ = new Set(' + json.dumps(ids) + ');'
@@ -1760,6 +1802,28 @@ def _run_sweep():
         _sweep_lock.release()
 
 
+_FSH_COMPILE_SCRIPT = Path.home() / 'dashboards' / 'routines' / 'compile' / 'file_system_health.py'
+
+
+def _run_file_system_health():
+    """Run routines/compile/file_system_health.py to refresh the FSH compiled JSON.
+    Fast (<1s when sheet missing; <3s when sheet present). Drive-only call, no LLM.
+    Safe to skip on failure — the dashboard renders an empty-state tile group."""
+    if not _FSH_COMPILE_SCRIPT.exists():
+        return
+    try:
+        result = subprocess.run(
+            [sys.executable, str(_FSH_COMPILE_SCRIPT)],
+            capture_output=True, text=True, timeout=20,
+        )
+        if result.returncode != 0:
+            print(f'[fsh] failed (exit {result.returncode}): {result.stderr[:200]}', flush=True)
+    except subprocess.TimeoutExpired:
+        print('[fsh] timed out', flush=True)
+    except Exception as e:
+        print(f'[fsh] error: {e}', flush=True)
+
+
 def _run_alias_sync():
     """Run cos_alias_sync.py — detect new counterparties in originationInbox and
     append them to counterparty_aliases_auto.json in the config dir.
@@ -1800,6 +1864,7 @@ def _warmup_in_background():
         _run_fetch()
         _run_sweep()       # prune resolved/stale items from fresh dashboard-data.json
         _run_alias_sync()  # detect new originationInbox counterparties → add aliases
+        _run_file_system_health()  # refresh data/compiled/file-system-health.json
 
     t_chain   = threading.Thread(target=_resolver_then_fetch, daemon=True, name='warmup-chain')
     t_compile = threading.Thread(target=_run_compile,          daemon=True, name='warmup-compile')

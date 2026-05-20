@@ -2457,6 +2457,39 @@ stable-id item and needs this treatment.
 
 **How to apply**: any followUp added directly to `dashboard-data.json` with `who="Yoni"` and `_manual: True` (verbal commitments, analysis tasks, weekly call items) will now survive every pipeline cycle. If a Yoni-owned item disappears after refresh and `_manual` is set correctly, the exemption is missing from the cleanup logic.
 
+---
+
+## TOPIC — DRIVE / SHEETS OAUTH SCOPE REUSE
+
+### 2026-05-20 — Match existing token scope; read sheets via Drive CSV export, not Sheets API
+
+When adding a new dashboard producer that reads from Drive, request the SAME
+OAuth scope the existing `~/credentials/token.json` was minted with
+(`https://www.googleapis.com/auth/drive`). Google's refresh flow rejects
+narrower scope sets with `invalid_scope: Bad Request`, so requesting
+`drive.readonly` against a token granted `drive` will fail to refresh and the
+producer will silently degrade to empty-state.
+
+**Sheets API workaround**: rather than adding the `spreadsheets.readonly`
+scope (which forces a full re-consent flow Yoni's Chrome can't complete —
+see the OAuth AI-fingerprint mouse trap memory), read sheet rows via the
+existing Drive scope using `drive.files().export(fileId, mimeType='text/csv')`
+and parse with the stdlib `csv` module. This works because Google Drive
+exposes Sheets as exportable to CSV under the Drive API.
+
+**How to apply**: any new Drive-reading routine in `~/dashboards/routines/`
+or `~/cos-pipeline/tools/` should:
+
+1. Use only `['https://www.googleapis.com/auth/drive']` in `SCOPES`.
+2. Read `.gsheet` content via `files().export(mimeType='text/csv')`, not
+   the Sheets API.
+3. Provide a graceful empty-state payload when the sheet doesn't exist or
+   the token can't refresh — never raise into the warmup chain.
+
+Pattern lives in `routines/compile/file_system_health.py:_get_drive_service`
+and `_read_sheet_rows`. Codified 2026-05-20 after the FSH producer's first
+run failed `invalid_scope` against the prod token.
+
 **Also**: items added directly to `dashboard-data.json` followUps are lost on server kickstart if the refresh runs before the item is added. Add the item, THEN trigger `POST /refresh` (not kickstart). Kickstart re-runs the full startup warmup which can overwrite state.
 
 ---

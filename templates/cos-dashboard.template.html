@@ -1305,6 +1305,7 @@ function render() {
     ${buildTopicsPanel()}
     ${body}
     ${state.statFocus ? '' : buildCorrections()}
+    ${state.statFocus ? '' : buildFileSystemHealth()}
     <div class="updated">Auto-generated · ${esc(DATA.generatedAt)} · Sources: Gmail · Calendar · Drive · <span class="kbd">a</span>all <span class="kbd">j</span>jobs <span class="kbd">t</span>deals <span class="kbd">Esc</span>clear</div>
   `;
   applyActionOnly();
@@ -3316,6 +3317,86 @@ function buildPriorityTargets() {
     ${buildJobSearchPanel()}
     ${buildPersonalPanel()}
   </div>`;
+}
+
+// ── File system health tile group ────────────────────────────────────────
+// Sourced from window.__FSH_INITIAL__ (hydrated server-side from
+// data/compiled/file-system-health.json, produced by
+// routines/compile/file_system_health.py).
+// Tiles read DRIVE-RECOMMENDATIONS.md Category 10:
+//   (1) Invariant violations  (2) Files awaiting classification
+//   (3) Stale items in _Inbox/ >24h  (4) GAS health
+// Click any tile to drill into the details list.
+function buildFileSystemHealth() {
+  const fsh = (typeof window.__FSH_INITIAL__ !== 'undefined')
+    ? window.__FSH_INITIAL__
+    : null;
+  if (!fsh) return '';
+  const c = fsh.counts || {};
+  const status = fsh.status || 'no_data';
+  const reason = status === 'no_data' ? (fsh.reason || 'awaiting upstream data') : '';
+
+  const tile = (id, label, count, hint) => {
+    const dim = (count === 0) ? 'fsh-tile-dim' : '';
+    return `
+    <div class="fsh-tile ${dim}" onclick="toggleFshDetail('${id}')">
+      <div class="fsh-tile-count">${count}</div>
+      <div class="fsh-tile-label">${esc(label)}</div>
+      <div class="fsh-tile-hint">${esc(hint)}</div>
+    </div>`;
+  };
+
+  const detail = (id, label, rows) => {
+    if (!rows || rows.length === 0) {
+      return `<div class="fsh-detail" id="fsh-d-${id}" style="display:none">
+        <div class="fsh-detail-empty">No entries.</div>
+      </div>`;
+    }
+    const items = rows.slice(0, 50).map(r => {
+      const ref = r.file_id
+        ? `<a href="https://drive.google.com/open?id=${esc(r.file_id)}" target="_blank">${esc(r.file || r.invariant || '—')}</a>`
+        : esc(r.file || r.invariant || '—');
+      const meta = [r.deal, r.severity, r.note].filter(Boolean).map(esc).join(' · ');
+      const ts = r.timestamp ? `<span class="fsh-row-ts">${esc(String(r.timestamp).slice(0,16))}</span>` : '';
+      return `<div class="fsh-row">${ts}<div class="fsh-row-main">${ref}</div><div class="fsh-row-meta">${meta}</div></div>`;
+    }).join('');
+    const more = rows.length > 50 ? `<div class="fsh-row-meta" style="margin-top:6px">… ${rows.length - 50} more</div>` : '';
+    return `<div class="fsh-detail" id="fsh-d-${id}" style="display:none">${items}${more}</div>`;
+  };
+
+  const d = fsh.details || {};
+  const lastUpdate = fsh.lastSheetUpdate
+    ? `last sheet update ${esc(String(fsh.lastSheetUpdate).slice(0,16))}`
+    : (reason ? esc(reason) : '');
+
+  return `
+  <div class="card fsh-card" style="margin-bottom:18px">
+    <div class="card-title"><div class="dot dot-yellow"></div>File system health</div>
+    <div class="fsh-bar">
+      ${tile('inv',     'Invariant violations',     c.invariantViolations     || 0, 'Drive Invariant Log (I1–I12)')}
+      ${tile('await',   'Awaiting classification',  c.awaitingClassification  || 0, 'router + Drive Organizer')}
+      ${tile('inbox',   'Stale _Inbox/ >24h',       c.staleInbox              || 0, '01 Transcripts/_Inbox/')}
+      ${tile('gas',     'GAS health',               c.gasIssues               || 0, 'clasp diff + testRouting')}
+    </div>
+    ${detail('inv',   'Invariant violations',     d.invariantViolations)}
+    ${detail('await', 'Awaiting classification',  d.awaitingClassification)}
+    ${detail('inbox', 'Stale _Inbox/',            d.staleInbox)}
+    ${detail('gas',   'GAS health',               d.gasIssues)}
+    <div class="fsh-foot">${lastUpdate}</div>
+  </div>`;
+}
+
+function toggleFshDetail(id) {
+  const ids = ['inv', 'await', 'inbox', 'gas'];
+  ids.forEach(k => {
+    const el = document.getElementById('fsh-d-' + k);
+    if (!el) return;
+    if (k === id) {
+      el.style.display = (el.style.display === 'none' || !el.style.display) ? 'block' : 'none';
+    } else {
+      el.style.display = 'none';
+    }
+  });
 }
 
 function buildCorrections() {
