@@ -407,7 +407,9 @@ synchronous tick so the recap's Paragraph 3 reads *fresh* prose, not
 prose that could be up to ~5h old.
 
 ```bash
-python3 ~/dashboards/routines/compile/synthesize_prose.py --apply 2>&1 | \
+# /wrap uses --with-rules (rule-aware overlay mode) — richer prose with
+# LEARNINGS context. Cadenced LaunchAgent uses lean mode without this flag.
+python3 ~/dashboards/routines/compile/synthesize_prose.py --apply --with-rules 2>&1 | \
     tee -a ~/dashboards/logs/wrap-synthesis.log | tail -5
 ```
 
