@@ -968,6 +968,8 @@ def main():
                         "Useful for verifying tenant-config interpolation.")
     p.add_argument("--download-approved", dest="download_approved",
                    help="Download attachments from a specific message_id (gated action)")
+    p.add_argument("--verbose", "-v", action="store_true",
+                   help="Print startup banner + per-query stats even on no-op runs")
     args = p.parse_args()
 
     # Diagnostic: render the cached preamble and exit. Does not touch Gmail.
@@ -996,9 +998,10 @@ def main():
         download_approved(token, args.download_approved)
         return
 
-    print("=== COS Email Backfill ===", flush=True)
-    print(f"Run at: {datetime.now().strftime('%Y-%m-%d %H:%M')}", flush=True)
-    print(f"Label:  {cfg['capture_label']}", flush=True)
+    if args.verbose:
+        print("=== COS Email Backfill ===", flush=True)
+        print(f"Run at: {datetime.now().strftime('%Y-%m-%d %H:%M')}", flush=True)
+        print(f"Label:  {cfg['capture_label']}", flush=True)
 
     # Resolve labels
     try:
@@ -1021,8 +1024,9 @@ def main():
             auto_hints = auto.get("parent_hints_by_keyword") or {}
             if auto_hints:
                 cfg.setdefault("parent_hints_auto", auto_hints)
-            print(f"  auto queries (from dashboard state): {len(auto_queries)} "
-                  f"(generated {auto.get('generated_at', '?')})", flush=True)
+            if args.verbose:
+                print(f"  auto queries (from dashboard state): {len(auto_queries)} "
+                      f"(generated {auto.get('generated_at', '?')})", flush=True)
         except Exception as e:
             print(f"  [auto-queries] WARN could not load {auto_path}: {e}",
                   file=sys.stderr)
@@ -1121,8 +1125,9 @@ def main():
             new_hits = sum(1 for t in qt if t["id"] not in collected)
             for t in qt:
                 collected.setdefault(t["id"], t)
-            print(f"  query [{q[:60]}{'…' if len(q) > 60 else ''}]: "
-                  f"{len(qt)} matches, {new_hits} new", flush=True)
+            if args.verbose or len(qt) > 0 or new_hits > 0:
+                print(f"  query [{q[:60]}{'…' if len(q) > 60 else ''}]: "
+                      f"{len(qt)} matches, {new_hits} new", flush=True)
         except Exception as e:
             print(f"  query [{q[:60]}…]: failed ({type(e).__name__}: {e})",
                   file=sys.stderr)
@@ -1227,12 +1232,15 @@ def main():
                     f"{stats['followups_added']} follow-ups added | "
                     f"{stats['contacts_added']} contacts added | "
                     f"dashboard {'pinged' if pinged else 'skipped'}")
-    print("\n" + "=" * 60, flush=True)
-    print("RUN SUMMARY", flush=True)
-    print("=" * 60, flush=True)
-    print(summary_line, flush=True)
-    print(f"Skipped (dedup): {stats['skipped_dedup']}", flush=True)
-    print(f"Errors:          {stats['errors']}", flush=True)
+    if stats['processed'] == 0 and stats['errors'] == 0 and not args.verbose:
+        print("no-op run: 0 threads, 0 follow-ups, 0 contacts", flush=True)
+    else:
+        print("\n" + "=" * 60, flush=True)
+        print("RUN SUMMARY", flush=True)
+        print("=" * 60, flush=True)
+        print(summary_line, flush=True)
+        print(f"Skipped (dedup): {stats['skipped_dedup']}", flush=True)
+        print(f"Errors:          {stats['errors']}", flush=True)
 
     _append_log(f"{datetime.now().isoformat()} {summary_line}")
 
