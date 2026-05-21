@@ -1237,13 +1237,21 @@ def run_skill_telemetry_scan():
                         args_val = inp.get("args", "")
                         if not isinstance(args_val, str):
                             args_val = _json.dumps(args_val, ensure_ascii=False)
-                        new_records.append({
+                        rec = {
                             "ts": ts,
                             "session": session_id,
                             "skill": skill_name,
                             "args": args_val,
                             "cwd": cwd,
-                        })
+                        }
+                        # Defensive schema guard — strictly the 5-key NEW schema.
+                        # Old-schema records (with id/started_at/outcome/plugin/...)
+                        # were archived 2026-05-21; never re-emit them. If any
+                        # future change accidentally widens the dict, drop here
+                        # rather than poison the file.
+                        if set(rec.keys()) != {"ts","session","skill","args","cwd"}:
+                            continue
+                        new_records.append(rec)
                 except Exception:
                     # one bad turn must not stop the scan
                     continue
