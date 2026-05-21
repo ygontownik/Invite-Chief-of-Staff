@@ -1306,6 +1306,7 @@ function render() {
     ${body}
     ${state.statFocus ? '' : buildCorrections()}
     ${state.statFocus ? '' : buildFileSystemHealth()}
+    ${state.statFocus ? '' : buildProposedLearnings()}
     <div class="updated">Auto-generated · ${esc(DATA.generatedAt)} · Sources: Gmail · Calendar · Drive · <span class="kbd">a</span>all <span class="kbd">j</span>jobs <span class="kbd">t</span>deals <span class="kbd">Esc</span>clear</div>
   `;
   applyActionOnly();
@@ -3402,6 +3403,97 @@ function toggleFshDetail(id) {
     } else {
       el.style.display = 'none';
     }
+  });
+}
+
+// ── Proposed Learnings tile ─────────────────────────────────────
+// Surfaces DATA.proposedLearnings — candidates captured by
+// run_learning_capture_scan in dash-state-hook.py and filtered by
+// _load_proposed_learnings() in cos-dashboard-refresh.py. Each row
+// has Accept (→ /propose-learning queue) / Defer (7d) / Reject (perm).
+// Server endpoints: POST /learning/{accept,defer,reject}
+function buildProposedLearnings() {
+  const cands = Array.isArray(DATA.proposedLearnings) ? DATA.proposedLearnings : [];
+  if (cands.length === 0) return '';  // empty-state: hide the card entirely
+  const plid = 'proposed-learnings-card';
+  const collapsed = state.collapsed[plid];
+  const rows = cands.map(c => {
+    const ts = c.capturedAt ? esc(String(c.capturedAt).slice(0, 10)) : '';
+    return `
+    <div class="pl-row" id="pl-row-${esc(c.id)}" style="padding:10px 12px;border-bottom:1px solid rgba(148,163,184,0.12);display:flex;gap:10px;align-items:flex-start">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;color:#0f1e38;line-height:1.45">${esc(c.snippet)}</div>
+        ${ts ? `<div style="font-size:10px;color:#94a3b8;margin-top:3px">captured ${ts} · id ${esc(c.id)}</div>` : ''}
+      </div>
+      <div style="display:flex;gap:5px;flex-shrink:0;margin-top:1px">
+        <button class="pl-btn pl-accept" onclick="acceptLearning('${esc(c.id)}', ${JSON.stringify(c.snippet).replace(/'/g, '&apos;')})" title="Promote to /propose-learning queue for structured entry" style="font-size:10px;padding:3px 8px;background:#16a34a;color:#fff;border:0;border-radius:4px;cursor:pointer;font-weight:600">Accept</button>
+        <button class="pl-btn pl-defer" onclick="deferLearning('${esc(c.id)}')" title="Defer for 7 days" style="font-size:10px;padding:3px 8px;background:#e2e8f2;color:#475569;border:0;border-radius:4px;cursor:pointer;font-weight:600">Defer</button>
+        <button class="pl-btn pl-reject" onclick="rejectLearning('${esc(c.id)}')" title="Reject permanently" style="font-size:10px;padding:3px 8px;background:#fee2e2;color:#b91c1c;border:0;border-radius:4px;cursor:pointer;font-weight:600">Reject</button>
+      </div>
+    </div>`;
+  }).join('');
+  return `
+  <div class="card" id="${plid}" style="margin-bottom:18px">
+    <div class="card-title card-title-btn" onclick="collapseToggle('${plid}')">
+      <div class="dot" style="background:#a78bfa"></div>Proposed Learnings
+      <span class="card-count">${cands.length} candidate${cands.length === 1 ? '' : 's'} · review &amp; promote to LEARNINGS-LEDGER</span>
+      <span class="collapse-chevron ${collapsed ? 'closed' : 'open'}" style="margin-left:auto;font-size:11px;color:var(--ink-ghost)">${collapsed ? '▸' : '▾'}</span>
+    </div>
+    ${collapsed ? '' : `
+      ${rows}
+      <div style="padding:8px 12px;font-size:10px;color:#94a3b8;background:rgba(167,139,250,0.04);border-top:1px solid rgba(148,163,184,0.12)">
+        Accept queues to <code>~/dashboards/data/user-state/learnings-to-promote.jsonl</code> — next <code>/propose-learning</code> picks it up.
+        Reject tombstones forever. Defer pushes the candidate off-tile for 7 days.
+      </div>
+    `}
+  </div>`;
+}
+
+function acceptLearning(id, snippet) {
+  const row = document.getElementById('pl-row-' + id);
+  if (row) row.style.opacity = '0.4';
+  fetch('/learning/accept', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({id: id, snippet: String(snippet)}),
+  }).then(r => r.json()).then(_ => {
+    _showDismissToast('✓ Queued for /propose-learning review. Tile-tombstoned.');
+    if (row) row.remove();
+  }).catch(_ => {
+    if (row) row.style.opacity = '1';
+    _showDismissToast('✗ Accept failed — check server.');
+  });
+}
+
+function deferLearning(id) {
+  const row = document.getElementById('pl-row-' + id);
+  if (row) row.style.opacity = '0.4';
+  fetch('/learning/defer', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({id: id}),
+  }).then(r => r.json()).then(r => {
+    _showDismissToast(`⏸ Deferred until ${r.until || '7d'}.`);
+    if (row) row.remove();
+  }).catch(_ => {
+    if (row) row.style.opacity = '1';
+    _showDismissToast('✗ Defer failed — check server.');
+  });
+}
+
+function rejectLearning(id) {
+  const row = document.getElementById('pl-row-' + id);
+  if (row) row.style.opacity = '0.4';
+  fetch('/learning/reject', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({id: id}),
+  }).then(r => r.json()).then(_ => {
+    _showDismissToast('✓ Tombstoned permanently — won\\'t resurface on the tile.');
+    if (row) row.remove();
+  }).catch(_ => {
+    if (row) row.style.opacity = '1';
+    _showDismissToast('✗ Reject failed — check server.');
   });
 }
 

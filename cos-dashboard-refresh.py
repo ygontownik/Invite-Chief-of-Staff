@@ -111,6 +111,9 @@ DASHBOARD_PATH      = _HERE / 'templates' / 'cos-dashboard.html'
 STATE_PATH          = _ROOT / 'data' / 'compiled' / 'dashboard-data.json'
 FETCH_SCRIPT        = _HERE / 'cos-dashboard-fetch.py'
 FUNDRAISING_PATH    = _ROOT / 'data' / 'user-state' / 'fundraising.json'
+PROPOSED_LEARNINGS_PATH = _ROOT / 'data' / 'compiled' / 'proposed-learnings.jsonl'
+REJECTED_LEARNINGS_PATH = _ROOT / 'data' / 'user-state' / 'rejected-learnings.json'
+DEFERRED_LEARNINGS_PATH = _ROOT / 'data' / 'user-state' / 'deferred-learnings.json'
 STALE_THRESHOLD_MIN = 90   # trigger background re-fetch if cache older than this
 
 _FUNDRAISING_BUCKETS = ('direct_lps', 'gp_stakes', 'placement_agents', 'strategic')
@@ -152,6 +155,117 @@ def _flatten_fundraising_to_lpdata(fr):
                 'id':          entry.get('id', ''),
             })
     return out
+
+# ── Proposed-learnings (capture-loop candidates) ───────────────
+def _learning_id(snippet: str) -> str:
+    """Stable 8-char hex ID from snippet text. Survives the next ingest so
+    accept/reject/defer state in user-state/*.json keeps matching even if
+    the producer re-emits the same candidate."""
+    h = 5381
+    for ch in (snippet or ''):
+        h = ((h * 33) + ord(ch)) & 0xFFFFFFFF
+    return f'{h:08x}'
+
+def _is_substantive_learning(snippet: str) -> bool:
+    """Drop the candidates that aren't reviewable rules.
+
+    The producer (run_learning_capture_scan in dash-state-hook.py) matches
+    'always X' / 'never X' / 'going forward, X' patterns and truncates at
+    the first period — which catches `_claude_dispatch.py` mid-filename,
+    inline-code endings, comment fragments, etc. Until the producer is
+    tightened (out-of-scope for this tile), filter aggressively here so
+    the user sees only candidates worth a yes/no decision.
+    """
+    s = (snippet or '').strip()
+    if len(s) < 35:                                # too short to be a rule
+        return False
+    if len(s) > 240:                                # likely a paragraph blob, not a rule
+        return False
+    # Embedded newlines or code markers → not a rule, a paste fragment.
+    if '\n' in s or '//' in s or '**:' in s or '*/' in s:
+        return False
+    # Mid-word truncations: ends with "X." where X is lowercase AND the
+    # snippet contains no spaces in the last 8 chars → code-like.
+    if s.endswith('.') and ' ' not in s[-8:]:
+        return False
+    # Transcript-fluff signals — verbal-tic patterns Claude never emits in
+    # rule shape. These are almost always Otter/iMessage capture noise.
+    fluff_signals = (', you know', 'I mean', 'kind of', 'sort of',
+                     "I was interested", "I'm interested",
+                     'gigawatt site', 'as I was saying', 'you know what')
+    low = s.lower()
+    if any(sig.lower() in low for sig in fluff_signals):
+        return False
+    # Must start with a recognizable rule shape — discard mid-sentence pickups.
+    first_token = s.split()[0].lower() if s.split() else ''
+    if first_token not in {'always', 'never', 'going', 'from', 'don\'t',
+                           'do', 'use', 'prefer', 'require', 'avoid',
+                           'the', 'we', 'all', 'every', 'no'}:
+        return False
+    # Require the first letter capitalized OR a clear imperative-rule shape.
+    # Otter transcripts rarely capitalize; Claude rule-emissions almost always do.
+    # Allow lowercase only when the snippet is unmistakably a rule (contains "—"
+    # or starts with "always"/"never" followed by code-fence backticks).
+    if s[0].islower() and not (' — ' in s or '`' in s[:20]):
+        return False
+    return True
+
+def _load_proposed_learnings(today: str, cap: int = 20) -> list[dict]:
+    """Read proposed-learnings.jsonl, de-dupe by snippet, filter out rejected
+    and currently-deferred candidates, score by recency, return up to `cap`
+    for the dashboard tile. Returns [] on any failure — this is a soft
+    surface, never a hard dependency.
+    """
+    if not PROPOSED_LEARNINGS_PATH.exists():
+        return []
+    rejected = set()
+    deferred = {}
+    if REJECTED_LEARNINGS_PATH.exists():
+        try:
+            rejected = set(json.loads(REJECTED_LEARNINGS_PATH.read_text()).get('ids', []))
+        except Exception:
+            pass
+    if DEFERRED_LEARNINGS_PATH.exists():
+        try:
+            deferred = json.loads(DEFERRED_LEARNINGS_PATH.read_text()).get('until', {})
+        except Exception:
+            pass
+    # Read all → keep most-recent per snippet
+    latest_by_snippet = {}
+    try:
+        with open(PROPOSED_LEARNINGS_PATH) as f:
+            for line in f:
+                try:
+                    rec = json.loads(line)
+                except Exception:
+                    continue
+                snip = (rec.get('snippet') or '').strip()
+                if not snip:
+                    continue
+                cap_at = rec.get('captured_at') or ''
+                prev = latest_by_snippet.get(snip)
+                if not prev or (cap_at and cap_at > (prev.get('captured_at') or '')):
+                    latest_by_snippet[snip] = rec
+    except Exception as e:
+        print(f'Warning: could not read proposed-learnings.jsonl: {e}', file=sys.stderr)
+        return []
+    out = []
+    for snip, rec in latest_by_snippet.items():
+        if not _is_substantive_learning(snip):
+            continue
+        lid = _learning_id(snip)
+        if lid in rejected:
+            continue
+        if lid in deferred and deferred[lid] > today:
+            continue
+        out.append({
+            'id':           lid,
+            'snippet':      snip,
+            'capturedAt':   rec.get('captured_at', ''),
+            'sessionId':    rec.get('session_id', ''),
+        })
+    out.sort(key=lambda r: r.get('capturedAt') or '', reverse=True)
+    return out[:cap]
 
 # ── Cache age helpers ──────────────────────────────────────
 def cache_age_minutes(state: dict) -> float | None:
@@ -563,6 +677,13 @@ def assemble_data():
         'originationInbox':       state.get('originationInbox',       []),
         'themes':                 state.get('themes',                 []),
         'routingExceptions':      state.get('routingExceptions',      []),
+        # Proposed-learnings tile — candidates queued by
+        # run_learning_capture_scan() in dash-state-hook.py. Dashboard
+        # surfaces these for one-click accept/reject/defer; full structured
+        # entry then happens via /propose-learning skill.
+        'proposedLearnings':      _load_proposed_learnings(
+                                       state.get('today', now.strftime('%Y-%m-%d'))
+                                  ),
     }
 
     return data, state

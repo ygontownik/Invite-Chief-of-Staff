@@ -4555,6 +4555,12 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_topics_save()
         elif self.path == '/order/save':
             self._handle_order_save()
+        elif self.path == '/learning/accept':
+            self._handle_learning_accept()
+        elif self.path == '/learning/reject':
+            self._handle_learning_reject()
+        elif self.path == '/learning/defer':
+            self._handle_learning_defer()
         elif (self.path.startswith('/batch-jobs/')
               and self.path.split('?')[0].endswith('/force')):
             if not self._is_localhost():
@@ -5312,6 +5318,105 @@ function copyInstructions() {{
         data[column] = [str(x) for x in order][:500]
         _save_order(data)
         self.send_json(200, {'ok': True, 'column': column, 'count': len(data[column])})
+
+    # ── Proposed-learnings tile (Accept / Reject / Defer) ───────
+    # Three POST endpoints feed the dashboard "Proposed Learnings" tile.
+    # The candidates themselves are captured by run_learning_capture_scan()
+    # in dash-state-hook.py → ~/dashboards/data/compiled/proposed-learnings.jsonl
+    # and loaded into the dashboard DATA dict by _load_proposed_learnings()
+    # in cos-dashboard-refresh.py. These handlers persist the user's verdict
+    # to user-state files so the tile filters them on the next render.
+    #
+    # All three are owner-only (the POST dispatcher already enforces auth
+    # tier above). State files are JSON dicts, not JSONL — the tile only
+    # needs the latest verdict per id, not a history.
+
+    def _handle_learning_accept(self):
+        """Promote a candidate to the /propose-learning review queue.
+        Does NOT write to LEARNINGS-LEDGER.yaml directly — that file is
+        canonical and edited via the interactive skill so Yoni gets to
+        author the structured fields (rule_code, domain, confidence, etc).
+        We just append the snippet to a queue the skill picks up first.
+        """
+        body = self._read_json_body()
+        if body is None:
+            self.send_json(400, {'ok': False, 'error': 'invalid JSON'}); return
+        lid = str(body.get('id') or '').strip()
+        snippet = str(body.get('snippet') or '').strip()
+        if not lid or not snippet:
+            self.send_json(400, {'ok': False, 'error': 'id and snippet required'}); return
+        _ensure_user_state_dir()
+        queue_path = Path.home() / 'dashboards' / 'data' / 'user-state' / 'learnings-to-promote.jsonl'
+        try:
+            with open(queue_path, 'a') as fh:
+                fh.write(json.dumps({
+                    'id': lid,
+                    'snippet': snippet,
+                    'accepted_at': datetime.utcnow().isoformat(timespec='seconds') + 'Z',
+                }) + '\n')
+        except Exception as e:
+            self.send_json(500, {'ok': False, 'error': f'queue write failed: {e}'}); return
+        # Also tombstone in rejected so the tile doesn't re-show until the
+        # next ingest. The skill will dequeue + ledger-write asynchronously.
+        rej_path = Path.home() / 'dashboards' / 'data' / 'user-state' / 'rejected-learnings.json'
+        try:
+            cur = json.loads(rej_path.read_text()) if rej_path.exists() else {'ids': []}
+        except Exception:
+            cur = {'ids': []}
+        if lid not in cur['ids']:
+            cur['ids'].append(lid)
+            try:
+                rej_path.write_text(json.dumps(cur, indent=2))
+            except Exception:
+                pass
+        self.send_json(200, {'ok': True, 'queued': True, 'id': lid})
+
+    def _handle_learning_reject(self):
+        """Tombstone a candidate — never re-surface on the tile."""
+        body = self._read_json_body()
+        if body is None:
+            self.send_json(400, {'ok': False, 'error': 'invalid JSON'}); return
+        lid = str(body.get('id') or '').strip()
+        if not lid:
+            self.send_json(400, {'ok': False, 'error': 'id required'}); return
+        _ensure_user_state_dir()
+        rej_path = Path.home() / 'dashboards' / 'data' / 'user-state' / 'rejected-learnings.json'
+        try:
+            cur = json.loads(rej_path.read_text()) if rej_path.exists() else {'ids': []}
+        except Exception:
+            cur = {'ids': []}
+        if lid not in cur['ids']:
+            cur['ids'].append(lid)
+        try:
+            rej_path.write_text(json.dumps(cur, indent=2))
+        except Exception as e:
+            self.send_json(500, {'ok': False, 'error': f'write failed: {e}'}); return
+        self.send_json(200, {'ok': True, 'count': len(cur['ids']), 'id': lid})
+
+    def _handle_learning_defer(self):
+        """Defer a candidate — falls off the tile for 7 days (default) or
+        the explicit `until` date in the body."""
+        body = self._read_json_body()
+        if body is None:
+            self.send_json(400, {'ok': False, 'error': 'invalid JSON'}); return
+        lid = str(body.get('id') or '').strip()
+        until = str(body.get('until') or '').strip()
+        if not lid:
+            self.send_json(400, {'ok': False, 'error': 'id required'}); return
+        if not until:
+            until = (datetime.utcnow() + timedelta(days=7)).strftime('%Y-%m-%d')
+        _ensure_user_state_dir()
+        def_path = Path.home() / 'dashboards' / 'data' / 'user-state' / 'deferred-learnings.json'
+        try:
+            cur = json.loads(def_path.read_text()) if def_path.exists() else {'until': {}}
+        except Exception:
+            cur = {'until': {}}
+        cur.setdefault('until', {})[lid] = until
+        try:
+            def_path.write_text(json.dumps(cur, indent=2))
+        except Exception as e:
+            self.send_json(500, {'ok': False, 'error': f'write failed: {e}'}); return
+        self.send_json(200, {'ok': True, 'until': until, 'id': lid})
 
     def _handle_item_undelete(self):
         body = self._read_json_body()

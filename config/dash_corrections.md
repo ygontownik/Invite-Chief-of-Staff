@@ -2556,3 +2556,37 @@ for anything getting a launchd job.
 for `| None` / `list[`. If found, add `from __future__ import annotations` at the
 top (after the shebang/docstring, before other imports). `coordination.py` is the
 template — it already carries this guard.
+
+### 2026-05-21 — Dashboard "Accept" buttons must NOT write canonical YAML directly
+
+Pattern from the Proposed Learnings tile: when a tile button moves a candidate
+from "review queue" to "accepted", the handler should **not** edit the canonical
+LEARNINGS-LEDGER.yaml (or drive-docs.yaml, or any other YAML registry) directly
+from the HTTP handler. Instead, append the candidate to a `user-state/<thing>-to-promote.jsonl`
+queue file and let the interactive skill (`/propose-learning`, `/sync-system`,
+etc.) author the structured entry. Reason: the canonical YAML carries fields
+(rule_code, domain, confidence, source_file, applies_to, enforced_by) that the
+tile click can't supply, and partial entries downstream break sync_learnings.
+
+**How to apply**: any new "Accept" / "Promote" / "Approve" button → POST handler
+writes to a queue file in `data/user-state/`, never to a canonical YAML/JSON
+under `config/` or `docs/`. The skill that owns the canonical file dequeues
+asynchronously. The Reject path can write the tombstone directly because
+rejection has no structured fields to author.
+
+### 2026-05-21 — When tile filter and producer disagree, fix the producer too
+
+Discovered while building the Proposed Learnings tile: `run_learning_capture_scan`
+in dash-state-hook.py produced 349 records but only 24 unique snippets, and most
+truncated mid-word at the first period (e.g. "always use `_claude_dispatch."). I
+added an aggressive tile-side filter (`_is_substantive_learning` in
+cos-dashboard-refresh.py) that cut 24 → 4 reviewable candidates. This works as a
+workaround, but per Operating Principle #8 ("Fix the source, not just the
+symptom") the producer's truncation heuristic should ALSO be tightened so the
+JSONL stops growing with noise — otherwise the filter will keep getting hit and
+the JSONL will keep bloating. The follow-up is tracked as ACTION-002 in the
+2026-05-21 CHANGELOG entry for the tile.
+
+**How to apply**: whenever a dashboard filter pass throws away >50% of source
+records as noise, file a follow-up task for the upstream producer. Don't let the
+tile filter become permanent infrastructure for a fixable producer bug.
