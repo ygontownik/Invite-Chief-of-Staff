@@ -308,6 +308,7 @@ def process_folder(
     deal_aliases: list[tuple[str, re.Pattern]],
     apply: bool,
     force: bool,
+    ignore_atime: bool = False,
 ) -> dict:
     """Process a single top-level folder. Return per-folder counters."""
     counters = {
@@ -335,8 +336,14 @@ def process_folder(
             print(f"  skip (just modified): {f.name}")
             continue
 
-        # LF1/LF3 — 24h since user last touched (atime)
-        if (now - st.st_atime) < STALE_AFTER_SEC:
+        # LF1/LF3 — skip files the user is actively working with.
+        # Refined heuristic: only treat atime as a "user is using it" signal
+        # when atime is meaningfully later than mtime (i.e. the file was
+        # *read* after it landed on disk, not just stat-bumped by Spotlight,
+        # the organizer's own scan, or background indexing). Files where
+        # atime ≈ mtime always pass the gate — they're cold-on-arrival.
+        if not ignore_atime and (now - st.st_atime) < STALE_AFTER_SEC \
+                and (st.st_atime - st.st_mtime) > 60:
             counters["skipped"] += 1
             continue
 
@@ -438,6 +445,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="re-route files already recorded in state")
     ap.add_argument("--list", action="store_true",
                     help="show what would be moved without writing state")
+    ap.add_argument("--ignore-atime", action="store_true",
+                    help="bypass LF3 atime gate (for backlog cleanup runs)")
     args = ap.parse_args(argv)
 
     folders = args.folder if args.folder else DEFAULT_FOLDERS
@@ -463,6 +472,7 @@ def main(argv: list[str] | None = None) -> int:
             c = process_folder(
                 folder, state, junk_pats, personal_pats, deal_aliases,
                 apply=apply, force=args.force,
+                ignore_atime=args.ignore_atime,
             )
             archived = archive_sweep(folder, apply=apply)
             c_total = {**c, "archived": archived}
