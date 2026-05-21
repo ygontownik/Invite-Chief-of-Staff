@@ -775,6 +775,117 @@ def run_artifact_pull(dry_run: bool = False) -> bool:
         return False
 
 
+def _learning_normalize(s: str) -> str:
+    """Normalize a snippet for dedup comparison (lowercase, strip punct, collapse ws)."""
+    import re as _re
+    s = (s or "").lower()
+    s = _re.sub(r"[^\w\s]", " ", s)
+    s = _re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+_LEARNING_STOPWORDS = {
+    "this", "that", "with", "from", "your", "their", "have", "been",
+    "must", "should", "could", "would", "will", "they", "them", "than",
+    "then", "into", "onto", "such", "some", "what", "when", "where",
+    "which", "while", "also", "just", "very", "more", "most", "much",
+    "only", "even", "ever", "after", "before", "every",
+}
+
+
+def _learning_content_tokens(s: str) -> set:
+    """Content tokens (>=4 chars, not stopwords) from a normalized string."""
+    return {w for w in (s or "").split() if len(w) >= 4 and w not in _LEARNING_STOPWORDS}
+
+
+def _learning_load_ledger_terms():
+    """Return list of (full_normalized, content_token_set) per ledger entry —
+    title+rule body concatenated. Used for substring + token-overlap dedup."""
+    try:
+        import yaml as _yaml
+    except ImportError:
+        return []
+    p = Path.home() / "dashboards/docs/LEARNINGS-LEDGER.yaml"
+    if not p.exists():
+        return []
+    try:
+        data = _yaml.safe_load(p.read_text())
+    except Exception:
+        return []
+    out = []
+    for L in (data.get("learnings") or []):
+        parts = []
+        for k in ("title", "rule"):
+            v = L.get(k) or ""
+            if isinstance(v, str):
+                parts.append(v)
+        for a in (L.get("applies_to") or []):
+            parts.append(str(a))
+        full = _learning_normalize(" ".join(parts))
+        if len(full) >= 8:
+            out.append((full, _learning_content_tokens(full)))
+    return out
+
+
+def _learning_load_queue_norms():
+    """Return set of normalized snippets already in proposed-learnings.jsonl."""
+    import json as _json
+    q = Path.home() / "dashboards/data/compiled/proposed-learnings.jsonl"
+    if not q.exists():
+        return set()
+    out = set()
+    try:
+        for line in q.read_text(errors="ignore").splitlines():
+            if not line.strip():
+                continue
+            try:
+                r = _json.loads(line)
+            except Exception:
+                continue
+            s = r.get("snippet")
+            if isinstance(s, str):
+                n = _learning_normalize(s)
+                if n:
+                    out.add(n)
+    except Exception:
+        pass
+    return out
+
+
+def _learning_is_transcript_like(text: str) -> bool:
+    """Filler-word density >5 per 100 chars → likely Otter-style transcript prose."""
+    import re as _re
+    if not text or len(text) < 80:
+        return False
+    fillers = _re.findall(
+        r"\b(you know|i mean|sort of|kind of|um|uh)\b",
+        text, _re.IGNORECASE,
+    )
+    return (len(fillers) * 100.0 / len(text)) > 5.0
+
+
+def _learning_is_code_comment_line(text: str, match_start: int) -> bool:
+    """True if the source line that contains the matched span starts with a
+    code-comment marker (//, #, /*, *) after stripping leading whitespace."""
+    line_start = text.rfind("\n", 0, match_start) + 1
+    line_end = text.find("\n", match_start)
+    if line_end < 0:
+        line_end = len(text)
+    line = text[line_start:line_end].lstrip()
+    return line.startswith(("//", "#", "/*", "*"))
+
+
+def _learning_is_imperative(snippet: str) -> bool:
+    """Snippet must carry imperative / future-conditional structure."""
+    import re as _re
+    s = (snippet or "").lower()
+    return bool(_re.search(
+        r"\b(always|never|must|going forward|from now on|the rule is|new rule|"
+        r"don'?t|do not|make sure|ensure)\b",
+        s,
+    ))
+
+
 def run_learning_capture_scan():
     """Scan the most recent Claude Code session transcript for rule-shaped
     statements and queue them for the morning briefing's "Review proposed
@@ -785,6 +896,13 @@ def run_learning_capture_scan():
     Queue: ~/dashboards/data/compiled/proposed-learnings.jsonl (append-only)
 
     Cheap — pure file I/O + regex. No LLM calls.
+
+    LC1 filters (L0047) applied per candidate before emit:
+      1. Dedupe vs existing LEARNINGS-LEDGER rule fragments (substring match)
+      2. Dedupe vs existing proposed-learnings.jsonl entries (cross-session)
+      3. Exclude Otter / transcript-density user turns
+      4. Exclude matches whose source line starts with code-comment marker
+      5. Require imperative or future-conditional structure
     """
     import re as _re
     import json as _json
@@ -830,6 +948,10 @@ def run_learning_capture_scan():
         _re.compile(r"\bthe rule is[,:]?\s+([^.\n]{20,200}\.)", _re.IGNORECASE),
     ]
 
+    # LC1: load dedup sources once
+    ledger_terms = _learning_load_ledger_terms()
+    queue_norms = _learning_load_queue_norms()
+
     proposed = []
     newest_uuid = last_scanned
     newest_ts = last_ts
@@ -860,22 +982,62 @@ def run_learning_capture_scan():
             if not isinstance(text, str) or len(text) < 30:
                 continue
 
+            # LC1 filter 3: skip transcript-like user turns (Otter content pasted in)
+            if _learning_is_transcript_like(text):
+                continue
+
             for pattern in PATTERNS:
                 for m in pattern.finditer(text):
                     snippet = m.group(0).strip()
-                    # Dedup within the session
-                    if any(p.get("snippet") == snippet and p.get("session_id") == session_id
-                           for p in proposed):
-                        continue
                     # Skip if it looks like a question rather than a directive
                     if "?" in snippet[-20:]:
                         continue
+
+                    # LC1 filter 5: require imperative structure
+                    if not _learning_is_imperative(snippet):
+                        continue
+
+                    # LC1 filter 4: skip if source line is a code comment
+                    if _learning_is_code_comment_line(text, m.start()):
+                        continue
+
+                    norm = _learning_normalize(snippet)
+                    if not norm or len(norm) < 8:
+                        continue
+
+                    # LC1 filter 1: dedupe against existing ledger rules — substring
+                    # OR ≥60% token-overlap on content words (paraphrase dedup).
+                    snip_tokens = _learning_content_tokens(norm)
+                    is_known = False
+                    for full, ledger_toks in ledger_terms:
+                        if norm in full or full in norm:
+                            is_known = True
+                            break
+                        if len(snip_tokens) >= 2 and ledger_toks:
+                            shared = snip_tokens & ledger_toks
+                            denom = min(len(snip_tokens), len(ledger_toks))
+                            if denom and len(shared) / denom >= 0.6:
+                                is_known = True
+                                break
+                    if is_known:
+                        continue
+
+                    # LC1 filter 2: dedupe against existing queue entries (cross-session)
+                    if norm in queue_norms:
+                        continue
+
+                    # Dedup within this scan pass
+                    if any(_learning_normalize(p.get("snippet", "")) == norm
+                           for p in proposed):
+                        continue
+
                     proposed.append({
                         "session_id": session_id,
                         "ts": t_mtime,
                         "snippet": snippet[:400],
                         "captured_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                     })
+                    queue_norms.add(norm)  # prevent dup emit within this run
 
     if proposed:
         queue_path.parent.mkdir(parents=True, exist_ok=True)

@@ -975,7 +975,15 @@ def generate_project_instructions(deal_name, deal_id, lead, support,
 # ── LOCAL FILE OPERATIONS ─────────────────────────────────────────────────────
 
 def update_compile_writeback(deal_id, file_id):
-    """Add new deal to compile_drive_writeback.py."""
+    """Add or update a deal mapping in compile_drive_writeback.py.
+
+    2026-05-21 (L0049/DR1 fix, sibling to update_deal_system_data): If a
+    same-deal_id entry already exists, it almost certainly references an
+    orphan Drive file from a prior failed /new-deal run. Overwrite it with
+    THIS run's file_id rather than skipping — the alternative leaves the
+    mapping pointing at a trashed/orphan file while THIS run creates a new
+    one that never gets registered.
+    """
     if not COMPILE_WRITEBACK.exists():
         print(f"   ⚠️  {COMPILE_WRITEBACK} not found — skipping")
         return
@@ -983,8 +991,21 @@ def update_compile_writeback(deal_id, file_id):
     content = COMPILE_WRITEBACK.read_text()
     marker = "    # ADD NEW DEAL HERE:"
 
-    if deal_id in content:
-        print(f"   ⚠️  {deal_id} already in compile_drive_writeback.py — skipping")
+    existing_re = re.compile(
+        rf"^\s*'{re.escape(deal_id)}'\s*:\s*'([^']+)'\s*,.*$",
+        re.MULTILINE,
+    )
+    m = existing_re.search(content)
+    if m:
+        old_id = m.group(1)
+        if old_id == file_id:
+            print(f"   ✓ {deal_id} already in compile_drive_writeback.py with current ID")
+            return
+        new_line = f"    '{deal_id}': '{file_id}',"
+        content = existing_re.sub(new_line, content, count=1)
+        COMPILE_WRITEBACK.write_text(content)
+        print(f"   ⚠️  Overwrote {deal_id} in compile_drive_writeback.py "
+              f"(old: {old_id} → new: {file_id})")
         return
 
     if marker in content:
