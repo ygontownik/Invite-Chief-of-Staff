@@ -2195,41 +2195,34 @@ def main():
         print(f"Mode: --id limited to {target_ids}", flush=True)
     print("", flush=True)
 
-    # Auth
+    # Auth (silent; banner printed after pre-check confirms work to do)
     try:
         token = refresh_token()
-        print("✅  Token refreshed\n", flush=True)
     except Exception as e:
         print(f"❌  Token refresh failed: {e}", file=sys.stderr)
         sys.exit(1)
 
-    # Load pipeline cross-reference (injected into every Claude call)
+    # Load pipeline cross-reference + deal map (silent for same reason)
     pipeline_context = load_pipeline_context()
-    if pipeline_context:
-        print(f"✅  Pipeline context loaded ({len(pipeline_context)} chars)\n", flush=True)
-    else:
-        print("⚠️   No pipeline context found (deal-pipeline-data.json missing)\n", flush=True)
 
-    # Build deal_id → transcripts_folder_id lookup for post-processing routing
     _deal_data_path = Path.home() / "cos-pipeline" / "tools" / "deal-system-data.json"
     deal_transcripts_map: dict[str, str] = {}
+    _deal_map_err: str | None = None
     try:
         _dd = json.loads(_deal_data_path.read_text())
         for _d in _dd.get("deals", []):
             if _d.get("deal_id") and _d.get("transcripts_folder_id"):
                 deal_transcripts_map[_d["deal_id"]] = _d["transcripts_folder_id"]
-        if deal_transcripts_map:
-            print(f"✅  Deal transcripts map: {len(deal_transcripts_map)} deals\n", flush=True)
     except Exception as _de:
-        print(f"⚠️   Could not load deal transcripts map: {_de}\n", flush=True)
+        _deal_map_err = str(_de)
 
-    # Load dedup tracker
+    # Load dedup tracker (silent)
     tracker = load_dedup()
-    print(f"Dedup tracker: {len(tracker)} previously processed files\n", flush=True)
 
     # ── Fast-exit pre-check ───────────────────────────────────────────────────
-    # Before loading pipeline context (heavy) do a quick scan with the date
-    # filter to count unprocessed candidates. If zero, nothing to do.
+    # Before printing the setup banner do a quick scan with the date filter to
+    # count unprocessed candidates. If zero, silent exit — most 15-min cron
+    # runs land here, so a noisy banner is pure log spam.
     _sources = _ts.get_transcript_sources(_CTX, _DOCS)
     if not force and not target_ids:
         _candidate_count = 0
@@ -2248,9 +2241,20 @@ def main():
                 except Exception:
                     _candidate_count += 1
         if _candidate_count == 0:
-            print(f"PRE-CHECK: 0 unprocessed files in scan window. Nothing to do.", flush=True)
             sys.exit(0)
-        print(f"PRE-CHECK: {_candidate_count} candidate file(s) found — proceeding.\n", flush=True)
+        print(f"PRE-CHECK: {_candidate_count} candidate file(s) found — proceeding.", flush=True)
+
+    # Setup banner — only printed when there's actual work (or force/--id mode).
+    print("✅  Token refreshed", flush=True)
+    if pipeline_context:
+        print(f"✅  Pipeline context loaded ({len(pipeline_context)} chars)", flush=True)
+    else:
+        print("⚠️   No pipeline context found (deal-pipeline-data.json missing)", flush=True)
+    if deal_transcripts_map:
+        print(f"✅  Deal transcripts map: {len(deal_transcripts_map)} deals", flush=True)
+    elif _deal_map_err:
+        print(f"⚠️   Could not load deal transcripts map: {_deal_map_err}", flush=True)
+    print(f"Dedup tracker: {len(tracker)} previously processed files", flush=True)
 
     stats = {
         "processed": 0,
