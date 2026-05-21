@@ -3489,7 +3489,7 @@ function rejectLearning(id) {
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({id: id}),
   }).then(r => r.json()).then(_ => {
-    _showDismissToast('✓ Tombstoned permanently — won\\'t resurface on the tile.');
+    _showDismissToast('✓ Tombstoned permanently — won\'t resurface on the tile.');
     if (row) row.remove();
   }).catch(_ => {
     if (row) row.style.opacity = '1';

@@ -289,6 +289,49 @@ def age_label(minutes: float | None) -> str:
     return f'{int(minutes/60)}h {int(minutes%60)}m ago'
 
 # ── HTML injection ─────────────────────────────────────────
+def _check_inline_js_syntax(html: str) -> str | None:
+    """Run `node --check` against every inline <script> block in `html`.
+
+    Returns None if all blocks parse, or a printable error string identifying
+    the first failing block. If `node` is not on PATH, returns None
+    (fail-open — the dashboard refresh must not require a node install).
+
+    Why: cos-dashboard.template.html is one giant <script>. A single bad
+    escape (e.g. `'won\\'t'` instead of `'won\'t'`) throws SyntaxError at
+    parse time, killing the React mount on every dashboard route while
+    curl still returns HTTP 200 + the full payload. This gate catches the
+    failure at render time instead of at user-eyeballs time.
+    """
+    import re, tempfile, shutil
+    if not shutil.which('node'):
+        return None
+    scripts = re.findall(r'<script[^>]*>(.*?)</script>', html, re.DOTALL)
+    for idx, src in enumerate(scripts):
+        # Skip JSON-LD / non-JS script blocks; they have no parse risk for us.
+        if not src.strip():
+            continue
+        with tempfile.NamedTemporaryFile('w', suffix='.js', delete=False) as f:
+            f.write(src)
+            tmp_path = f.name
+        try:
+            r = subprocess.run(
+                ['node', '--check', tmp_path],
+                capture_output=True, text=True, timeout=15,
+            )
+            if r.returncode != 0:
+                # node prints `<path>:<line>` then a caret line then the
+                # SyntaxError. Trim absolute path to just the basename for
+                # readability; keep the rest verbatim.
+                err = r.stderr.replace(tmp_path, f'<inline-script-{idx}>')
+                return err.strip()
+        except subprocess.TimeoutExpired:
+            return f'node --check timed out on inline script {idx}'
+        finally:
+            try: Path(tmp_path).unlink()
+            except Exception: pass
+    return None
+
+
 def find_data_block(html: str):
     """Return (start_idx, end_idx) of the full 'const DATA = { ... }; // __END_DATA__' block.
 
@@ -716,6 +759,19 @@ def main():
 
     data_js = 'const DATA = ' + json.dumps(data, indent=2, ensure_ascii=False) + '; // __END_DATA__'
     rendered = html[:s] + data_js + html[e:]
+
+    # Syntax-check the inline <script> blocks before overwriting the live
+    # rendered file. 2026-05-21: a single backslash escape (`won\\'t`) in a
+    # _showDismissToast literal threw SyntaxError at parse, killing the React
+    # mount and blanking every dashboard route while curl still returned 200.
+    # If `node` is unavailable we skip silently — refresh must not depend on
+    # node being installed.
+    syntax_err = _check_inline_js_syntax(rendered)
+    if syntax_err:
+        print(f'ERROR: rendered HTML has JS syntax error — NOT overwriting '
+              f'{DASHBOARD_RENDERED.name}:\n{syntax_err}', file=sys.stderr)
+        sys.exit(2)
+
     DASHBOARD_RENDERED.write_text(rendered)
     # Legacy mirror — keep .html fresh during transition so rollback by
     # reverting server.py constants stays a single-step undo.

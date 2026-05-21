@@ -350,6 +350,33 @@ that operates on `lines[]` by index. Read the target line numbers
 with `sed -n '<N>p'` first, confirm the exact content, then rewrite
 the slice. Never use `sed -i '' '<N>a\` for JS edits.
 
+### 2026-05-21 — One bad escape in the inline React bundle blanks every dashboard route
+
+`cos-dashboard.template.html` is one giant `<script>` block. A single
+syntax error anywhere in it (e.g. `'won\\'t'` instead of `'won\'t'`
+in a `_showDismissToast(...)` literal) throws `SyntaxError: missing
+) after argument list` during initial parse. The browser never
+evaluates the rest of the bundle, so React never mounts and every
+route that serves `cos-dashboard.rendered.html` — HQ, Personal,
+Pipeline, Deal Ideas, Briefing — renders as a blank page with valid
+HTML. The server returns 200 with the expected payload size, so
+curl-based "is the dashboard up?" probes pass. Only the browser
+console shows the failure.
+
+**How to apply**:
+1. When the user reports "dashboard not showing anything" and curl
+   returns 200 with the expected payload size, the next step is to
+   open the page in Chrome (or run `node --check` on each `<script>`
+   block extracted from the rendered HTML) — don't keep debugging
+   the data layer.
+2. Any apostrophe inside a single-quoted JS literal in the template
+   must be `\'`, not `\\'`. When in doubt, switch the literal to a
+   double-quoted string or a backtick template literal.
+3. Consider adding a `node --check` step to
+   `cos-dashboard-refresh.py` over the freshly-rendered HTML's
+   inline scripts so a future syntax-breaking edit fails the
+   refresh instead of silently shipping a blank dashboard.
+
 ---
 
 ## TOPIC — INFORMATION ARCHITECTURE
