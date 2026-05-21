@@ -2712,3 +2712,79 @@ for in PR review.
 
 **Reference design:** `docs/PLAN-synthesis-pane.md` (committed
 2026-05-21).
+
+---
+
+## TOPIC — REGEX WORD BOUNDARIES AT UNDERSCORES
+
+### 2026-05-21 — `\b` doesn't fire between letter and underscore
+
+Pattern: `\b(deal_name)\b` fails to match `deal_name_<suffix>` filenames
+because `_` is a word character in regex. Between `name` (word) and `_`
+(word), there is no boundary — `\b` fails.
+
+This bites any deal alias in `drive-docs.yaml` whose regex ends with `\b`
+and is expected to match files from capture pipelines that produce
+`<slug>_<title>.md` style filenames.
+
+**Detection:** `grep "alias_regex:" cos-pipeline-config-*/drive-docs.yaml`
+— any pattern ending in `)\b` is suspect. Verify with:
+```python
+import re
+re.search(r'\b(deal_name)\b', 'deal_name_v3.docx')  # None — BROKEN
+re.search(r'\b(deal_name)(?![a-z])', 'deal_name_v3.docx')  # match — fixed
+```
+
+**Fix:** replace trailing `\b` with `(?![a-z])` (or `(?![a-z0-9])` if
+numeric suffixes shouldn't match either). The lookahead matches when not
+followed by a lowercase letter — allows `_`, digit, hyphen, space,
+end-of-string. False-positive guard preserved: `deal_name` won't match
+`deal_namespace_review.pdf` because `s` is a lowercase letter.
+
+**Audited 2026-05-21:** 7 of 9 deal aliases in tomac config had this bug
+— only `align_infra` and `fit` had been fixed/structured differently.
+The other 7 (cholla, pngts, unitil, bbeh, pfs, thunderhead, gridfree)
+should be patched the same way for routing to match underscored
+capture-pipeline filenames.
+
+## TOPIC — SYMLINK WRITES TO PUBLIC-FIRST CANONICAL PATHS
+
+### 2026-05-21 — `Write` tool refuses through symlinks; edit canonical
+
+When `Write`/`Edit` tools error with "Refusing to write through symlink,"
+the file is symlinked from `~/dashboards/app/` or `~/dashboards/data/` to
+the canonical location in `~/cos-pipeline/`. Always edit the canonical
+target path directly (`~/cos-pipeline/<file>`), not the symlinked path
+in dashboards.
+
+Affected directories (per the public-first split, DECISIONS 2026-05-04):
+- `~/dashboards/app/cos-dashboard-fetch.py` → `~/cos-pipeline/cos-dashboard-fetch.py`
+- `~/dashboards/app/cos-dashboard-server.py` → `~/cos-pipeline/cos-dashboard-server.py`
+- `~/dashboards/app/templates/cos-dashboard.template.html` → `~/cos-pipeline/templates/cos-dashboard.template.html`
+- Other server-side files similarly.
+
+The dashboards-side `cos-dashboard.html` is NOT a symlink — it's the
+rendered output of refresh.py. Editing it has no persistence effect;
+next refresh overwrites from `.template.html`. See related TOPIC in this
+file: "TEMPLATE FILE PRECEDENCE."
+
+## TOPIC — TIER 2 SYNTHESIS DEPENDS ON TIER 1 CALIBRATION
+
+### 2026-05-21 — Don't tune the LLM prompt before tuning the scorer
+
+For any two-tier "rules + LLM-augmentation" feature, the LLM's output
+quality is downstream of what the rules surface. If the LLM is producing
+weak or unfocused synthesis, the most likely cause is the rules
+surfacing the wrong items (or wrong order), not the prompt being weak.
+
+**Observed example:** Phase E calibration (drop [RESOLVED] filter, add
+tie-breaker by due_date, lower Personal threshold) was applied to
+prioritize.py. The same Claude prompt then produced markedly sharper
+prose — "The easiest first move today is Jonathan — send the reply"
+vs the pre-calibration "The day centers on clearing a backlog of
+overdue outreach." The LLM didn't change; the input did.
+
+**Tuning order:** (1) calibrate Tier 1 weights/filters first, (2)
+re-run Tier 2, (3) only then iterate on the Tier 2 prompt if the prose
+is still off. Skipping straight to prompt tuning when ranking is the
+problem produces compensating prompts that grow brittle.
