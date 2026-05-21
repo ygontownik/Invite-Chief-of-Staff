@@ -29,14 +29,15 @@ python3 -c "
 import sys
 sys.path.insert(0, '/Users/ygontownik/cos-pipeline/tools')
 from coordination import lock
-with lock('wrap', timeout=60):
+with lock('wrap', holder='wrap-skill', timeout_seconds=60):
     print('wrap lock acquired')
 "
 ```
 
-If lock can't be acquired in 60s, another /wrap is running in a parallel chat.
-Wait for it to finish, then re-invoke /wrap — the second run will read the
-first's output and add this session's incremental delta.
+If lock can't be acquired in 60s, another /wrap is running in a parallel chat
+(or `wrap_auto.sh` cron is mid-run). Wait for it to finish, then re-invoke
+/wrap — the second run will read the first's output and add this session's
+incremental delta.
 
 ---
 
@@ -130,6 +131,27 @@ extraction; it reads the already-extracted artifacts:
 
 If those buffers contain new entries since T0, surface them in the handoff.
 
+### 4b. Pick up daily-briefing + dashboard-state changes since T0
+
+Two additional content surfaces feed the catch-up doc but live in Drive,
+not local JSONL:
+
+```python
+# Personal Briefing Log (~daily intelligence digest)
+BRIEFING_LOG_ID  = "14wE3L6ZRsjhhx2psRKbaHS5i0kgEoteWYZusqETiAZ0"
+# Dashboard State (rewritten by /dash-close after substantive dashboard work)
+DASHBOARD_STATE_ID = "1TWhl8GcFO2l3mD7jCpaEQk8fGRurW1YD-2v529DgQ3Q"
+```
+
+For each, use the Drive Docs API:
+1. Get the doc's `modifiedTime` via `drive.files().get(fileId=ID, fields='modifiedTime')`
+2. If modifiedTime > T0, export plain text via `docs.documents().get(documentId=ID)`
+3. Extract any sections dated after T0 (Briefing Log is append-only; Dashboard State is a fresh write per /dash-close)
+4. Summarize into SESSION-HANDOFF §2 "intelligence + dashboard changes since last wrap"
+
+This is read-only — no LLM, no writes — just adds those two streams to the
+handoff. Cost: 2 Drive API calls + 2 Docs API exports per /wrap.
+
 ---
 
 ## STEP 5 — Surgical doc updates
@@ -203,36 +225,37 @@ Structure (mirror the 2026-05-21 version):
 
 ---
 
-## STEP 6 — Run ALL derived-view regenerators (parallel where independent)
+## STEP 6 — Derived-view regen via composite skills (no duplication)
 
-```bash
-# 6a. Propagate LEARNINGS edits to CLAUDE.md + MEMORY.md + Drive gdocs
-python3 ~/cos-pipeline/tools/sync_learnings.py --apply --push-drive &
-LEARNINGS_PID=$!
+`/wrap` is the orchestrator. Sync work is delegated to the canonical
+composites — if they gain steps later, `/wrap` picks them up automatically.
 
-# 6b. Propagate drive-docs.yaml to GAS scripts + local_file_router + deal-system-data.json
-python3 ~/cos-pipeline/tools/sync_registry.py --apply &
-REGISTRY_PID=$!
-
-# 6c. Push 5 narrative gdocs to Drive (README, System Reference, User Manual,
-#     Skills Catalog, My Skills)
-python3 ~/cos-pipeline/tools/sync_system_docs.py --apply &
-SYSDOCS_PID=$!
-
-# 6d. Regenerate SYSTEM-MAP.md (auto-picks up new periodic jobs + drive-docs entries)
-python3 ~/cos-pipeline/tools/generate-system-map.py &
-SYSMAP_PID=$!
-
-wait $LEARNINGS_PID $REGISTRY_PID $SYSDOCS_PID $SYSMAP_PID
-echo "All 4 sync regenerators done"
+```
+6a. Invoke /sync-system
+    (runs sync_registry + sync_learnings + sync_system_docs internally,
+     all 3 in sequence with coordination locks)
 ```
 
-If any of those exit non-zero, capture the error, log it, but don't abort
-the rest of /wrap (skip-on-failure pattern).
+After /sync-system completes, regenerate the auto-generated docs that
+aren't part of the canonical-source pipeline:
+
+```bash
+# SYSTEM-MAP.md — scans live system state, not a canonical-source view
+python3 ~/cos-pipeline/tools/generate-system-map.py
+```
+
+Skip-on-failure: if /sync-system reports any step failed, capture the error
+in the SESSION-HANDOFF §4b but continue with the rest of /wrap.
+
+**Cross-reference with periodic cadences:** dash-state-hook already runs
+several syncs on intervals (ref_doc_sync 2h, project_inst_sync 24h,
+chat_capture 4h, artifact_pull 4h, skill_telemetry 30min). /wrap doesn't
+re-trigger those — instead surfaces "X has not run in N hours" warnings
+if any have stalled (see Step 8 LaunchAgent + cadence check).
 
 ---
 
-## STEP 7 — Heavy lifting (the things you'd forget to run)
+## STEP 7 — Heavy lifting (things you'd forget to run)
 
 ```bash
 # 7a. Log compaction — archive entries >30d old across all deals
@@ -240,33 +263,55 @@ python3 ~/cos-pipeline/tools/log_compaction.py
 
 # 7b. Orphan Drive cleanup — trash IDs flagged in _orphan_ids_pending_cleanup
 python3 ~/cos-pipeline/tools/orphan_drive_cleanup.py --apply
-
-# 7c. Reference integrity audit — every Drive ID in drive-docs.yaml resolves?
-python3 ~/cos-pipeline/tools/reference_integrity_audit.py 2>&1 | tail -20
 ```
 
-If reference_integrity_audit surfaces broken IDs, ADD them to outstanding in
-the handoff (don't try to auto-fix — broken IDs need human judgment).
+**Note:** `reference_integrity_audit.py` is NOT called here standalone —
+it's invoked by `/check-system` in Step 8. Single run, no duplication.
 
 ---
 
-## STEP 8 — Verification + health snapshot
+## STEP 8 — Verification via composite skill
 
-```bash
-# 8a. Run /check-system composite
-# (coordination + system_health + sync timestamps)
+```
+8a. Invoke /check-system
+    (runs coordination.py status + system_health.py + 
+     reference_integrity_audit.py)
 ```
 
-Invoke the /check-system skill. Capture the output. Diff against the
-last-wrap.json's stored health counts to surface "we went from X warns
-to Y warns" or new fails.
+Capture the output. Diff against `last-wrap.json` health counts to surface
+"warns went from X → Y" or "new fail: <name>" deltas.
 
 ```bash
 # 8b. LaunchAgent state check — any newly down?
 launchctl list | grep -iE "tomac|yoni|claude" | awk '$2 != "0" && $2 != "-" {print}'
+
+# 8c. Cadence staleness check — are scheduled syncs falling behind?
+python3 << 'PYEOF'
+import sys
+sys.path.insert(0, '/Users/ygontownik/cos-pipeline/tools')
+from coordination import last_run_seconds_ago
+CADENCES = {
+    'sync_registry.py': 24*3600,          # daily floor
+    'sync_learnings.py': 24*3600,         # daily floor
+    'sync_system_docs.py': 24*3600,       # daily floor
+    'log_compaction.py': 7*24*3600,       # weekly floor
+    'reference_integrity_audit.py': 24*3600,
+}
+stale = []
+for script, threshold in CADENCES.items():
+    s = last_run_seconds_ago(script)
+    if s is None or s > threshold:
+        h = (s or 0) / 3600
+        stale.append(f"{script}: last ran {h:.1f}h ago (threshold {threshold/3600}h)")
+if stale:
+    print("STALE syncs (consider re-running):")
+    for line in stale: print(f"  {line}")
+else:
+    print("All syncs within cadence.")
+PYEOF
 ```
 
-Flag any newly down LaunchAgents in the handoff.
+Flag any newly-down LaunchAgents or stale syncs in the handoff §4b.
 
 ---
 
