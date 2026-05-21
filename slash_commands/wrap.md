@@ -99,14 +99,42 @@ python3 ~/cos-pipeline/tools/coordination.py status
 
 ## STEP 4 — Cross-chat reconciliation (parallel sessions)
 
-```bash
-PROJECTS_DIR="$HOME/.claude/projects/-Users-ygontownik-Documents-Claude"
-THIS_SESSION_JSONL=$(ls -t "$PROJECTS_DIR"/*.jsonl 2>/dev/null | head -1)
+**CRITICAL:** Use Python `os.stat().st_mtime` comparison, NOT `find -newermt`.
+The `find` syntax with ISO timestamps is flaky and silently returns empty
+on macOS. Use the Python equivalent:
 
-# Find OTHER session JSONLs modified since T0 (excluding this one)
-find "$PROJECTS_DIR" -name "*.jsonl" -newermt "$T0" 2>/dev/null | \
-  grep -v "$(basename "$THIS_SESSION_JSONL")"
+```bash
+python3 << 'PYEOF'
+import os, sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+T0_ISO = open('/tmp/wrap_t0.txt').read().strip()
+T0_DT = datetime.fromisoformat(T0_ISO)
+T0_EPOCH = T0_DT.timestamp()
+
+PROJECTS = Path.home() / ".claude/projects/-Users-ygontownik-Documents-Claude"
+all_jsonls = sorted(PROJECTS.glob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
+this_session = all_jsonls[0] if all_jsonls else None
+print(f"This session: {this_session.name if this_session else 'NONE'}")
+
+parallel = [p for p in all_jsonls
+            if p.stat().st_mtime > T0_EPOCH and p != this_session]
+print(f"Parallel sessions modified since T0: {len(parallel)}")
+for p in parallel[:10]:
+    mt = datetime.fromtimestamp(p.stat().st_mtime, tz=timezone.utc).isoformat()
+    print(f"  {p.name} (mtime={mt}, size={p.stat().st_size})")
+
+# Save list for next steps
+with open('/tmp/wrap_parallel_sessions.txt', 'w') as f:
+    f.write('\n'.join(str(p) for p in parallel))
+PYEOF
 ```
+
+**Fallback signal if JSONL scan finds 0 but commits suggest otherwise:**
+parallel work may have committed/pushed before /wrap saw their JSONL flush.
+In that case, use `git log --since="$T0" --author=` filtering to identify
+parallel-chat commits and group those by author/timestamp clusters.
 
 For each parallel-chat JSONL: read it line-by-line, extract:
 - `<command-name>` tags (skill invocations) — capture skill + timestamp
@@ -133,24 +161,51 @@ If those buffers contain new entries since T0, surface them in the handoff.
 
 ### 4b. Pick up daily-briefing + dashboard-state changes since T0
 
-Two additional content surfaces feed the catch-up doc but live in Drive,
-not local JSONL:
+**MUST actually run this — do not claim "no new content" without verifying.**
 
-```python
-# Personal Briefing Log (~daily intelligence digest)
-BRIEFING_LOG_ID  = "14wE3L6ZRsjhhx2psRKbaHS5i0kgEoteWYZusqETiAZ0"
-# Dashboard State (rewritten by /dash-close after substantive dashboard work)
-DASHBOARD_STATE_ID = "1TWhl8GcFO2l3mD7jCpaEQk8fGRurW1YD-2v529DgQ3Q"
+Run the Drive API check explicitly:
+
+```bash
+python3 << 'PYEOF'
+import os, pickle
+from datetime import datetime, timezone
+from googleapiclient.discovery import build
+
+T0_ISO = open('/tmp/wrap_t0.txt').read().strip()
+
+with open(os.path.expanduser('~/credentials/gdrive_token.pickle'), 'rb') as f:
+    creds = pickle.load(f)
+drive = build('drive', 'v3', credentials=creds)
+docs = build('docs', 'v1', credentials=creds)
+
+TARGETS = {
+    "Personal Briefing Log":  "14wE3L6ZRsjhhx2psRKbaHS5i0kgEoteWYZusqETiAZ0",
+    "Dashboard State":         "1TWhl8GcFO2l3mD7jCpaEQk8fGRurW1YD-2v529DgQ3Q",
+}
+
+for name, fid in TARGETS.items():
+    meta = drive.files().get(fileId=fid, fields="modifiedTime,name").execute()
+    mtime = meta["modifiedTime"]
+    if mtime > T0_ISO:
+        # Export plain text
+        doc = docs.documents().get(documentId=fid).execute()
+        text_parts = []
+        for el in doc.get("body", {}).get("content", []):
+            if "paragraph" in el:
+                for e in el["paragraph"].get("elements", []):
+                    text_parts.append(e.get("textRun", {}).get("content", ""))
+        full_text = "".join(text_parts)
+        print(f"=== {name} (modified {mtime} — NEWER than T0) ===")
+        # Print last ~2000 chars (most recent content for append-only docs)
+        print(full_text[-2000:])
+        print()
+    else:
+        print(f"{name}: unchanged since T0 ({mtime})")
+PYEOF
 ```
 
-For each, use the Drive Docs API:
-1. Get the doc's `modifiedTime` via `drive.files().get(fileId=ID, fields='modifiedTime')`
-2. If modifiedTime > T0, export plain text via `docs.documents().get(documentId=ID)`
-3. Extract any sections dated after T0 (Briefing Log is append-only; Dashboard State is a fresh write per /dash-close)
-4. Summarize into SESSION-HANDOFF §2 "intelligence + dashboard changes since last wrap"
-
-This is read-only — no LLM, no writes — just adds those two streams to the
-handoff. Cost: 2 Drive API calls + 2 Docs API exports per /wrap.
+If any output > unchanged: fold the new content into SESSION-HANDOFF §2
+"intelligence + dashboard changes since last wrap". Read-only, no LLM.
 
 ---
 
@@ -400,6 +455,29 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
 ```
 
 If pre-commit hook fails, fix the issue and create a NEW commit (never --amend).
+
+### 9b. Uncommitted-leftover audit (NEW — added 2026-05-21 after /wrap pt 3)
+
+After all commits are made, scan each repo for remaining uncommitted files.
+These are either (a) parallel-chat work this /wrap couldn't attribute, or
+(b) auto-modified state files that shouldn't have been touched.
+
+```bash
+for repo in ~/cos-pipeline ~/dashboards ~/cos-pipeline-config-tomac; do
+  LEFTOVER=$(git -C "$repo" status --short | wc -l)
+  if [ "$LEFTOVER" -gt 0 ]; then
+    echo "WARN: $(basename $repo) has $LEFTOVER uncommitted file(s) after /wrap"
+    git -C "$repo" status --short | head -20
+  fi
+done
+```
+
+For each repo with leftovers, classify each file:
+- **State files** (`data/*.json`, `_state.json`, etc.) — likely auto-touched by hooks; acceptable to leave (will be picked up by wrap_auto.sh's next run if real change)
+- **Generated outputs** (`compiled/*`, `tomac-cove-build/*`) — likely auto-regenerated; acceptable
+- **Source-code files** (`*.py`, `*.sh`, `*.md`, `*.yaml`, `*.html`, `*.js`) — REAL work from parallel chats. Add to SESSION-HANDOFF §4b outstanding so next session knows to attribute + commit them.
+
+Do NOT bulk-add uncommitted files into /wrap's commit. Attribution matters.
 
 ---
 
