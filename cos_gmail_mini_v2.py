@@ -81,7 +81,15 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(message)s",
     handlers=[logging.StreamHandler(), logging.FileHandler(LOG_FILE)]
 )
+# Quiet noisy third-party loggers (Gmail API discovery_cache, httpx per-request INFO)
+logging.getLogger('googleapiclient.discovery_cache').setLevel(logging.ERROR)
+logging.getLogger('httpx').setLevel(logging.WARNING)
 log = logging.getLogger(__name__)
+
+# Spend-cap short-circuit: once a Claude API call returns HTTP 400 "usage limits",
+# every subsequent triage call in this run is a guaranteed waste. Flip the flag
+# on first hit, log ONCE, skip the rest. Pattern: intel_capture.py deal_id=none.
+_API_SPEND_CAP_HIT = False
 
 # ────────────────────────────────────────────────────────────────────
 # DEFAULT FIRM CONFIG (overridden by firm_config.json)
@@ -720,6 +728,13 @@ def haiku_triage(email: dict) -> dict:
         f"Body (first 1500 chars):\n{email['body'][:1500]}"
     )
 
+    global _API_SPEND_CAP_HIT
+    # Once the API spend cap fires, every subsequent triage call returns the
+    # same HTTP 400. Short-circuit silently to avoid spamming the log.
+    if _API_SPEND_CAP_HIT:
+        return {"category": "IGNORE", "confidence": 0.0,
+                "reason": "api spend cap hit (short-circuited)", "one_liner": ""}
+
     try:
         # Add cos-pipeline to path for the dispatch + secrets imports.
         import sys as _sys, pathlib as _pl
@@ -740,8 +755,17 @@ def haiku_triage(email: dict) -> dict:
         result["confidence"] = float(result.get("confidence", 0.5))
         return result
     except Exception as e:
+        msg = str(e)
+        if "usage limit" in msg.lower() or "usage limits" in msg.lower():
+            if not _API_SPEND_CAP_HIT:
+                _API_SPEND_CAP_HIT = True
+                log.warning(
+                    "Anthropic API spend cap hit — short-circuiting "
+                    "remaining Haiku triage calls in this run: %s", msg)
+            return {"category": "IGNORE", "confidence": 0.0,
+                    "reason": "api spend cap hit", "one_liner": ""}
         log.error(f"Haiku triage failed for {email['id']}: {e}")
-        return {"category": "IGNORE", "confidence": 0.0, "reason": str(e), "one_liner": ""}
+        return {"category": "IGNORE", "confidence": 0.0, "reason": msg, "one_liner": ""}
 
 
 # ────────────────────────────────────────────────────────────────────
