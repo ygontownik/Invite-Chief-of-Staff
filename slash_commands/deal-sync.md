@@ -115,8 +115,8 @@ Read all five into your context:
 
 | Doc | Captures | Maintained by |
 |---|---|---|
-| status.md | Critical Driver, deadlines, open items, counterparties | /deal-sync rewrites + manual edits |
-| master_brief.md | Long-form deal narrative — thesis, history | /deal-sync rewrites + manual edits |
+| status.md | Critical Driver, deadlines, open items, counterparties | /deal-sync patches in-place (full rewrite only on stage change or structural pivot) |
+| master_brief.md | Long-form deal narrative — thesis, history | /deal-sync appends sections; never regenerates prior content |
 | lps.md | LP / customer pipeline (status, last touch, bite, next action) | Manual (informs status/brief regen) |
 | terms.md | Economics log — fees, hurdle, carry, capital stack | Manual (informs status/brief regen) |
 | actions.md | Open / awaiting / closed actions | Local copy is canonical (compile-dashboard.py reads it); Drive copy is a mirror |
@@ -170,30 +170,131 @@ move on. Do NOT block on it.
 
 ### 4b. Synthesize updated docs
 
-Using the file's content + the current status + the current brief,
-produce **two** updated documents:
+**Step 1 — Decide update mode before writing anything.**
 
-**Updated status doc** — concise, structured, follow Yoni Personal
-Context six-section memo structure. Keep stable: Critical Driver,
-Stage, Health, Next Milestone, Open Questions. Update what changed.
+| Mode | Triggers |
+|------|----------|
+| **INCREMENTAL** | 1–3 log entries only; no raw files; no stage change; no new counterparty |
+| **FULL-REWRITE** | Stage change detected; >3 significant new facts; first-time population of a stub; major structural pivot; raw file contains a full call transcript or deal memo |
 
-**Updated master brief doc** — long-form deal narrative. Append new
-intel to the appropriate section (counterparties, thesis, key risks,
-TCIP edge, action log). Don't rewrite history; add context.
+Default to **INCREMENTAL** unless a full-rewrite trigger is present. When in doubt, increment.
 
-Write both to /tmp:
+---
+
+**INCREMENTAL mode** (merge new intel into a complete fresh status doc):
+
+*Status doc*: Start from `_status_current.md`. Merge each piece of new intel into the appropriate section (update counterparty line, revise deadline date, add open item, update stage note). Then output the **complete status doc** — all sections, current state only. Never emit partial diffs or append-only blocks to the status doc. The written version IS the complete current state.
+
+**Size discipline**: After merging, the status doc should remain ≤ 8KB. If the result would exceed 8KB, apply these cuts before writing:
+- Remove any Session Log or "Last Session Summary" block (history belongs in master brief only)
+- Remove CLOSED/SUPERSEDED items from all tables (move key facts to inline text if needed)
+- Remove past-due deadlines (dates before today) unless the item is still actionable
+- Trim Reference Documents sections entirely
+
+*Master brief*: Append a dated block to the relevant section only. Format:
+
+```
+**[YYYY-MM-DD]** <one-line intel fact or action>
+```
+
+---
+
+**FULL-REWRITE mode** (regenerate structure, preserve substance):
+
+*Status doc*: Regenerate all sections cleanly. Carry forward all current-state facts from `_status_current.md` — no context lost, only history removed. Keep Critical Driver, Stage, active Hard Deadlines, open Counterparties, and open items. Drop resolved/historical content. Target size ≤ 8KB.
+
+*Master brief*: Append a complete new section with today's date header. Do not alter prior sections. Structure: Core narrative update → New counterparty entries → Revised thesis notes (if any) → Action items surfaced.
+
+---
+
+Write both to /tmp regardless of mode:
 
 ```
 /tmp/<deal_id>_status_new.md
 /tmp/<deal_id>_brief_new.md
 ```
 
+---
+
+### 4b-ii. Action routing — deal vs. team
+
+After synthesizing the status doc, classify every action item as DEAL or TEAM before writing anywhere.
+
+**DEAL action** — goes to `actions.md` only:
+- Diligence tasks ("model PNGTS+GSGT combined EBITDA")
+- Regulatory or legal research ("determine FERC approval required for GSGT carve-out")
+- Market checks, data pulls, analytical work
+- Counterparty analysis
+
+**TEAM action** — goes to `actions.md` AND to CoS follow-ups (envelope):
+- Scheduling or meeting coordination ("schedule ShoreBridge call")
+- Outreach to a named person ("call Mark Mitchell re: PNGTS reserve price")
+- Intro requests or external comms
+- Any action with a specific hard date and named external party
+
+For TEAM actions, emit an envelope item to the CoS dashboard immediately:
+
+```bash
+python3 -c "
+import sys; sys.path.insert(0, '$HOME/cos-pipeline')
+import _envelope_writer as ew
+ew.append_items([{
+  'content_type': 'my_action',
+  'owner': '<owner>',
+  'due': '<YYYY-MM-DD or empty>',
+  'counterparty': '<named party>',
+  'context': '<one line why>',
+  'dashboard_path': 'Chief of Staff › Follow-ups',
+  'content': '<verb-first action statement>'
+}])
+"
+```
+
+---
+
+### 4b-iii. actions.md consolidation rules
+
+When writing or updating `actions.md`, apply these rules to keep the list actionable:
+
+**1. Close completed actions.** If new intel confirms an action is done (e.g. "Mark confirmed the call happened"), move it from the open table to `## Closed items`. Mark `status: done` and add a `[YYYY-MM-DD closed]` note in the action text.
+
+**2. Group by workstream.** If 2+ open actions answer the same underlying question or belong to the same workstream, group them under a `### Workstream: <label>` header. Each workstream gets its own table header row. The parser skips section headers, so this is fully compatible with `compile-dashboard.py`.
+
+Format:
+```markdown
+# Open Actions
+
+### Workstream: GSGT Regulatory Path
+| # | Action | Owner | Due | Priority | Status | Opened |
+|---|--------|-------|-----|----------|--------|--------|
+| W1.1 | Determine whether FERC approval required for GSGT carve-out | Yoni | 2026-05-20 | critical | open | 2026-05-12 |
+| W1.2 | NH PUC approval timeline vs. PNGTS closing date | Yoni | 2026-05-20 | high | open | 2026-05-12 |
+
+### Workstream: Platform Valuation
+| # | Action | Owner | Due | Priority | Status | Opened |
+|---|--------|-------|-----|----------|--------|--------|
+| W2.1 | Size combined PNGTS+GSGT platform EBITDA and equity check | Yoni/Mark | 2026-05-19 | high | open | 2026-05-12 |
+
+## Closed items
+...
+```
+
+**3. Cap at ~6 open workstreams.** If more than 6 workstreams exist, move lower-priority ones to a `## Parking lot` section below Closed items. They stay visible but don't feed the health formula's critical-open count.
+
+**4. Standalone actions** (not part of a workstream) go in an `### Other` group at the bottom of the open section.
+
+---
+
 ### 4c. Write back to Drive
+
+**CRITICAL:** Use ONLY `write-deal-doc` to write status and brief files. Never use the Google Drive MCP tools (`mcp__*__create_file`, `mcp__*__copy_file`, etc.) to write these docs — those tools create new files with new IDs, leaving the registered doc untouched and producing duplicate files that corrupt the folder. `write-deal-doc` always overwrites the registered doc_id in-place via `files().update()`.
 
 ```bash
 cat /tmp/<deal_id>_status_new.md | python3 ~/cos-pipeline/tools/deal_extract_helpers.py write-deal-doc <deal_id> status
 cat /tmp/<deal_id>_brief_new.md  | python3 ~/cos-pipeline/tools/deal_extract_helpers.py write-deal-doc <deal_id> brief
 ```
+
+If the helper prints `OK wrote status for <deal_id>`, the registered doc was updated in place. If it prints `created` anywhere, something went wrong — stop and investigate before continuing.
 
 If `--dry-run`, helpers print the intent and skip the write.
 
@@ -224,6 +325,7 @@ If the file prints `{}`, no entry exists yet — start from this stub:
   "tcip_econ": {"status_note": "Not yet formalized"},
   "tcip_edge": "",
   "key_risk": "",
+  "critical_next_step": "",
   "counterparties": [],
   "contacts": [],
   "next_milestone": "",
@@ -243,9 +345,10 @@ current entry. Update only what the status reasonably reveals:
 | `stage`, `stage_index` (parse "Stage:" or first phase header) | `phase_capital` (numbers from a deal session) |
 | `next_milestone`, `next_milestone_due` (Hard Deadlines table) | `tcip_econ` (numbers) |
 | `key_risk` (top tension or open question) | `thesis` pillar scores (set in deal sessions) |
-| `counterparties` (rebuild from Key Names + roles) | `tcip_edge` if not stated |
-| `actions` (Open Items table → action objects with priority, status, owner, due) | `tagline`, `sector`, `geography`, `ticker` |
-| `last_activity` = today | `_schema_version` |
+| `critical_next_step` — one sentence: the single action that most unblocks the deal right now, synthesized across all open workstreams. Not the longest list; the sharpest answer. | `tcip_edge` if not stated |
+| `counterparties` (rebuild from Key Names + roles) | `tagline`, `sector`, `geography`, `ticker` |
+| `actions` (Open Items table → action objects with priority, status, owner, due) | `_schema_version` |
+| `last_activity` = today | |
 | `last_updated` = today | |
 | `activity_log` — append one entry: `{date: today, summary: "Auto-sync from /deal-sync"}` | |
 | `health`: nudge ±5 based on whether new info is mostly positive/negative; clamp [0,100] | |
@@ -260,6 +363,20 @@ The helper writes to Drive AND triggers `sync_deals_from_drive.py
 --deal-id <deal_id>` to push to compiled.
 
 If `--dry-run`, the helper prints intent and skips the Drive write.
+
+### 4d-ii. Write actions.md from entry (non-Cholla deals)
+
+After writing the entry, populate the local `actions.md` if it's still a
+stub (no real table rows). This feeds the health-formula's 30% actions
+component in `compile-dashboard.py`.
+
+```bash
+cat /tmp/<deal_id>_entry_new.json | python3 ~/cos-pipeline/tools/deal_extract_helpers.py \
+  ${DRY_RUN:+--dry-run} write-actions-md <deal_id>
+```
+
+The helper skips automatically if `actions.md` already has real content
+(e.g. Cholla's hand-maintained table). Safe to always run.
 
 ### 4e. Move source to _Ready/
 
@@ -330,7 +447,7 @@ Context** doc. The rest of the doc is preserved verbatim.
 
 ---
 
-## STEP 7 — Final summary
+## STEP 7 — Final summary and dashboard refresh
 
 Print a clean summary:
 
@@ -345,11 +462,53 @@ ERRORS (if any):
 - {deal_id}/{file_id}: {one-line error}
 ```
 
+Then (unless `--dry-run`) recompile health scores and push to the live dashboard:
+
+```bash
+python3 ~/dashboards/routines/compile/compile-dashboard.py
+curl -s -X POST http://localhost:7777/refresh-deals > /dev/null && echo "Dashboard updated."
+```
+
+Then write a heartbeat file so the dashboard can detect a stale deal-sync:
+
+```bash
+python3 -c "
+import json, datetime
+from pathlib import Path
+p = Path.home() / 'dashboards/data/deal-sync-heartbeat.json'
+p.write_text(json.dumps({'last_completed_at': datetime.datetime.now().isoformat(), 'dry_run': False}, indent=2))
+print('Heartbeat written.')
+"
+```
+
+If `--dry-run` was passed, write a dry-run heartbeat instead (does not overwrite a real-run heartbeat):
+
+```bash
+python3 -c "
+import json, datetime
+from pathlib import Path
+p = Path.home() / 'dashboards/data/deal-sync-heartbeat.json'
+# Only write if file is missing OR last run was also a dry-run
+try:
+    existing = json.loads(p.read_text()) if p.exists() else {}
+except Exception:
+    existing = {}
+if existing.get('dry_run', True):
+    p.write_text(json.dumps({'last_completed_at': datetime.datetime.now().isoformat(), 'dry_run': True}, indent=2))
+    print('Dry-run heartbeat written.')
+else:
+    print('Skipped heartbeat write (last real run preserved).')
+"
+```
+
+Run the appropriate block based on whether `--dry-run` was passed.
+
 ---
 
 ## RULES (non-negotiable)
 
 - Never call the Anthropic API directly. AI work happens in this session.
+- **Never use Drive MCP tools to write status/brief docs.** Use ONLY `write-deal-doc` (which calls `files().update()` on the registered doc_id). Drive MCP `create_file`/`copy_file` create new files with new IDs — this produces duplicates and leaves the registered doc stale. The only exception is `read-file` / `read-deal-doc` for reads.
 - Never edit `~/dashboards/data/compiled/*.json` by hand — those are
   regenerable artifacts.
 - Never delete files. The `_Ready/` move is the only "done" signal.

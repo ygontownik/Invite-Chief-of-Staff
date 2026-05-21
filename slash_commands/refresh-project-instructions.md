@@ -7,8 +7,8 @@ argument-hint: "[deal_id | all]"
 
 Updates the Instructions field of a TCIP deal Claude project on
 claude.ai. Replaces the existing Step 0 block with the current
-Step 0a/0b/0c (firm context, Yoni context, deal presentation
-standards) by ID, plus the per-deal Step 1/2 lines.
+Step 0a/0b/0b-2/0c (firm context, Yoni context, practice patterns,
+deal presentation standards) by ID, plus the per-deal Step 1/2 lines.
 
 This eliminates the manual paste step from `/new-deal` Phase 5 and
 keeps existing projects (Cholla, PNGTS, Unitil) in sync as the
@@ -30,17 +30,16 @@ If empty, ask Yoni which deal.
 
 ```bash
 python3 - <<'EOF'
-import json
-with open('/Users/ygontownik/cos-pipeline/tools/sync-state.json') as f:
-    ss = json.load(f)
-import sys
+import json, sys
+data = json.load(open('/Users/ygontownik/cos-pipeline/tools/deal-system-data.json'))
 DEAL = "$DEAL_ID_OR_ALL"
 if DEAL == "all":
-    targets = [(k, v["project_url"]) for k, v in ss.items() if v.get("project_url")]
+    targets = [(d["deal_id"], d["project_url"]) for d in data["deals"] if d.get("project_url")]
 else:
-    if DEAL not in ss or not ss[DEAL].get("project_url"):
+    match = next((d for d in data["deals"] if d["deal_id"] == DEAL), None)
+    if not match or not match.get("project_url"):
         sys.exit(f"deal {DEAL} not found or has no project_url")
-    targets = [(DEAL, ss[DEAL]["project_url"])]
+    targets = [(DEAL, match["project_url"])]
 print(json.dumps(targets))
 EOF
 ```
@@ -49,127 +48,82 @@ Parse the result. You now have a list of `(deal_id, project_url)`.
 
 ---
 
-## STEP 2 — Build the instruction text
+## STEP 2 — Fetch instruction text from Drive
 
-For each target, build the full instructions text. The template is:
+Each deal’s project instructions are stored as a Google Doc in the
+deal’s `_Claude Context/` subfolder. The file ID is registered in
+`~/cos-pipeline-config-tomac/drive-docs.yaml` under
+`deal_docs.<deal_id>.project_instructions.doc_id`.
+
+Run this script to fetch each deal’s instructions from Drive and
+write them to `/tmp/{deal_id}_instructions.txt`:
+
+```bash
+python3 ~/cos-pipeline/tools/fetch_project_instructions.py all
+```
+
+(Pass `--deal cholla` etc. to limit to one deal.)
+
+That script reads each doc via the Google Docs API, strips non-ASCII
+characters for clipboard safety, and writes the result to
+`/tmp/{deal_id}_instructions.txt`.
+
+**If the fetch fails** for a deal (Drive error, missing doc ID),
+fall back to regenerating from the hardcoded template below using
+registry values from `~/cos-pipeline/tools/deal-system-data.json`:
 
 ```
 ================================================================
-TCIP DEAL PROJECT — {DEAL_NAME}
+TCIP DEAL PROJECT -- {DEAL_NAME}
 ================================================================
 You are the TCIP deal assistant for {DEAL_NAME}. Apply the firm
 investor frame, six-section memo structure, and standard action-tail
 rules from the Yoni Personal Context loaded below.
 
 ================================================================
-SESSION START PROTOCOL — load context
+SESSION START PROTOCOL -- load context
 ================================================================
 
 Step 0a. Read TCIP Firm Context from Google Drive:
     File ID: 1oqvRhNq-MRS9sBT-wtZxqoZiwOC5GfCQHM1K0DuC6Pk
     Folder:  _Claude Context
-    Live firm identity, team, thesis, active deal pipeline.
-    Always read from Drive — never from a cached copy.
 
 Step 0b. Read Yoni Personal Context from Google Drive:
     File ID: 1DMlnylTPI4OArDYaXVDqsS22AhbQvcwbTxJnoHp0wyA
     Folder:  _Claude Context
-    Personal analytical defaults: investor frame, six-section memo
-    structure, action-tail rules.
 
-Step 0c. (LAZY-LOAD) TCIP Deal Presentation Standards lives at:
+Step 0b-2. Read TCIP Practice Patterns from Google Drive:
+    File ID: 1C3z_6hnKtYZcpQM4Ffh2qN4EiVEwThNDC9NwHlt-zqY
+    Folder:  _Claude Context
+
+Step 0c. (LAZY-LOAD) Deal Presentation Standards:
     File ID: 1kb_Uwt6G_F-VuzLsLTyTZcO8ZNPJfFuLWre-W3FIlek
-    Folder:  _Claude Context (root)
-    DO NOT load at session start. Read this ONLY when producing a deck,
-    JSX brief, pitch artifact, or other formal presentation output for
-    this deal. For status updates, narrative analysis, or tactical
-    discussion, skip -- it's 17KB of style guidance you don't need.
+    DO NOT load at session start. Only for deck/pitch outputs.
 
-Step 1. Read this deal's status doc from Google Drive:
-    File ID: {STATUS_FILE_ID}
-    {DEAL_NAME} live deal state — Critical Driver, Open Items, Hard
-    Deadlines, counterparties.
+Step 0d. (LAZY-LOAD) System Reference + User Manual + Skills Catalog:
+    System Reference: 1TjbfPFep5xUVghBXQZbudM3gY8riXrCOm_ULQfrJYK8
+    User Manual:      1d4oldIYbzdcsX8F_dXYZPUbnaLo9-sUsm071ys9NolM
+    Skills Catalog:   1aMmiS_wZD3T6INQfxutJ78v6U65MYtTXkykJZ1NcRI4
+    Read these when making architectural changes, when picking a skill to invoke,
+    or for new-user / partner-tier onboarding context.
 
-Step 2. Read this deal's master brief from Google Drive:
-    File ID: {BRIEF_FILE_ID}
-    Long-form deal narrative — thesis, counterparty maps, history.
+NEW SKILLS available in Claude Code (not in claude.ai project sessions):
+    /check-system        — "is everything OK?" snapshot
+    /sync-system         — flushes all canonical-source edits to derived views
+    /propose-learning    — capture a new behavioral rule into LEARNINGS-LEDGER
+    /pressure-test       — pressure-test a high-stakes action against accumulated context
+    Full catalog: ~/dashboards/docs/MY-SKILLS.md
 
-Step 3. (LAZY-LOAD) {DEAL_ID}_dashboard_entry.json lives at:
-    Folder ID: {CLAUDE_CONTEXT_FOLDER_ID}
-    Filename:  {DEAL_ID}_dashboard_entry.json
-    Lives inside this deal's _Claude Context/ subfolder (alongside
-    status + master_brief). DO NOT load at session start. Its content
-    overlaps with status.md for read purposes. Fetch it ONLY when
-    about to emit a ---DEAL-UPDATE--- block (in which case read the
-    current entry first so you can produce a complete updated entry).
-
-Step 4. Scan the deal's top-level Drive folder ({DRIVE_FOLDER_ID})
-    for new transcripts/memos not yet in `_Ready/`. Open with a
-    3-5 bullet delta summary. The _Claude Context/ subfolder is
-    auto-managed — never drop new sources there.
-
-================================================================
-DELIVERABLE STANDARDS
-================================================================
-- Six-section memo structure (Yoni Personal Context).
-- Numbers anchor every claim; named assets/firms not themes.
-- Decks/JSX briefs follow Deal Presentation Standards.
-- Always end with structured ACTION ITEMS block.
-
-================================================================
-DEAL-INTEL EMISSION (auto-captured)
-================================================================
-Whenever this session produces a non-trivial new fact, decision,
-counterparty intel, or action item about {DEAL_NAME}, emit a
-machine-parseable block in your response. The pipeline scans for
-these blocks and routes them into this deal's log.json. /deal-sync
-folds them into status + master brief next cycle. No copy-paste
-needed.
-
-Block format (canonical):
-
----DEAL-INTEL---
-deal: {DEAL_ID}
-date: YYYY-MM-DD
-title: <one-line>
-summary: <1-2 sentences>
-facts:
-  - <fact, with numbers + named entities>
-counterparties:
-  - <name (firm)> -- <new info>
-actions:
-  - <date>: <verb-first action> [@owner]
----END-DEAL-INTEL---
-
-Don't emit empty blocks or trivial mentions. Multiple blocks per
-session are fine (one per discrete topic).
-================================================================
+Step 1. Read status doc: {STATUS_FILE_ID}
+Step 2. Read master brief: {BRIEF_FILE_ID}
+Step 3. (LAZY-LOAD) dashboard_entry.json in folder {CLAUDE_CONTEXT_FOLDER_ID}
+Step 4. Scan deal folder {DRIVE_FOLDER_ID} for new files.
 ```
 
-Replace the `{...}` placeholders with values from the registry
-(`~/cos-pipeline/tools/deal-system-data.json`):
-- `{DEAL_ID}` → registry `deal_id`
-- `{DEAL_NAME}` → registry `name`
-- `{STATUS_FILE_ID}` → registry `status_file_id`
-- `{BRIEF_FILE_ID}` → registry `brief_file_id`
-- `{DRIVE_FOLDER_ID}` → registry `drive_folder_id` (top-level deal folder)
-- `{CLAUDE_CONTEXT_FOLDER_ID}` → from `~/dashboards/config/drive-docs.yaml` `deal_docs.<deal>.claude_context_folder_id` (the `_Claude Context/` subfolder)
-
-Strip non-ASCII characters and write to `/tmp/{deal_id}_instructions.txt`:
-
-```python
-content = open('/tmp/{deal_id}_instructions.txt').read()
-replacements = [
-    ('════════════════════════════════', '================================'),
-    ('—', '--'), ('–', '-'),
-    ('‘', "'"), ('’', "'"),
-    ('“', '"'), ('”', '"'),
-    ('→', '->'), ('×', 'x'),
-]
-for old, new in replacements:
-    content = content.replace(old, new)
-open('/tmp/{deal_id}_instructions.txt', 'w').write(content.encode('ascii', 'replace').decode())
-```
+**To edit a deal’s instructions:** open the Google Doc directly in
+Drive (find via `deal_docs.<deal>.project_instructions.doc_id` in
+drive-docs.yaml), edit, then re-run this skill. Changes live in
+Drive — no code edits needed.
 
 ---
 

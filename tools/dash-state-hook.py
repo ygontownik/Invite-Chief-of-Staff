@@ -947,6 +947,50 @@ def _learning_is_imperative(snippet: str) -> bool:
     )
     if _re.search(narrative_markers, s):
         return False
+
+    # Added 2026-05-21 after /wrap pt 4 surfaced 27 Otter-speech candidates
+    # leaking through: first/third-person autobiographical ("I never...", "his...")
+    # is descriptive prose, not a behavioral rule. Rules use imperative voice
+    # with implicit "you".
+    # Two-fold check:
+    # (a) ANY personal pronoun within 4 tokens of always/never/really/kind of
+    # (b) Personal-opinion or future-intent phrases anywhere in snippet
+    personal_pronoun_near_kw = _re.compile(
+        r"\b(i|we|they|he|she|his|her|him|i'?ve|we'?ve|i'?d|we'?d|i'?ll|we'?ll|i'?m)\s+"
+        r"(?:\w+\s+){0,4}(?:always|never|really|kind of|sort of|could|would)\b",
+        _re.IGNORECASE,
+    )
+    if personal_pronoun_near_kw.search(s):
+        return False
+
+    opinion_or_intent = _re.compile(
+        r"\bi\s+(think|believe|will|would|have|had|guess|feel|hope|want|need|reckon)\b",
+        _re.IGNORECASE,
+    )
+    if opinion_or_intent.search(s):
+        return False
+
+    # Catch the conversational "was a whole lot" / "was a lot of" / "was no"
+    # idioms that signal narrative prose, distinct from rules that might use
+    # "was" legitimately ("if X was missing, always Y").
+    colloquial_was = _re.compile(
+        r"\bwas\s+(a\s+(whole\s+)?lot|no\s+|n'?t\s+a\s+)",
+        _re.IGNORECASE,
+    )
+    if colloquial_was.search(s):
+        return False
+
+    # Verbal-filler detection at the snippet level (vs the >80-char prose
+    # detection in _learning_is_transcript_like). Short Otter quotes like
+    # "yeah, so I always had..." or "..., you know, ..." are conversational,
+    # not prescriptive — reject regardless of length.
+    verbal_fillers = _re.compile(
+        r"(\byeah,?\s|\b,\s*you know\b|\bi mean\b|\bsort of\b|\bkind of\b|\bgonna\b)",
+        _re.IGNORECASE,
+    )
+    if verbal_fillers.search(s):
+        return False
+
     return True
 
 
