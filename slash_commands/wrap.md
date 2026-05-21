@@ -386,28 +386,44 @@ Capture the output. Diff against `last-wrap.json` health counts to surface
 launchctl list | grep -iE "tomac|yoni|claude" | awk '$2 != "0" && $2 != "-" {print}'
 
 # 8c. Cadence staleness check — are scheduled syncs falling behind?
+# FIXED 2026-05-21 after /wrap pt 3: function `last_run_seconds_ago`
+# does NOT exist in coordination.py. State field is 'last_run'
+# (singular) with direct ISO strings as values.
 python3 << 'PYEOF'
 import sys
+from datetime import datetime, timezone
 sys.path.insert(0, '/Users/ygontownik/cos-pipeline/tools')
-from coordination import last_run_seconds_ago
-CADENCES = {
-    'sync_registry.py': 24*3600,          # daily floor
-    'sync_learnings.py': 24*3600,         # daily floor
-    'sync_system_docs.py': 24*3600,       # daily floor
-    'log_compaction.py': 7*24*3600,       # weekly floor
-    'reference_integrity_audit.py': 24*3600,
+from coordination import _read_state
+
+state = _read_state()
+last_runs = state.get('last_run', {})  # singular field — NOT 'last_runs'
+CADENCES_HRS = {
+    'sync_registry.py':             24,
+    'sync_learnings.py':            24,
+    'sync_system_docs.py':          24,
+    'log_compaction.py':           168,  # weekly floor
+    'reference_integrity_audit.py': 24,
 }
+now = datetime.now(timezone.utc)
 stale = []
-for script, threshold in CADENCES.items():
-    s = last_run_seconds_ago(script)
-    if s is None or s > threshold:
-        h = (s or 0) / 3600
-        stale.append(f"{script}: last ran {h:.1f}h ago (threshold {threshold/3600}h)")
+for script, threshold_h in CADENCES_HRS.items():
+    ts_str = last_runs.get(script)
+    if not ts_str:
+        stale.append(f'{script}: never recorded in coordination state')
+        continue
+    try:
+        dt = datetime.fromisoformat(ts_str.replace('Z', '+00:00'))
+        hours = (now - dt).total_seconds() / 3600
+        if hours > threshold_h:
+            stale.append(f'{script}: {hours:.1f}h since last run (threshold {threshold_h}h)')
+    except Exception as e:
+        stale.append(f'{script}: parse-error {e}')
+
 if stale:
-    print("STALE syncs (consider re-running):")
-    for line in stale: print(f"  {line}")
+    print('STALE syncs (flag in handoff §4b):')
+    for s in stale: print(f'  - {s}')
 else:
-    print("All syncs within cadence.")
+    print('All syncs within cadence.')
 PYEOF
 ```
 
