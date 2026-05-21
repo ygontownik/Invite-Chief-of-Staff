@@ -884,18 +884,20 @@ def _auto_expire_stale_events(items):
             )
             continue
 
-        # Class 3 (codified 2026-05-05): hard 14-day past-due cutoff.
-        # If due is >14 days in the past, drop regardless of content
-        # shape. Catches non-event commitments that the event-pattern
-        # filter missed (e.g., "Send draft Uber lease" 20 days past).
-        # Items with no due date fall through to the event filter.
+        # Class 3 (codified 2026-05-05, tightened 2026-05-21): hard 3-day
+        # past-due cutoff. If due is >3 days in the past, drop regardless of
+        # content shape. The 14-day grace originally codified here let a 65%
+        # backlog accumulate (39/60 items past-due, mostly Otter-call
+        # extractions that nothing ever marked resolved). 3 days = enough
+        # slack for a late reply but tight enough that ghosts don't bloat
+        # the tile. Items with no due date fall through to the event filter.
         due_raw_global = item.get('due') or ''
         if due_raw_global and len(due_raw_global) >= 10:
             try:
                 d_global = _date.fromisoformat(due_raw_global[:10])
-                if (today - d_global).days > 14:
+                if (today - d_global).days > 3:
                     print(
-                        f'cos-dashboard-fetch: hard-expire 14d+ past-due item '
+                        f'cos-dashboard-fetch: hard-expire 3d+ past-due item '
                         f'({due_raw_global[:10]}, {(today - d_global).days}d ago): '
                         f'{content[:80].strip()!r}',
                         file=sys.stderr,
