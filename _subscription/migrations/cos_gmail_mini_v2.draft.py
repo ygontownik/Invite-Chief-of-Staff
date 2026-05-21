@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# noqa: claude-dispatch-exempt — DRAFT migration file in _subscription/migrations/.
+# The .draft.py suffix marks this as a not-yet-active migration; the inline
+# anthropic import on the Haiku triage path is intentional and documented in
+# the function docstring (avoids the 3x cost regression from cached-client routing).
 from __future__ import annotations
 """
 cos_gmail_mini_v2.py — CoS Email Mini (Gmail + Outlook)

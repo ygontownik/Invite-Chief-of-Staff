@@ -581,14 +581,15 @@ def _extract_intel_from_transcript(transcript_text, deals, explicit_date=None):
       envelope_items: [{content_type, content, ...}]  # LP intel, new deals, actions, themes
     }
     """
+    # Migrated to _claude_dispatch (L0023) — honors subscription/api mode.
+    # Imports inside the function (matching the prior anthropic-inline pattern)
+    # so module import doesn't fail on stripped-down environments.
     try:
-        import anthropic
-    except ImportError:
-        raise RuntimeError("anthropic package not installed — pip3 install anthropic")
-
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise RuntimeError("ANTHROPIC_API_KEY not set")
+        import sys as _sys
+        _sys.path.insert(0, str(Path(__file__).parent.parent))
+        from _claude_dispatch import call as _claude_call
+    except ImportError as e:
+        raise RuntimeError(f"_claude_dispatch not importable: {e}")
 
     deal_list = "\n".join(
         f"  - {d['deal_id']}: {d['name']}"
@@ -668,13 +669,12 @@ Rules:
 - If neither layer has anything meaningful, return {{"call_date": "...", "deals": [], "envelope_items": []}}
 - Return ONLY the JSON object, no other text"""
 
-    client = anthropic.Anthropic(api_key=api_key)
-    response = client.messages.create(
+    text = _claude_call(
+        task_type="intel-capture-extract",
         model="claude-sonnet-4-6",
         max_tokens=4096,
         messages=[{"role": "user", "content": prompt}],
-    )
-    text = response.content[0].text.strip()
+    ).strip()
     text = re.sub(r'^```(?:json)?\s*', '', text)
     text = re.sub(r'\s*```$', '', text)
     return json.loads(text)

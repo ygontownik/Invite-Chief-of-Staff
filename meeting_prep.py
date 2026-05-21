@@ -289,7 +289,8 @@ Keep each section tight: 3-5 bullets or 2 short paragraphs max.
 
 
 def generate_brief(event: dict, transcripts: list[dict], pipeline_match: dict | None) -> str:
-    import anthropic
+    # Migrated to _claude_dispatch (L0023) — honors subscription/api mode.
+    from _claude_dispatch import call as _claude_call
 
     att_lines = "\n".join(
         f"  - {a['name'] or a['email']} <{a['email']}>"
@@ -323,14 +324,13 @@ def generate_brief(event: dict, transcripts: list[dict], pipeline_match: dict | 
         pipeline_match=pm_lines,
     )
 
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-    msg = client.messages.create(
+    return _claude_call(
+        task_type="meeting-prep-brief",
         model="claude-sonnet-4-6",
         max_tokens=2048,
         system=_SYSTEM,
         messages=[{"role": "user", "content": prompt}],
     )
-    return msg.content[0].text
 
 
 # ── main ────────────────────────────────────────────────────────────────────────

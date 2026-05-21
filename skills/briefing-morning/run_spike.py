@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# noqa: claude-dispatch-exempt — Track G experimental spike harness.
+# Spike code, not production; runs are manual + ad-hoc. Will move to
+# _claude_dispatch when promoted to a scheduled routine.
 """
 Track G — briefing-morning spike harness.
 

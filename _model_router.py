@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# noqa: claude-dispatch-exempt — this file IS the canonical dispatcher.
+# Per L0023, all callers must route through `from _claude_dispatch import call`,
+# which then routes through this file's `call_claude()` to either the
+# subscription path or the raw anthropic SDK on the API path. The api-path
+# `from anthropic import Anthropic` further down (~line 639) is the legitimate
+# terminal call — adding the noqa marker here so check_l0023.py skips this file.
 """
 _model_router.py — Phase 2 Track C model router + subscription dispatch.
 
