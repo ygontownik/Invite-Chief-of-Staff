@@ -215,15 +215,30 @@ T0 (deduped against existing ledger per LC1 filters):
 4. After processing, truncate the queue file (per L0047/LC1 reset
    convention)
 
-### 5e. SESSION-HANDOFF-YYYY-MM-DD.md — full overwrite
+### 5e. SESSION-HANDOFF-YYYY-MM-DD.md — overwrite (with no-op detection)
 
-Always overwrite today's date file. Git preserves history.
+**No-op short-circuit:** Before overwriting, check whether anything
+meaningful changed since last /wrap:
+- New commits across any of the 3 repos?
+- New entries in proposed-learnings.jsonl?
+- New DEAL-INTEL emissions in any deal log.json?
+- Any items in SYNC_FAILURES from step 6?
+- Any items in CADENCE_STALENESS from step 8?
+
+If ALL are empty → log "no-op /wrap: zero delta since last wrap, skipping
+SESSION-HANDOFF overwrite" and SKIP this sub-step entirely. Avoids noise
+commits for /wrap invocations that don't change anything.
+
+Otherwise: full overwrite of today's date file. Git preserves history.
 
 Structure (mirror the 2026-05-21 version):
 1. How to use this doc (paste block for next chat)
 2. What this session shipped (grouped by chat-session if multi-chat)
 3. Current state — system health (after vs before diff)
 4. Live work-in-flight (incl. outstanding requests numbered for OR1 continuity)
+   **4b. Outstanding — MUST include any SYNC_FAILURES from step 6
+   (e.g., "TCIP -- My Skills Drive sync failed: <reason>")
+   and CADENCE_STALENESS from step 8.**
 5. Phases NOT executed (deferred items + why)
 6. New learnings added this session (table with id, rule_code, title)
 7. Quick diagnostic commands
@@ -236,22 +251,46 @@ Structure (mirror the 2026-05-21 version):
 `/wrap` is the orchestrator. Sync work is delegated to the canonical
 composites — if they gain steps later, `/wrap` picks them up automatically.
 
-```
-6a. Invoke /sync-system
-    (runs sync_registry + sync_learnings + sync_system_docs internally,
-     all 3 in sequence with coordination locks)
-```
-
-After /sync-system completes, regenerate the auto-generated docs that
-aren't part of the canonical-source pipeline:
+### 6a. Mirror personal skills (wrap_auto.sh has the same step — interactive /wrap mirrors immediately so new skills don't wait until 11pm cron)
 
 ```bash
-# SYSTEM-MAP.md — scans live system state, not a canonical-source view
-python3 ~/cos-pipeline/tools/generate-system-map.py
+PERSONAL="$HOME/.claude/commands"
+PUBLIC="$HOME/cos-pipeline/slash_commands"
+mkdir -p "$PUBLIC"
+for src in "$PERSONAL"/*.md; do
+    [ -f "$src" ] || continue
+    name=$(basename "$src")
+    dst="$PUBLIC/$name"
+    if [ ! -f "$dst" ] || ! cmp -s "$src" "$dst"; then
+        cp "$src" "$dst"
+        echo "  mirrored: $name"
+    fi
+done
 ```
 
-Skip-on-failure: if /sync-system reports any step failed, capture the error
-in the SESSION-HANDOFF §4b but continue with the rest of /wrap.
+### 6b. Invoke `/sync-system`
+
+Runs sync_registry + sync_learnings + sync_system_docs internally,
+all 3 in sequence with coordination locks.
+
+**Capture any per-step failures** — /sync-system surfaces failures
+like "TCIP -- My Skills: FAIL — Invalid argument" but they're
+easy to miss in scrolling output. Parse the output for `FAIL` /
+`ERROR` lines and add each to `SYNC_FAILURES` for Step 5e
+(SESSION-HANDOFF §4b outstanding).
+
+### 6c. Auto-generated maps + Drive setup mirror
+
+```bash
+# SYSTEM-MAP.md — live system scan, not a canonical-source view
+python3 ~/cos-pipeline/tools/generate-system-map.py
+
+# Drive setup mirror — sync ~/.claude/commands/, LaunchAgents, globals
+# to _System/_Claude Code Setup/ for browsable visibility
+python3 ~/cos-pipeline/tools/sync_setup_to_drive.py --apply
+```
+
+Skip-on-failure: capture errors → SESSION-HANDOFF §4b but continue.
 
 **Cross-reference with periodic cadences:** dash-state-hook already runs
 several syncs on intervals (ref_doc_sync 2h, project_inst_sync 24h,
