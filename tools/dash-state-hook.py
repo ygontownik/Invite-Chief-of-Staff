@@ -892,6 +892,162 @@ def run_learning_capture_scan():
     return len(proposed) > 0
 
 
+def run_skill_telemetry_scan():
+    """Scan recent Claude Code transcripts for Skill tool invocations and
+    append one record per call to ~/dashboards/data/compiled/skill-telemetry.jsonl.
+
+    Cheap — pure JSON parsing, no LLM, no network. Counter, not analyzer.
+
+    State: ~/credentials/skill_telemetry_state.json —
+        {"last_offset_by_session": {"<uuid>": <byte_offset>}}
+    Output: ~/dashboards/data/compiled/skill-telemetry.jsonl (append-only)
+
+    Signal: assistant turns whose message.content contains a tool_use block
+    with name == "Skill". Unambiguous — explicit tool calls only.
+
+    Cadence: every ~30 min via the periodic-job runner. Coordination lock
+    "skill-telemetry" prevents racing writes when hook fires concurrently.
+    """
+    import json as _json
+    import glob as _glob
+
+    projects_dir = Path.home() / ".claude/projects/-Users-ygontownik-Documents-Claude"
+    state_path = Path.home() / "credentials/skill_telemetry_state.json"
+    out_path = Path.home() / "dashboards/data/compiled/skill-telemetry.jsonl"
+
+    if not projects_dir.exists():
+        return False
+
+    # Coordination lock — append-only writer, short TTL
+    try:
+        _tool_dir = os.path.dirname(os.path.abspath(__file__))
+        if _tool_dir not in sys.path:
+            sys.path.insert(0, _tool_dir)
+        from coordination import lock as _coord_lock
+    except ImportError:
+        _coord_lock = None
+
+    def _do_scan():
+        state = {}
+        if state_path.exists():
+            try:
+                state = _json.loads(state_path.read_text())
+            except _json.JSONDecodeError:
+                state = {}
+        offsets = state.get("last_offset_by_session", {}) or {}
+
+        transcripts = sorted(_glob.glob(str(projects_dir / "*.jsonl")))
+        if not transcripts:
+            return 0
+
+        new_records = []
+        for t_path in transcripts:
+            session_id = Path(t_path).stem
+            try:
+                size = Path(t_path).stat().st_size
+            except OSError:
+                continue
+            start = offsets.get(session_id, 0)
+            if start >= size:
+                continue  # nothing new
+            try:
+                with open(t_path, "rb") as f:
+                    f.seek(start)
+                    chunk = f.read()
+                    new_end = start + len(chunk)
+            except OSError:
+                continue
+
+            # Parse line-by-line; on the LAST line, if it's incomplete (no
+            # trailing \n), back off so we re-read it next pass when complete.
+            text = chunk.decode("utf-8", errors="ignore")
+            lines = text.split("\n")
+            if not text.endswith("\n") and lines:
+                # Last element is a partial line — drop and rewind the offset
+                partial = lines.pop()
+                new_end -= len(partial.encode("utf-8"))
+
+            for raw in lines:
+                if not raw.strip():
+                    continue
+                try:
+                    turn = _json.loads(raw)
+                except _json.JSONDecodeError:
+                    continue
+                # Per-item error isolation — wrap each turn
+                try:
+                    if turn.get("type") != "assistant":
+                        continue
+                    msg = turn.get("message", {})
+                    content = msg.get("content", [])
+                    if not isinstance(content, list):
+                        continue
+                    ts = turn.get("timestamp", "")
+                    cwd = turn.get("cwd", "")
+                    for block in content:
+                        if not isinstance(block, dict):
+                            continue
+                        if block.get("type") != "tool_use":
+                            continue
+                        if block.get("name") != "Skill":
+                            continue
+                        inp = block.get("input") or {}
+                        skill_name = inp.get("skill") or ""
+                        if not skill_name:
+                            continue
+                        args_val = inp.get("args", "")
+                        if not isinstance(args_val, str):
+                            args_val = _json.dumps(args_val, ensure_ascii=False)
+                        new_records.append({
+                            "ts": ts,
+                            "session": session_id,
+                            "skill": skill_name,
+                            "args": args_val,
+                            "cwd": cwd,
+                        })
+                except Exception:
+                    # one bad turn must not stop the scan
+                    continue
+
+            offsets[session_id] = new_end
+
+        if new_records:
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(out_path, "a") as f:
+                for r in new_records:
+                    f.write(_json.dumps(r) + "\n")
+            print(f"[skill-telemetry] appended {len(new_records)} record(s) to {out_path.name}",
+                  file=sys.stderr)
+
+        state["last_offset_by_session"] = offsets
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        state_path.write_text(_json.dumps(state, indent=2))
+        return len(new_records)
+
+    try:
+        if _coord_lock is not None:
+            with _coord_lock("skill-telemetry", holder="dash-state-hook.py", ttl_seconds=60):
+                return _do_scan() > 0
+        return _do_scan() > 0
+    except Exception as e:
+        print(f"[dash-state-hook] skill-telemetry scan failed (non-fatal): {e}", file=sys.stderr)
+        return False
+
+
+# Skill telemetry — every ~30 min (cheap, append-only)
+SKILL_TELEMETRY_LOCK = Path("/tmp/dash-state-hook-skill-telemetry.last")
+SKILL_TELEMETRY_INTERVAL = 1800  # 30 min
+
+
+def seconds_since_skill_telemetry():
+    if not SKILL_TELEMETRY_LOCK.exists():
+        return float("inf")
+    try:
+        return datetime.now().timestamp() - float(SKILL_TELEMETRY_LOCK.read_text().strip())
+    except Exception:
+        return float("inf")
+
+
 def maybe_mirror_actions_to_drive():
     """For each registered deal, if its local data/deals/<deal>/actions.md is
     newer than the tracker, push the content to the Drive actions doc
@@ -1007,6 +1163,7 @@ def main():
         print(f"  project_inst_sync:   {'WOULD RUN' if should_run_project_inst_sync() else 'skip'}")
         print(f"  chat_capture:        {'WOULD RUN' if seconds_since_chat_capture() >= CHAT_CAPTURE_INTERVAL else 'skip (too soon)'}")
         print(f"  artifact_pull:       {'WOULD RUN' if seconds_since_artifact_pull() >= ARTIFACT_PULL_INTERVAL else 'skip (too soon)'}")
+        print(f"  skill_telemetry:     {'WOULD RUN' if seconds_since_skill_telemetry() >= SKILL_TELEMETRY_INTERVAL else 'skip (too soon)'}")
         print()
         run_artifact_pull(dry_run=True)
         return 0
@@ -1064,6 +1221,15 @@ def main():
     # them for review in next morning briefing. Closes the dynamic-learnings
     # loop (cheap regex; high-precision/low-recall by design).
     run_learning_capture_scan()
+
+    # SKILL-TELEMETRY scan — every ~30 min, scan recent CC transcripts for
+    # Skill tool invocations and append one record per call. Pure regex/JSON,
+    # no LLM. Lets us see which skills are actually used (vs declared) over
+    # time. State at ~/credentials/skill_telemetry_state.json keeps
+    # per-session byte offsets so each line is counted once.
+    if seconds_since_skill_telemetry() >= SKILL_TELEMETRY_INTERVAL:
+        run_skill_telemetry_scan()
+        SKILL_TELEMETRY_LOCK.write_text(str(datetime.now().timestamp()))
 
     # actions.md local→Drive mirror — pushes per-deal actions.md to its Drive
     # _Claude Context/ doc whenever the local file mtime is newer than the
