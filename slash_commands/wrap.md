@@ -767,6 +767,49 @@ Next-chat paste-block ↓↓↓
 - Active voice. Past tense. ("Fixed X" not "X was fixed" or "fixing X.")
 - No jargon the user didn't already say. If the rule is L0023, write "the raw-anthropic-import check," not "L0023 enforcement."
 - If something didn't happen that should have, say it in the third paragraph: "Skipped the DRIVE-ARCHITECTURE.md §7 extension because it's still pending design input."
+- **Cross-chat attribution in Paragraph 1.** If STEP 4 found >1 parallel
+  chat session active since last wrap, the opening sentence must
+  acknowledge it explicitly: "Across N parallel chats today you shipped
+  …" — then summarize the work streams, one per chat. Use the git roll-up
+  below to attribute commits to streams.
+
+**Cross-chat git roll-up (for Paragraph 1):**
+
+Before composing the narrative, gather all commits across the 3 repos
+since last-wrap timestamp. This catches work done in other chats that
+already pushed, so the recap reflects the full day's activity — not
+just this chat's slice.
+
+```bash
+LAST_WRAP_TS=$(python3 -c "
+import json
+d = json.load(open('/Users/ygontownik/dashboards/data/last-wrap.json'))
+print(d['timestamp'])
+" 2>/dev/null || echo "24 hours ago")
+
+for repo in ~/cos-pipeline ~/dashboards ~/cos-pipeline-config-tomac; do
+    echo "=== $(basename $repo) ==="
+    git -C "$repo" log --since="$LAST_WRAP_TS" --pretty=format:"  %h  %s" --all
+done
+```
+
+Group the commits by **work stream** (not just by repo) — a single
+stream often spans multiple repos. Cues for grouping:
+- Commit message subject mentions the same deal slug, file, or system
+- Commit timestamps cluster within ~15 min (one chat's burst)
+- Co-Author trailer with the same session UUID (if present)
+
+Then in Paragraph 1, summarize each stream in one clause: "In the Cholla
+chat you closed the NDA redline (3 commits, 145PGRR-98 mirrored to Drive);
+in the dashboard chat the deal-pipeline filter went in; in this chat the
+local-file-organizer became permanent." Always concrete deal names +
+files, never "session abc12345."
+
+If the JSONL scan from STEP 4 was able to map session_id → work stream,
+prefer the JSONL attribution. If git log shows commits but JSONL scan
+found nothing (the other chat ended before its JSONL flushed), use
+commit-subject grouping and note in the recap: "(attribution via git
+log — parallel chat already closed)."
 
 **Data sources for the detail block:**
 - Health: STEP 8 snapshot + the pre-/wrap baseline captured at STEP 1
