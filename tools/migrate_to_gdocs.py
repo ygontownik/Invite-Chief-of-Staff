@@ -37,7 +37,16 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-import yaml
+try:
+    from ruamel.yaml import YAML
+    _RUAMEL = YAML()
+    _RUAMEL.preserve_quotes = True
+    _RUAMEL.width = 4096
+    _USE_RUAMEL = True
+except ImportError:
+    import yaml
+    _USE_RUAMEL = False
+
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -302,7 +311,7 @@ def main():
     with open(DEAL_SYSTEM_JSON) as f:
         deal_system = json.load(f)
     with open(DRIVE_DOCS_YAML) as f:
-        drive_docs_yaml = yaml.safe_load(f)
+        drive_docs_yaml = _RUAMEL.load(f) if _USE_RUAMEL else yaml.safe_load(f)
 
     deals_list = deal_system["deals"]
     deal_docs  = drive_docs_yaml.get("deal_docs") or {}
@@ -335,7 +344,10 @@ def main():
     with open(DEAL_SYSTEM_JSON, "w") as f:
         json.dump(deal_system, f, indent=2)
     with open(DRIVE_DOCS_YAML, "w") as f:
-        yaml.safe_dump(drive_docs_yaml, f, sort_keys=False, allow_unicode=True)
+        if _USE_RUAMEL:
+            _RUAMEL.dump(drive_docs_yaml, f)
+        else:
+            yaml.safe_dump(drive_docs_yaml, f, sort_keys=False, allow_unicode=True)
 
     print(f"\nDone. {counts}")
     print("Registry files updated. Backups written alongside.")

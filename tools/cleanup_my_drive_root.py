@@ -60,6 +60,9 @@ MANIFEST_DIR    = os.path.expanduser("~/dashboards/data/drive-cleanup/")
 # Destination folders that are constants (loaded from drive-docs.yaml when possible)
 TC_ROOT_ID            = "1JWzfdAKq9OmiCq8OKwei0DXye4cal4bA"   # 00 Tomac Cove/
 TC_CONTEXT_FOLDER_NAME = "_Context"                            # under TC_ROOT
+RECRUITING_FOLDER_ID  = "1x0HQzC_Qq4_4xLeGFS384-4UnYWD2W4W"   # Recruiting (Drive)
+# Personal/NORPAC/_Research/ — resolved lazily, created on demand if absent
+NORPAC_RESEARCH_CACHE = {"id": None}
 
 
 def get_service():
@@ -130,6 +133,20 @@ PRESENTATION_STANDARDS = re.compile(
     r"tcip\s*project\s*context|project\s*context)", re.I)
 GSCRIPT = re.compile(r"\.gscript$", re.I)
 
+# Recruiting: DRW interview prep, candidate master refs, TP_*_DRAFT artifacts
+# from the recruiting workstream. Filenames are distinctive enough for a regex.
+RECRUITING = re.compile(
+    r"(drw\b|interview\s*prep|master\s*interview\s*reference|"
+    r"^tp_(full|short)_draft|"
+    r"yoni\s*gontownik\s*[—-]\s*master\s*interview)", re.I)
+
+# NORPAC: Iran / antisemitism / Adam Schiff / Paul Levy congressional outreach
+# workstream. Per DRIVE-ARCHITECTURE §11 #2 → Personal/NORPAC/_Research/.
+NORPAC = re.compile(
+    r"(antisemitism|iran_?antisemitism|adam[-\s_]?schiff|"
+    r"congressional\s*quotes|paul\s*levy\s*briefing|"
+    r"\bnorpac\b)", re.I)
+
 
 def classify(file: dict, registered_ids: set[str], deal_index: list) -> dict:
     """Return a manifest entry for this file."""
@@ -177,10 +194,53 @@ def classify(file: dict, registered_ids: set[str], deal_index: list) -> dict:
                 "dest_folder_id": _tc_context_folder_id(),
                 "reason": "firm context -> 00 Tomac Cove/_Context/"}
 
-    # 6. Unrouted
+    # 6. Recruiting workstream (DRW interview prep, master interview ref, TP drafts)
+    if RECRUITING.search(name):
+        return {"file_id": fid, "name": name, "action": "MOVE",
+                "dest_folder_id": RECRUITING_FOLDER_ID,
+                "reason": "recruiting -> Recruiting/"}
+
+    # 7. NORPAC (Iran / antisemitism / Schiff / Paul Levy congressional outreach)
+    if NORPAC.search(name):
+        return {"file_id": fid, "name": name, "action": "MOVE",
+                "dest_folder_id": _norpac_research_folder_id(),
+                "reason": "norpac -> Personal/NORPAC/_Research/"}
+
+    # 8. Unrouted
     return {"file_id": fid, "name": name, "action": "UNROUTED",
             "dest_folder_id": None,
             "reason": "no rule matched — manual review"}
+
+
+def _norpac_research_folder_id() -> str:
+    """Resolve (or create) Personal/NORPAC/_Research/ at My Drive root.
+    Per DRIVE-ARCHITECTURE §11 #2 — Personal/NORPAC/ scaffold mirrors the
+    deal pattern with _Outputs/, _Research/, _Drafts/."""
+    if NORPAC_RESEARCH_CACHE["id"]:
+        return NORPAC_RESEARCH_CACHE["id"]
+    svc = get_service()
+    personal_id = _get_or_create_child("root", "Personal", svc)
+    norpac_id   = _get_or_create_child(personal_id, "NORPAC", svc)
+    # Ensure full deal-pattern scaffold once
+    for sub in ("_Outputs", "_Research", "_Drafts"):
+        _get_or_create_child(norpac_id, sub, svc)
+    research_id = _get_or_create_child(norpac_id, "_Research", svc)
+    NORPAC_RESEARCH_CACHE["id"] = research_id
+    return research_id
+
+
+def _get_or_create_child(parent_id: str, name: str, svc) -> str:
+    """Find a folder named `name` directly under `parent_id`; create if absent."""
+    q = (f"'{parent_id}' in parents and name = '{name.replace(chr(39), chr(92)+chr(39))}' "
+         f"and mimeType = 'application/vnd.google-apps.folder' and trashed = false")
+    resp = svc.files().list(q=q, fields="files(id,name)", pageSize=5).execute()
+    files = resp.get("files", [])
+    if files:
+        return files[0]["id"]
+    meta = {"name": name,
+            "mimeType": "application/vnd.google-apps.folder",
+            "parents": [parent_id]}
+    return svc.files().create(body=meta, fields="id").execute()["id"]
 
 
 _TC_CONTEXT_CACHE = {"id": None}
