@@ -472,6 +472,37 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
 
 If pre-commit hook fails, fix the issue and create a NEW commit (never --amend).
 
+### 9c. Dashboard warmup (NEW — added 2026-05-21 after /wrap verification)
+
+/wrap touches files the dashboard reads (deal-system-data.json regen by
+sync_registry, log.json compaction, drive-docs.yaml changes, etc.).
+Dashboard server has a 20-min auto-warmup thread, but that means the
+dashboard could serve stale data for up to 20 min after /wrap commits.
+
+Cheap fix: POST /warmup immediately. ~5ms.
+
+```bash
+# 9c.1 Warmup
+curl -s -o /dev/null -w "/warmup HTTP %{http_code}\n" \
+    -X POST http://localhost:7777/warmup
+
+# 9c.2 Verify cache + surface deal_sync_stale flag
+STATUS=$(curl -s http://localhost:7777/cache-status)
+echo "$STATUS" | python3 -c "
+import json, sys
+s = json.load(sys.stdin)
+print(f'Cache fetched: {s.get(\"fetchedAt\")}')
+print(f'deal_sync_stale: {s.get(\"deal_sync_stale\")}')
+oldest = max(((k, v.get('ageMin', 0)) for k, v in s.get('sections', {}).items()),
+             key=lambda x: x[1], default=('?', 0))
+print(f'Oldest section: {oldest[0]} ({oldest[1]:.1f} min)')
+"
+```
+
+If `deal_sync_stale: true` surfaces, add to SESSION-HANDOFF §4b:
+"deal-sync is overdue (>2h since last run) — invoke /deal-sync or wait
+for next dash-state-hook cycle."
+
 ### 9b. Uncommitted-leftover audit (NEW — added 2026-05-21 after /wrap pt 3)
 
 After all commits are made, scan each repo for remaining uncommitted files.
