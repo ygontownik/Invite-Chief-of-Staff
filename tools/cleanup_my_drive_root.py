@@ -12,12 +12,16 @@ Classification rules (in order of precedence):
   2. <deal>_status.md gdoc                       -> TRASH (historical orphans;
                                                     real status lives at the
                                                     registered status doc_id)
-  3. *.gscript                                   -> 00 Tomac Cove/_Context/
+  3. *.gscript                                   -> tenant root/_Context/
   4. Filename matches a deal's organizer_aliases -> that deal's _Outputs/
        a. If filename contains a version tag    -> _Outputs/Drafts/ (after
                                                     folder ensured)
-  5. "Presentation Standards" / "Practice Patterns" -> 00 Tomac Cove/_Context/
+  5. "Presentation Standards" / "Practice Patterns" -> tenant root/_Context/
   6. Otherwise                                   -> UNROUTED (surface for review)
+
+All tenant-specific Drive IDs (root folder, recruiting folder, NORPAC
+parent) come from drive-docs.yaml — no tenant names or IDs are hardcoded
+in this file.
 
 Usage:
   python3 cleanup_my_drive_root.py                  # dry-run, write manifest
@@ -57,12 +61,31 @@ SCOPES = ["https://www.googleapis.com/auth/drive"]
 DRIVE_DOCS_YAML = os.path.expanduser("~/dashboards/config/drive-docs.yaml")
 MANIFEST_DIR    = os.path.expanduser("~/dashboards/data/drive-cleanup/")
 
-# Destination folders that are constants (loaded from drive-docs.yaml when possible)
-TC_ROOT_ID            = "1JWzfdAKq9OmiCq8OKwei0DXye4cal4bA"   # 00 Tomac Cove/
-TC_CONTEXT_FOLDER_NAME = "_Context"                            # under TC_ROOT
-RECRUITING_FOLDER_ID  = "1x0HQzC_Qq4_4xLeGFS384-4UnYWD2W4W"   # Recruiting (Drive)
+# Tenant constants — all resolved from drive-docs.yaml. No hardcoded IDs.
+# Set by _load_tenant_constants() before classify() is called.
+TENANT_ROOT_ID         = None   # tenant root folder ID (resolved from registry)
+TENANT_CONTEXT_NAME    = "_Context"
+RECRUITING_FOLDER_ID   = None   # tenant recruiting folder
 # Personal/NORPAC/_Research/ — resolved lazily, created on demand if absent
 NORPAC_RESEARCH_CACHE = {"id": None}
+
+
+def _load_tenant_constants(registry: dict):
+    """Set TENANT_ROOT_ID + RECRUITING_FOLDER_ID from the registry's folders
+    section. Falls back to scanning known-name keys; tenants name their
+    primary folder differently."""
+    global TENANT_ROOT_ID, RECRUITING_FOLDER_ID
+    folders = registry.get("folders") or {}
+    # Tenant root: prefer a key ending in '_root' that isn't a research source
+    candidates = [k for k in folders
+                  if k.endswith("_root") and "transcripts" not in k]
+    if candidates:
+        TENANT_ROOT_ID = folders[candidates[0]].get("folder_id")
+    if "recruiting_drive" in folders:
+        RECRUITING_FOLDER_ID = folders["recruiting_drive"].get("folder_id")
+    if not TENANT_ROOT_ID:
+        raise SystemExit("No tenant root folder found in drive-docs.yaml "
+                         "(expected a folders.*_root entry).")
 
 
 def get_service():
@@ -165,11 +188,11 @@ def classify(file: dict, registered_ids: set[str], deal_index: list) -> dict:
                 "dest_folder_id": None,
                 "reason": "historical orphan; canonical doc lives at registered ID"}
 
-    # 3. *.gscript -> 00 Tomac Cove/_Context/
+    # 3. *.gscript -> tenant root/_Context/
     if GSCRIPT.search(name) or mime == "application/vnd.google-apps.script":
         return {"file_id": fid, "name": name, "action": "MOVE",
                 "dest_folder_id": _tc_context_folder_id(),
-                "reason": "gscript -> 00 Tomac Cove/_Context/"}
+                "reason": "gscript -> tenant root/_Context/"}
 
     # 4. Filename matches a deal alias -> that deal's _Outputs/ (or Drafts/)
     # Normalize underscores -> spaces so regex \b boundaries fire on filenames
@@ -192,7 +215,7 @@ def classify(file: dict, registered_ids: set[str], deal_index: list) -> dict:
     if PRESENTATION_STANDARDS.search(name):
         return {"file_id": fid, "name": name, "action": "MOVE",
                 "dest_folder_id": _tc_context_folder_id(),
-                "reason": "firm context -> 00 Tomac Cove/_Context/"}
+                "reason": "firm context -> tenant root/_Context/"}
 
     # 6. Recruiting workstream (DRW interview prep, master interview ref, TP drafts)
     if RECRUITING.search(name):
@@ -246,23 +269,12 @@ def _get_or_create_child(parent_id: str, name: str, svc) -> str:
 _TC_CONTEXT_CACHE = {"id": None}
 
 def _tc_context_folder_id() -> str:
-    """Return the _Context folder id under 00 Tomac Cove/, lazily resolved."""
+    """Return the _Context folder id under the tenant root, lazily resolved."""
     if _TC_CONTEXT_CACHE["id"]:
         return _TC_CONTEXT_CACHE["id"]
     svc = get_service()
-    q = (f"'{TC_ROOT_ID}' in parents and name = '{TC_CONTEXT_FOLDER_NAME}' "
-         f"and mimeType = 'application/vnd.google-apps.folder' and trashed = false")
-    resp = svc.files().list(q=q, fields="files(id,name)", pageSize=5).execute()
-    files = resp.get("files", [])
-    if files:
-        _TC_CONTEXT_CACHE["id"] = files[0]["id"]
-    else:
-        # Create it
-        meta = {"name": TC_CONTEXT_FOLDER_NAME,
-                "mimeType": "application/vnd.google-apps.folder",
-                "parents": [TC_ROOT_ID]}
-        created = svc.files().create(body=meta, fields="id").execute()
-        _TC_CONTEXT_CACHE["id"] = created["id"]
+    _TC_CONTEXT_CACHE["id"] = _get_or_create_child(
+        TENANT_ROOT_ID, TENANT_CONTEXT_NAME, svc)
     return _TC_CONTEXT_CACHE["id"]
 
 
@@ -371,6 +383,7 @@ def main():
 
     print("Loading registry…")
     registry = load_registry()
+    _load_tenant_constants(registry)
     registered_ids = collect_registered_ids(registry)
     deal_index = build_deal_alias_index(registry)
     print(f"  {len(registered_ids)} registered IDs, {len(deal_index)} deals")
