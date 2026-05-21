@@ -6,6 +6,10 @@ Authoritative reference for lessons learned during `/dash` sessions.
 A dated, append-only log of specific, falsifiable corrections that apply
 to all future `/dash` invocations.
 
+**Last consolidated:** 2026-05-20 (Block E). Roll-off cutoff: entries
+dated before 2026-02-19 → `dash_corrections-archive.md`. Currently
+zero entries qualify; oldest entry is 2026-04-21 (29 days).
+
 ---
 
 ## HOW TO USE THIS FILE
@@ -21,7 +25,12 @@ to all future `/dash` invocations.
   bullet must be specific and falsifiable. "Be careful with X" is not
   a rule; "X requires Y because Z" is.
 - **Never delete entries.** If a rule is superseded, add a new dated
-  entry that explicitly supersedes the older one.
+  entry that explicitly supersedes the older one. Mark the prior entry
+  with a `[SUPERSEDED YYYY-MM-DD by <title>]` tag inline in its header.
+- **Roll-off policy:** entries older than 90 days move to
+  `~/dashboards/config/dash_corrections-archive.md` during periodic
+  consolidation (Block E pattern). Archive preserves full text;
+  main file stays scannable.
 - **Generic rules only in this file.** Tenant-specific incidents, named
   deals, named people, and one-off events belong in the private
   `~/dashboards/config/dash_corrections_log.md`.

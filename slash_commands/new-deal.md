@@ -26,6 +26,9 @@ If $ARGUMENTS contains a deal name and ID, parse them. Otherwise ask Yoni for:
 - Existing Google Drive folder ID (optional — press Enter to create new)
 - Deal-specific triggers to add (options: cash_runway, regulatory_vote, disintermediation, process_deadline, relationship_tension, market_news)
 - Deal-specific rules to add (options: regulated_asset, development_asset, relationship_sensitive)
+- **Sector** — e.g. "Midstream / Natural Gas Transmission", "Regulated Electric & Gas Utility", "Power Generation / ERCOT" — used for knowledge digest matching and dashboard display
+- **Geography** — e.g. "New England (NH · ME · MA) / Quebec border", "ERCOT / Texas" — brief, structured location
+- **Tagline** — one-sentence investment thesis (max 120 chars), e.g. "295-mile Canadian-to-New England gas pipeline — only non-Algonquin path into constrained Northeast market"
 
 **Before confirming:** check whether `deal_id` already exists in `~/cos-pipeline/tools/deal-system-data.json`:
 
@@ -240,9 +243,9 @@ Then create `{deal_id}_dashboard_entry.json` and upload it directly into
   "id": "{deal_id}",
   "name": "{deal_name}",
   "ticker": "{TICKER}",
-  "sector": "",
-  "geography": "",
-  "tagline": "",
+  "sector": "{SECTOR}",
+  "geography": "{GEOGRAPHY}",
+  "tagline": "{TAGLINE}",
   "owner": "{lead}",
   "last_updated": "YYYY-MM-DD",
   "stage": "Sourcing",
@@ -383,6 +386,87 @@ print("Both registries updated.")
 ```
 
 Confirm both files written.
+
+---
+
+## PHASE 6c — Create local deal.md
+
+Create the local deal record so the knowledge digest can match news articles to this deal from day one.
+
+```python
+from pathlib import Path
+from datetime import date
+
+deal_id         = "{DEAL_ID}"
+deal_name       = "{DEAL_NAME}"
+sector          = "{SECTOR}"
+geography       = "{GEOGRAPHY}"
+tagline         = "{TAGLINE}"
+lead            = "{LEAD}"
+drive_folder_id = "{DRIVE_FOLDER_ID}"
+status_id       = "{STATUS_ID}"
+brief_id        = "{BRIEF_ID}"
+today           = date.today().isoformat()
+
+DEALS_DIR = Path.home() / 'dashboards' / 'data' / 'deals'
+deal_dir  = DEALS_DIR / deal_id
+deal_dir.mkdir(parents=True, exist_ok=True)
+
+for sub in ['transcripts', 'sources', '_inbox']:
+    (deal_dir / sub).mkdir(exist_ok=True)
+
+deal_md = f"""---
+id: {deal_id}
+name: {deal_name}
+ticker: {deal_id.upper()}
+sector: {sector}
+geography: {geography}
+tagline: "{tagline}"
+owner: {lead.split()[0]}
+last_updated: {today}
+last_activity: {today}
+stage: Sourcing
+stage_index: 0
+health: 0
+phase_capital: []
+tcip_econ:
+  status_note: Not yet formalized
+thesis: []
+tcip_edge: ''
+key_risk: ''
+counterparties: []
+contacts: []
+next_milestone: ''
+next_milestone_due: ''
+workstreams: []
+actions: []
+activity_log: []
+drive_folder_id: {drive_folder_id}
+status_file_id: {status_id}
+brief_file_id: {brief_id}
+project_url: null
+---
+
+# {deal_name} — Deal Notes
+
+Initial setup via /new-deal on {today}.
+Lead: {lead}
+"""
+
+(deal_dir / 'deal.md').write_text(deal_md)
+print(f'✓ Created {deal_dir}/deal.md')
+
+for fname, stub in [
+    ('LPs.md',   f'# {deal_name} — LP Interest\n\n_No LP contacts yet._\n'),
+    ('TERMS.md', f'# {deal_name} — Terms\n\n_No terms yet._\n'),
+]:
+    fpath = deal_dir / fname
+    if not fpath.exists():
+        fpath.write_text(stub)
+        print(f'✓ Created stub {fname}')
+```
+
+This creates `~/dashboards/data/deals/{deal_id}/deal.md` with real sector/geography/tagline so the nightly knowledge digest will begin matching articles to this deal on the next index run.
 
 ---
 

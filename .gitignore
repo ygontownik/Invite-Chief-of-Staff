@@ -150,3 +150,9 @@ P_ONBOARDING_BRIEFING.md
 # ── TENANT RUNTIME DATA (compiled outputs, logs — not version-controlled) ─────
 data-*/
 logs-*/
+
+# Dated backups
+*.bak.*
+
+# Compiled binaries — commit source only
+tools/imessages_reader

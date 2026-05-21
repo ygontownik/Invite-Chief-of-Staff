@@ -68,6 +68,11 @@ BLOCK_RE = re.compile(
     re.DOTALL | re.IGNORECASE,
 )
 
+SESSION_OUTPUT_RE = re.compile(
+    r"---SESSION-OUTPUT---\s*\n(.*?)\n\s*---END-SESSION-OUTPUT---",
+    re.DOTALL | re.IGNORECASE,
+)
+
 
 # ── State ─────────────────────────────────────────────────────────────────────
 
@@ -108,6 +113,183 @@ def load_registered_deal_ids():
         return {d["deal_id"] for d in data.get("deals", [])}
     except Exception:
         return set()
+
+
+def load_deal_output_registry():
+    """Return dict of {deal_id: {session_log_file_id, dashboard_entry_file_id, outputs_folder_id}}
+    for all deals that have these fields set."""
+    try:
+        data = json.loads(DEAL_REGISTRY.read_text())
+        out = {}
+        for d in data.get("deals", []):
+            did = d["deal_id"]
+            if d.get("session_log_file_id") or d.get("dashboard_entry_file_id"):
+                out[did] = {
+                    "session_log_file_id":    d.get("session_log_file_id"),
+                    "dashboard_entry_file_id": d.get("dashboard_entry_file_id"),
+                    "outputs_folder_id":      d.get("outputs_folder_id"),
+                }
+        return out
+    except Exception:
+        return {}
+
+
+# ── SESSION-OUTPUT block processing ───────────────────────────────────────────
+
+def parse_session_output_block(body):
+    """Parse a SESSION-OUTPUT block body into a dict.
+    Required fields: deal, date, type, title.
+    Optional: description, artifact."""
+    out = {}
+    for line in body.split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        m = re.match(r"^([a-zA-Z_][a-zA-Z_]*):\s*(.*)$", line)
+        if m:
+            key = m.group(1).lower()
+            val = m.group(2).strip()
+            if val:
+                out[key] = val
+    return out
+
+
+def _drive_read_text(file_id):
+    """Read a Drive file's text content via deal_extract_helpers."""
+    result = subprocess.run(
+        ["/opt/homebrew/bin/python3", str(HELPER_BIN), "read-file", file_id],
+        capture_output=True, text=True, timeout=60,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"read-file failed: {result.stderr.strip()}")
+    return result.stdout
+
+
+def _drive_overwrite_text(file_id, text):
+    """Overwrite a Drive plain-text file via deal_extract_helpers write-deal-doc-by-id."""
+    # deal_extract_helpers write-deal-doc expects content on stdin with deal_id + doc_type
+    # but we need a raw file-id overwrite. Use the helper's "write-file-by-id" subcommand
+    # if available, otherwise fall back to direct Python call.
+    result = subprocess.run(
+        ["/opt/homebrew/bin/python3", str(HELPER_BIN), "write-file-by-id", file_id],
+        input=text,
+        capture_output=True, text=True, timeout=60,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"write-file-by-id failed: {result.stderr.strip()}")
+
+
+def _update_session_log(session_log_file_id, block_data, deal_id):
+    """Append one row to session_log.md in Drive."""
+    date = block_data.get("date", datetime.now().strftime("%Y-%m-%d"))
+    btype = block_data.get("type", "unknown")
+    title = block_data.get("title", "")
+    desc = block_data.get("description", "")
+    artifact = block_data.get("artifact", "")
+
+    # Read current content
+    current = _drive_read_text(session_log_file_id)
+
+    # Build new row — no file link since we don't have a Drive file ID here
+    # (the artifact was generated in claude.ai; link is unknown at capture time)
+    artifact_cell = f"`{artifact}`" if artifact else "—"
+    new_row = f"| {date} | {btype} | {title} | {desc} | {artifact_cell} |\n"
+
+    # Append before any trailing whitespace at end of file
+    updated = current.rstrip() + "\n" + new_row
+
+    _drive_overwrite_text(session_log_file_id, updated)
+    return True
+
+
+def _update_dashboard_entry(dashboard_entry_file_id, block_data, deal_id):
+    """Append one entry to the claude_outputs array in dashboard_entry.json."""
+    date = block_data.get("date", datetime.now().strftime("%Y-%m-%d"))
+    btype = block_data.get("type", "unknown")
+    title = block_data.get("title", "")
+    desc = block_data.get("description", "")
+    artifact = block_data.get("artifact", "")
+
+    # Read and parse current JSON
+    raw = _drive_read_text(dashboard_entry_file_id)
+    try:
+        entry = json.loads(raw)
+    except json.JSONDecodeError:
+        raise RuntimeError(f"dashboard_entry.json parse failed for {deal_id}")
+
+    if "claude_outputs" not in entry:
+        entry["claude_outputs"] = []
+
+    new_item = {
+        "date": date,
+        "type": btype,
+        "title": title,
+        "description": desc,
+    }
+    if artifact:
+        new_item["artifact"] = artifact
+
+    # Dedup by (date, title) — don't append if already present
+    for existing in entry["claude_outputs"]:
+        if existing.get("date") == date and existing.get("title") == title:
+            return False  # already there
+
+    entry["claude_outputs"].append(new_item)
+    entry["_last_updated_from_session"] = date
+
+    _drive_overwrite_text(dashboard_entry_file_id, json.dumps(entry, indent=2))
+    return True
+
+
+def route_session_output_block(block_data, surface_label):
+    """Validate and route one SESSION-OUTPUT block.
+    Updates session_log.md and dashboard_entry.json in Drive.
+    Returns (deal_id, block_id, status)."""
+    registered = load_deal_output_registry()
+    deal_id = _s(block_data.get("deal")).lower()
+
+    if not deal_id:
+        log_error(surface_label, "<no deal>", "SESSION-OUTPUT block missing 'deal:' field")
+        return None, None, "error"
+
+    # Skip placeholder values from template examples (e.g. "<deal_id>")
+    if deal_id.startswith("<") or deal_id == "deal_id":
+        return None, None, "skip"
+
+    if deal_id not in registered:
+        log_error(surface_label, deal_id,
+                  f"SESSION-OUTPUT: deal '{deal_id}' not in registry or missing file IDs")
+        return deal_id, None, "error"
+
+    reg = registered[deal_id]
+
+    # Stable ID for dedup
+    title = _s(block_data.get("title"))
+    date = _s(block_data.get("date"), datetime.now().strftime("%Y-%m-%d"))
+    block_id = djb2(f"{deal_id}|{date}|{title}|session-output")
+
+    log_ok = False
+    dash_ok = False
+    errors = []
+
+    if reg.get("session_log_file_id"):
+        try:
+            _update_session_log(reg["session_log_file_id"], block_data, deal_id)
+            log_ok = True
+        except Exception as e:
+            errors.append(f"session_log: {e}")
+            log_error(surface_label, block_id, f"session_log update failed: {e}")
+
+    if reg.get("dashboard_entry_file_id"):
+        try:
+            _update_dashboard_entry(reg["dashboard_entry_file_id"], block_data, deal_id)
+            dash_ok = True
+        except Exception as e:
+            errors.append(f"dashboard_entry: {e}")
+            log_error(surface_label, block_id, f"dashboard_entry update failed: {e}")
+
+    status = "ok" if (log_ok or dash_ok) and not errors else "error"
+    return deal_id, block_id, status
 
 
 # ── Block parsing ─────────────────────────────────────────────────────────────
@@ -279,6 +461,31 @@ def cmd_scan_claude_code(args):
                     captured.add(block_hash)
                 else:
                     errors += 1
+
+            # SESSION-OUTPUT blocks — route to session_log.md + dashboard_entry.json
+            for m in SESSION_OUTPUT_RE.finditer(full):
+                body = m.group(1)
+                block_hash = djb2("session-output|" + body)
+                if block_hash in captured:
+                    skipped += 1
+                    continue
+                try:
+                    parsed = parse_session_output_block(body)
+                except Exception as e:
+                    log_error("claude-code", file_key, f"session-output parse failed: {e}")
+                    errors += 1
+                    continue
+                deal_id, block_id, status = route_session_output_block(parsed, "claude-code")
+                if status == "ok":
+                    routed += 1
+                    captured.add(block_hash)
+                elif status == "skip":
+                    # Placeholder block (e.g. from template examples) — mark captured, no error
+                    captured.add(block_hash)
+                    skipped += 1
+                else:
+                    errors += 1
+
             file_state["captured"] = sorted(captured)
             file_state["last_scan"] = datetime.now().isoformat()
     save_state(state)
@@ -286,11 +493,13 @@ def cmd_scan_claude_code(args):
 
 
 def cmd_parse_stdin(args):
-    """Read text from stdin, route any DEAL-INTEL blocks. For testing
-    and ad-hoc piping."""
+    """Read text from stdin, route any DEAL-INTEL or SESSION-OUTPUT blocks.
+    For testing and ad-hoc piping (e.g. echo <chat text> | intel_capture.py parse-stdin)."""
     full = sys.stdin.read()
     routed = 0
+    skipped = 0
     errors = 0
+
     for m in BLOCK_RE.finditer(full):
         body = m.group(1)
         try:
@@ -302,11 +511,31 @@ def cmd_parse_stdin(args):
         deal_id, entry_id, status = route_block(parsed, "stdin")
         if status == "ok":
             routed += 1
-            print(f"  ok: {deal_id} <- {entry_id}")
+            print(f"  deal-intel ok: {deal_id} <- {entry_id}")
         else:
             errors += 1
-            print(f"  error: {deal_id} ({entry_id})", file=sys.stderr)
-    print(f"parse-stdin: routed={routed}, errors={errors}")
+            print(f"  deal-intel error: {deal_id} ({entry_id})", file=sys.stderr)
+
+    for m in SESSION_OUTPUT_RE.finditer(full):
+        body = m.group(1)
+        try:
+            parsed = parse_session_output_block(body)
+        except Exception as e:
+            log_error("stdin", "<inline>", f"session-output parse failed: {e}")
+            errors += 1
+            continue
+        deal_id, block_id, status = route_session_output_block(parsed, "stdin")
+        if status == "ok":
+            routed += 1
+            print(f"  session-output ok: {deal_id} <- {block_id}")
+        elif status == "skip":
+            skipped += 1
+            print(f"  session-output skip: placeholder block ignored")
+        else:
+            errors += 1
+            print(f"  session-output error: {deal_id} ({block_id})", file=sys.stderr)
+
+    print(f"parse-stdin: routed={routed}, skipped={skipped}, errors={errors}")
 
 
 def _load_deal_registry_full():

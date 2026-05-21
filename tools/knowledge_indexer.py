@@ -54,6 +54,7 @@ COLLECTION_NAME = 'intelligence'
 # Format: { google_doc_id: tracker_key }
 EXTRA_INTEL_DOCS = {
     '1UZ1t4bhgzll5VcAuP3Mj1CyYb-4xjgmbUK1xg6oUS_k': 'Daily Market Update',
+    '1Ayd7VwgJKY1zw52xOFlsXGxylXMlcvOgaEQfkEKVKJ4': 'PeakLoad Daily News Archive',
 }
 
 # ── sector tag map ────────────────────────────────────────────────────────────
@@ -76,6 +77,9 @@ SECTOR_TAG_MAP = [
     (['Daily Market Update'],
                              ['power', 'utilities', 'midstream', 'energy',
                               'macro', 'digital_infra', 'data_centers']),
+    # PeakLoad — deal flow news, M&A, project finance across power/midstream/utilities
+    (['PeakLoad Daily News Archive'],
+                             ['power', 'utilities', 'midstream', 'energy', 'macro']),
 ]
 
 # ── date extraction ───────────────────────────────────────────────────────────

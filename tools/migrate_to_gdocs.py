@@ -21,9 +21,9 @@ plain-text .md file, not a gdoc):
 Default is --dry-run. --execute writes registry changes and modifies Drive.
 
 Usage:
-  python3 migrate_to_gdocs.py                       # dry-run, prints plan
-  python3 migrate_to_gdocs.py --execute             # apply
-  python3 migrate_to_gdocs.py --deal cholla --execute
+  python3 migrate_to_gdocs.py                          # dry-run, prints plan
+  python3 migrate_to_gdocs.py --execute                # apply
+  python3 migrate_to_gdocs.py --deal <deal_id> --execute
 """
 
 from __future__ import annotations

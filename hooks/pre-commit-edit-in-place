@@ -1,0 +1,53 @@
+#!/bin/bash
+# pre-commit-edit-in-place — Enforce invariant I11 (DRIVE-ARCHITECTURE.md §7).
+#
+# Block any commit that introduces a new gdoc/sheet/slide creation in pipeline
+# code without explicitly registering it in drive-docs.yaml.
+#
+# Bypass with: git commit --no-verify  (only when truly creating a new doc).
+#
+# Install:
+#   cp ~/cos-pipeline/hooks/pre-commit-edit-in-place .git/hooks/pre-commit
+#   chmod +x .git/hooks/pre-commit
+# Or symlink:
+#   ln -s ~/cos-pipeline/hooks/pre-commit-edit-in-place .git/hooks/pre-commit
+
+set -e
+
+staged_py=$(git diff --cached --name-only --diff-filter=AM | grep -E '\.py$' || true)
+if [ -z "$staged_py" ]; then
+  exit 0
+fi
+
+violations=0
+for f in $staged_py; do
+  # Look at the ADDED lines only (lines starting with + but not +++)
+  added=$(git diff --cached -U0 "$f" | grep -E '^\+[^+]' || true)
+
+  # Pattern: files().create with mimeType = google-apps document/sheet/presentation
+  # AND no explicit "# NEW REGISTERED DOC" marker on the line.
+  hits=$(echo "$added" | grep -E "files\(\)\.create.*application/vnd\.google-apps\.(document|spreadsheet|presentation)" \
+         | grep -v "# NEW REGISTERED DOC" || true)
+  if [ -n "$hits" ]; then
+    # Allow if drive-docs.yaml is also being committed (the doc is being registered)
+    yaml_committed=$(git diff --cached --name-only | grep -E "drive-docs\.yaml$" || true)
+    if [ -z "$yaml_committed" ]; then
+      echo "❌ Pre-commit BLOCK: $f introduces new Drive doc creation without registry update"
+      echo "    Offending line(s):"
+      echo "$hits" | sed 's/^/      /'
+      echo "    Fix: either (a) add # NEW REGISTERED DOC comment on the line"
+      echo "                (b) also update drive-docs.yaml in this same commit"
+      echo "                (c) git commit --no-verify if truly intentional"
+      violations=$((violations + 1))
+    fi
+  fi
+done
+
+if [ $violations -gt 0 ]; then
+  echo ""
+  echo "Blocked $violations violation(s) of invariant I11 (edit-in-place rule)."
+  echo "See ~/dashboards/docs/DRIVE-ARCHITECTURE.md §7 invariant I11 for context."
+  exit 1
+fi
+
+exit 0

@@ -125,6 +125,31 @@ FIRM_CONTEXT_PATH = SCRIPT_DIR / "firm_context.md"
 TC_CONTEXT_FOLDER_ID = "1IsGHEEeWOFtJ3yDYseJlSHYBprzom1tn"
 DRIVE_REGISTRY_FILE  = "tcip-deals-registry.json"
 
+# Parent folder where new deal folders MUST be created.
+# Today: TC_DEALS. Post-consolidation: 00 Tomac Cove/Active Deals/. Folder ID
+# is stable under move+rename so this constant doesn't change.
+TC_DEALS_FOLDER_ID   = "1vRVTYiS4wyqsHr_3iYepu2_g0biS6n3b"
+
+# Deal model scaffolding (see scaffold_deal_model() below). Templates live in
+# the private tenant config repo; deck generation is the Python+Claude pipeline
+# in ~/cos-pipeline/tools/deck_base.py + ~/cos-pipeline-config-tomac/tools/
+# build_deck_<deal>.py, invoked via the `tcip` alias. No OLE linking involved.
+# See DRIVE-RECOMMENDATIONS.md §8 (corrected) for the workflow rationale.
+DEAL_MODEL_TEMPLATE_PATH = Path(os.environ.get(
+    "TCIP_MODEL_TEMPLATE",
+    str(Path.home() / "cos-pipeline-config-tomac/reference_docs/TCIP_Deal_Model_Template.xlsx"),
+))
+DEAL_BUILDER_TEMPLATE_PATH = Path(os.environ.get(
+    "TCIP_BUILDER_TEMPLATE",
+    str(Path.home() / "cos-pipeline-config-tomac/tools/build_deck_fit.py"),
+))
+DEAL_REGISTRY_PATH = Path(os.environ.get(
+    "TCIP_DEAL_REGISTRY",
+    str(Path.home() / "cos-pipeline-config-tomac/config/deal_registry.json"),
+))
+
+XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
 # Drive folder subfolders to create per deal
 DEAL_SUBFOLDERS = ["Documents", "Transcripts", "Filings", "Correspondence"]
 
@@ -280,34 +305,47 @@ def _master_brief_template(deal_name, deal_id, lead, support):
 
 # ── DRIVE OPERATIONS ──────────────────────────────────────────────────────────
 
-def create_drive_folder(service, name, parent_id=None):
-    meta = {"name": name, "mimeType": "application/vnd.google-apps.folder"}
-    if parent_id:
-        meta["parents"] = [parent_id]
+def create_drive_folder(service, name, parent_id):
+    """Create a folder in Drive. parent_id is REQUIRED (no implicit root creation).
+
+    Hardened 2026-05-20: parent_id used to default to None, which caused new deal
+    folders to land at My Drive root rather than under TC_DEALS. See DRIVE-ARCHITECTURE.md
+    invariant I11.
+    """
+    if parent_id is None:
+        raise ValueError(
+            "parent_id is required — pass an explicit Drive folder ID. "
+            "Creating at My Drive root is disabled to prevent registry drift."
+        )
+    meta = {"name": name, "mimeType": "application/vnd.google-apps.folder",
+            "parents": [parent_id]}
     f = service.files().create(body=meta, fields="id,name").execute()
     return f["id"]
 
 
-def create_drive_text_file(service, name, content, parent_id=None):
-    """Upload a plain-text file to Drive (NOT a Google Doc). Appendable via get_media/update."""
-    meta = {"name": name}
-    if parent_id:
-        meta["parents"] = [parent_id]
+def create_drive_text_file(service, name, content, parent_id):
+    """Upload a plain-text file to Drive (NOT a Google Doc). parent_id is REQUIRED."""
+    if parent_id is None:
+        raise ValueError("parent_id is required for create_drive_text_file.")
+    meta = {"name": name, "parents": [parent_id]}
     media = MediaInMemoryUpload(content.encode("utf-8"), mimetype="text/plain", resumable=False)
     f = service.files().create(body=meta, media_body=media, fields="id,webViewLink").execute()
     return f["id"], f.get("webViewLink", "")
 
 
-def create_drive_doc(service, title, content, parent_id=None):
-    """Create a native Google Doc from text content (Drive auto-converts text/plain upload).
-    Produces mimeType=application/vnd.google-apps.document — readable in Drive without download.
+def create_drive_doc(service, title, content, parent_id):
+    """Create a native Google Doc from text content. parent_id is REQUIRED.
+
+    Produces mimeType=application/vnd.google-apps.document — readable in Drive without
+    download, referenceable by claude.ai project instructions.
     """
+    if parent_id is None:
+        raise ValueError("parent_id is required for create_drive_doc.")
     meta = {
         "name": title,
         "mimeType": "application/vnd.google-apps.document",
+        "parents": [parent_id],
     }
-    if parent_id:
-        meta["parents"] = [parent_id]
     media = MediaInMemoryUpload(
         content.encode("utf-8"),
         mimetype="text/plain",  # upload as plain text; Drive converts to Google Doc
@@ -1364,6 +1402,203 @@ def upload_drive_registry(service, data_path=None):
               f"— {f['id']} ({len(registry_deals)} deals)")
 
 
+# ── DEAL MODEL SCAFFOLD (XLSX + builder script + registry entry) ─────────────
+#
+# Architecture (per ~/cos-pipeline-config-tomac/config/deal_registry.json _meta):
+#   - Model:    XLSX with named ranges (Inputs / Engine / Outputs tabs)
+#   - Deck:     GENERATED, not stored — deck_base.py + build_deck_<deal>.py
+#               rebuild the PPTX from the model each time `tcip rebuild` runs
+#   - Refresh:  `tcip "natural language"` → update_deck.py → Claude → rebuild
+#
+# So this function does NOT clone any PPTX template and does NOT patch any OLE
+# link. The model→deck connection is the Python pipeline above; the deck file
+# only exists after the first `tcip --deal <deal_id> rebuild`.
+#
+# What it DOES do (matching deal_registry.json _meta.new_deal_instructions):
+#   1. Copy TCIP_Deal_Model_Template.xlsx → ~/dashboards/data/deals/<deal_id>/profit-model.xlsx
+#      (local — read by compile-dashboard.py)
+#   2. Copy build_deck_fit.py → build_deck_<deal_id>.py
+#      (stub — deal-specific customization lands here via `tcip` later)
+#   3. Upload one archive copy of the model to Drive _Outputs/ as
+#      <deal_id>_Model_v1.xlsx
+#   4. Add an entry to deal_registry.json so `tcip --deal <deal_id> rebuild`
+#      finds the right model + script
+#
+# Earlier iterations of this function tried to clone a linked PPTX+XLSX pair
+# from Drive _Claude Context and patch the .rels XML — based on a misread of
+# DRIVE-RECOMMENDATIONS.md §8 (now corrected in that doc's header).
+
+
+def _drive_upload_binary(service, local_path, parent_id, mimetype, name=None):
+    """Upload local_path to Drive under parent_id with given mimetype. Returns (id, webViewLink)."""
+    from googleapiclient.http import MediaFileUpload
+    local_path = Path(local_path)
+    meta = {"name": name or local_path.name, "parents": [parent_id]}
+    media = MediaFileUpload(str(local_path), mimetype=mimetype, resumable=False)
+    f = service.files().create(body=meta, media_body=media, fields="id,webViewLink").execute()
+    return f["id"], f.get("webViewLink", "")
+
+
+def _register_deal_in_registry(deal_id, model_path, pptx_path, script_path,
+                                aliases=None, registry_path=None):
+    """Add or update a deal entry in deal_registry.json. Idempotent.
+
+    Skipped (with a printed note) if the registry file doesn't exist — the
+    public-repo install may not have the private tenant registry yet.
+    """
+    registry_path = Path(registry_path) if registry_path else DEAL_REGISTRY_PATH
+    if not registry_path.exists():
+        print(f"   ℹ  Registry not found at {registry_path}; skipping registration.")
+        print(f"      (This is normal for a public-repo install without the private tenant config.)")
+        return False
+    reg = json.loads(registry_path.read_text())
+    aliases = aliases or [deal_id]
+    reg[deal_id] = {
+        "model":   str(model_path),
+        "pptx":    str(pptx_path),
+        "script":  str(script_path),
+        "aliases": aliases,
+    }
+    registry_path.write_text(json.dumps(reg, indent=2) + "\n")
+    print(f"   ✓ Registered '{deal_id}' in {registry_path.name}")
+    return True
+
+
+def scaffold_deal_model(deal_id, deal_name, outputs_folder_id, drive_service,
+                        upload=True, mirror_local=True, register=True,
+                        aliases=None,
+                        model_template=None,
+                        builder_template=None):
+    """Scaffold a new deal's model + builder script + registry entry.
+
+    Per deal_registry.json _meta.new_deal_instructions:
+      1. Copy TCIP_Deal_Model_Template.xlsx → <deal_id>_Model_v1.xlsx
+      2. Populate Inputs tab + build Engine/Outputs (manual, follow-up)
+      3. Copy build_deck_fit.py → build_deck_<deal_id>.py
+      4. Register paths in deal_registry.json
+      5. Run: tcip --deal <deal_id> rebuild
+
+    No PPTX template is cloned — the deck is generated on demand.
+
+    Args:
+        deal_id:           slug used in filenames and registry keys.
+        deal_name:         human-readable (used only for log lines).
+        outputs_folder_id: Drive _Outputs/ folder ID for the deal (where the
+                           archive XLSX copy lands). Pass any string when
+                           upload=False.
+        drive_service:     authed Drive v3 service (or None when upload=False).
+        upload:            if False, skip Drive upload (smoke-test path).
+        mirror_local:      if True, drop the model at
+                           ~/dashboards/data/deals/<deal_id>/profit-model.xlsx
+                           so compile-dashboard.py picks it up.
+        register:          if True, add an entry to deal_registry.json.
+        aliases:           list of registry aliases (defaults to [deal_id]).
+        model_template:    override DEAL_MODEL_TEMPLATE_PATH (test injection).
+        builder_template:  override DEAL_BUILDER_TEMPLATE_PATH (test injection).
+
+    Returns a dict with paths, new Drive ID (if uploaded), and registration status.
+    """
+    import shutil
+
+    model_template = Path(model_template) if model_template else DEAL_MODEL_TEMPLATE_PATH
+    builder_template = Path(builder_template) if builder_template else DEAL_BUILDER_TEMPLATE_PATH
+
+    if not model_template.exists():
+        raise FileNotFoundError(
+            f"Model template not found: {model_template}. "
+            f"Set TCIP_MODEL_TEMPLATE env var or check the path in deal_registry.json _meta."
+        )
+    if not builder_template.exists():
+        raise FileNotFoundError(
+            f"Builder template not found: {builder_template}. "
+            f"Set TCIP_BUILDER_TEMPLATE env var or check the path in deal_registry.json _meta."
+        )
+
+    new_model_name   = f"{deal_id}_Model_v1.xlsx"
+    new_deck_name    = f"{deal_id}_Deck_v1.pptx"        # generated later by `tcip rebuild`
+    new_builder_name = f"build_deck_{deal_id}.py"
+
+    builder_dest    = builder_template.parent / new_builder_name
+    local_data_dir  = Path.home() / "dashboards" / "data" / "deals" / deal_id
+    local_mirror    = local_data_dir / "profit-model.xlsx"
+    local_pptx_out  = local_data_dir / new_deck_name    # `tcip rebuild` writes here
+
+    result = {
+        "deal_id":          deal_id,
+        "deal_name":        deal_name,
+        "model_template":   str(model_template),
+        "builder_template": str(builder_template),
+        "new_model_name":   new_model_name,
+        "new_deck_name":    new_deck_name,
+        "new_builder_name": new_builder_name,
+        "builder_dest":     str(builder_dest),
+        "local_mirror":     None,
+        "local_pptx_out":   str(local_pptx_out),
+        "model_drive_id":   None,
+        "model_drive_url":  None,
+        "builder_copied":   False,
+        "registered":       False,
+        "uploaded":         False,
+    }
+
+    # 1. Copy the builder script (always — it's local; idempotent).
+    if builder_dest.exists():
+        print(f"   ℹ  Builder script already exists: {builder_dest.name} (leaving in place)")
+    else:
+        shutil.copy(builder_template, builder_dest)
+        print(f"   ✓ Copied builder template → {builder_dest.name}")
+        print(f"     Next: customize FIT_INPUT_NAMES, _fit_compute_fn, slide builders for {deal_id}")
+        print(f"           (or run: tcip \"build out the {deal_id} deck per the model\")")
+        result["builder_copied"] = True
+
+    # 2. Mirror XLSX locally for compile-dashboard.py + tcip rebuild.
+    if mirror_local:
+        local_data_dir.mkdir(parents=True, exist_ok=True)
+        if local_mirror.exists():
+            print(f"   ℹ  Local model mirror already exists: {local_mirror}")
+        else:
+            shutil.copy(model_template, local_mirror)
+            print(f"   ✓ Local model mirror → {local_mirror}")
+        result["local_mirror"] = str(local_mirror)
+
+    # 3. Upload an archive copy to Drive _Outputs/ — bracketed by coordination
+    #    lock to serialize against /deal-sync and sync_registry.py.
+    if upload:
+        try:
+            sys.path.insert(0, str(SCRIPT_DIR))
+            from coordination import lock as _coordination_lock
+        except Exception as e:
+            raise RuntimeError(f"Could not import coordination lock helper: {e}")
+        holder = f"tcip_new_deal.py:scaffold_deal_model:{deal_id}"
+        # Stage a per-deal-named copy so Drive shows the new filename.
+        upload_tmp = local_data_dir / new_model_name
+        if not upload_tmp.exists():
+            shutil.copy(model_template, upload_tmp)
+        with _coordination_lock("drive-docs.yaml", holder=holder,
+                                ttl_seconds=300, timeout_seconds=120):
+            xlsx_id, xlsx_url = _drive_upload_binary(
+                drive_service, upload_tmp, outputs_folder_id, XLSX_MIME, name=new_model_name
+            )
+            print(f"   ✓ Uploaded XLSX → {xlsx_id}")
+        result["model_drive_id"]  = xlsx_id
+        result["model_drive_url"] = xlsx_url
+        result["uploaded"]        = True
+    else:
+        print(f"   ℹ  upload=False — skipping Drive upload (smoke test)")
+
+    # 4. Register in deal_registry.json so `tcip --deal <deal_id>` resolves.
+    if register:
+        result["registered"] = _register_deal_in_registry(
+            deal_id,
+            model_path=local_mirror,
+            pptx_path=local_pptx_out,
+            script_path=builder_dest,
+            aliases=aliases or [deal_id],
+        )
+
+    return result
+
+
 # ── INTERACTIVE INPUT ─────────────────────────────────────────────────────────
 
 def prompt_interactive():
@@ -1418,6 +1653,11 @@ def main():
     parser.add_argument("--rebuild-registry", action="store_true",
                         help="Rebuild and upload tcip-deals-registry.json from "
                              "deal-system-data.json without creating a new deal")
+    parser.add_argument("--smoke-test-scaffold", action="store_true",
+                        help="Run scaffold_deal_model() with deal_id='test_deal' "
+                             "and upload=False, register=False; verifies template "
+                             "copy + builder clone + local mirror plumbing, then "
+                             "prints the result and exits without writing Drive or registry.")
     args = parser.parse_args()
 
     # Standalone registry rebuild — no deal creation needed
@@ -1429,6 +1669,31 @@ def main():
         print("─────────────────────────────────")
         upload_drive_registry(drive)
         print("\nDone. Drive Organizer will auto-load all deals on next run.")
+        return
+
+    # Standalone scaffold smoke test — no Drive write, no registry change.
+    if args.smoke_test_scaffold:
+        print("\n─────────────────────────────────")
+        print("SMOKE TEST — scaffold_deal_model(deal_id='test_deal', upload=False, register=False)")
+        print("─────────────────────────────────")
+        result = scaffold_deal_model(
+            deal_id="test_deal",
+            deal_name="Test Deal (smoke)",
+            outputs_folder_id="UNUSED_NO_UPLOAD",
+            drive_service=None,
+            upload=False,
+            mirror_local=True,
+            register=False,
+        )
+        print("\n─── RESULT ──────────────────────")
+        print(json.dumps(result, indent=2))
+        if not (Path(result["local_mirror"] or "/nonexistent").exists()
+                and Path(result["builder_dest"]).exists()):
+            print("\n⚠️  Smoke test produced expected paths but files are missing on disk.")
+            sys.exit(2)
+        print("\n✅ Smoke test passed: model template + builder script in place.")
+        print(f"   To clean up: rm -r ~/dashboards/data/deals/test_deal "
+              f"&& rm {result['builder_dest']}")
         return
 
     # Get inputs
@@ -1474,8 +1739,8 @@ def main():
         drive_folder_name = deal_name
         print(f"   ✓ Using existing folder: {drive_folder_id}")
     else:
-        print(f"   Creating folder: {deal_name}")
-        drive_folder_id = create_drive_folder(drive, deal_name)
+        print(f"   Creating folder: {deal_name} (under TC_DEALS)")
+        drive_folder_id = create_drive_folder(drive, deal_name, parent_id=TC_DEALS_FOLDER_ID)
         drive_folder_name = deal_name
         print(f"   ✓ Created: {drive_folder_id}")
 
@@ -1545,15 +1810,36 @@ def main():
     else:
         print("   ℹ  master_brief.md written as template — fill in first Claude Project session")
 
-    # ── PHASE 4: UPDATE COMPILE SCRIPT ───────────────────────────────────────
+    # ── PHASE 4: DEAL MODEL + BUILDER SCAFFOLD ───────────────────────────────
     print("\n─────────────────────────────────")
-    print("PHASE 4 — Compile Script Update")
+    print("PHASE 4 — Deal Model + Builder Scaffold")
+    print("─────────────────────────────────")
+    deal_model = None
+    try:
+        deal_model = scaffold_deal_model(
+            deal_id=deal_id,
+            deal_name=deal_name,
+            outputs_folder_id=outputs_folder_id,
+            drive_service=drive,
+            upload=True,
+            mirror_local=True,
+            register=True,
+        )
+        print(f"   ✓ Next:  tcip --deal {deal_id} rebuild   "
+              f"(once Inputs tab is populated + builder customized)")
+    except Exception as e:
+        print(f"   ⚠️  scaffold_deal_model failed: {e}")
+        print(f"      Deal onboarding continues; model can be scaffolded manually later.")
+
+    # ── PHASE 5: UPDATE COMPILE SCRIPT ───────────────────────────────────────
+    print("\n─────────────────────────────────")
+    print("PHASE 5 — Compile Script Update")
     print("─────────────────────────────────")
     update_compile_writeback(deal_id, status_id)
 
-    # ── PHASE 5: UPDATE DEAL SYSTEM DATA ────────────────────────────────────
+    # ── PHASE 6: UPDATE DEAL SYSTEM DATA ────────────────────────────────────
     print("\n─────────────────────────────────")
-    print("PHASE 5 — Deal Registry Update")
+    print("PHASE 6 — Deal Registry Update")
     print("─────────────────────────────────")
     update_deal_system_data(
         deal_id, deal_name, lead, support,
@@ -1567,15 +1853,15 @@ def main():
     # automatically on its next morning run — no Apps Script edits needed.
     upload_drive_registry(drive)
 
-    # ── PHASE 6: LOCAL DATA FOLDERS ──────────────────────────────────────────
+    # ── PHASE 7: LOCAL DATA FOLDERS ──────────────────────────────────────────
     print("\n─────────────────────────────────")
-    print("PHASE 6 — Local Data Folders")
+    print("PHASE 7 — Local Data Folders")
     print("─────────────────────────────────")
     create_local_data_folders(deal_id)
 
-    # ── PHASE 7: GENERATE PROJECT INSTRUCTIONS ───────────────────────────────
+    # ── PHASE 8: GENERATE PROJECT INSTRUCTIONS ───────────────────────────────
     print("\n─────────────────────────────────")
-    print("PHASE 7 — Project Instructions")
+    print("PHASE 8 — Project Instructions")
     print("─────────────────────────────────")
     instructions = generate_project_instructions(
         deal_name, deal_id, lead, support,
@@ -1586,9 +1872,9 @@ def main():
     )
     instructions_path = save_instructions_locally(deal_id, instructions)
 
-    # ── PHASE 8: UPDATE FIRM CONTEXT ─────────────────────────────────────────
+    # ── PHASE 9: UPDATE FIRM CONTEXT ─────────────────────────────────────────
     print("\n─────────────────────────────────")
-    print("PHASE 8 — Firm Context Update")
+    print("PHASE 9 — Firm Context Update")
     print("─────────────────────────────────")
     update_firm_context_pipeline(
         drive,
@@ -1599,7 +1885,7 @@ def main():
         new_stage="Early",
     )
 
-    # ── PHASE 9: COMPLETION + BROWSER-STEP SIGNAL ────────────────────────────
+    # ── PHASE 10: COMPLETION + BROWSER-STEP SIGNAL ───────────────────────────
     print(f"\n{'=' * 60}")
     print("  AUTOMATED SETUP COMPLETE")
     print(f"{'=' * 60}")

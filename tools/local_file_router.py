@@ -70,44 +70,47 @@ SCOPES = ["https://www.googleapis.com/auth/drive"]
 # ── Staging folder (Drive Organizer picks up from here daily) ─────────────────
 STAGING_FOLDER_ID = "11iBM6-gJ4IderdsJJ7LwBGpOgovXSDhI"
 
-# ── Deal registry ─────────────────────────────────────────────────────────────
-DEALS = {
-    "cholla": {
-        "re": re.compile(r'\b(cholla|venus|project.?venus|aps)\b', re.IGNORECASE),
-        "root_folder_id": "1jwieF1eGqMzeULjtZP7wSvIojpVVA-FZ",
-        "outputs_folder_id": "11lSBj42Qdhoi7ILE-fULZYSUaUhFbrg2",
-    },
-    "pngts": {
-        "re": re.compile(r'\b(pngts|iroquois|granite.state|pan.ny)\b', re.IGNORECASE),
-        "root_folder_id": "1zzpAJGm9DxEeU4Ah60086mHHqQqUVknC",
-        "outputs_folder_id": "1l7z6jnkvWjGlTR0wEYTzpzk-Zgxej4fj",
-    },
-    "unitil": {
-        "re": re.compile(r'\b(unitil|utl)\b', re.IGNORECASE),
-        "root_folder_id": "1kYObF6qqz6okNSLKTbvGZoqeCbFOYVJ0",
-        "outputs_folder_id": "1jUScR-o8BuOrZiVoOJFUCYlhONptSUjF",
-    },
-    "bbeh": {
-        "re": re.compile(r'\b(black.?bayou|bbeh)\b', re.IGNORECASE),
-        "root_folder_id": "1yQtBWx1TsqbF_4UAZalVKnExwVMQIyT-",
-        "outputs_folder_id": "1-5HGANMDpAg37bUI-bJlViWKBjmN7VCZ",
-    },
-    "pfs": {
-        "re": re.compile(r'\b(pacific.?fleet|pfs)\b', re.IGNORECASE),
-        "root_folder_id": "16Gt9o_566P_ENXL4Z49ClT8T3LQa2_Uc",
-        "outputs_folder_id": "1si_YC-ocZ0cxlisw0Br_TF0dAeV8v_AS",
-    },
-    "thunderhead": {
-        "re": re.compile(r'\b(thunderhead)\b', re.IGNORECASE),
-        "root_folder_id": "1BHftfDLYdIP4VFZRoZY1oo7bNwU1ueua",
-        "outputs_folder_id": "1tEfykcArQrNTroDpxuwDCqnHB3vGfTmT",
-    },
-    "align_infra": {
-        "re": re.compile(r'\b(align.?infra)\b', re.IGNORECASE),
-        "root_folder_id": "1fYnnWv6UiGNLw0MYxbnI4qRQv-4NpUCG",
-        "outputs_folder_id": "1QDQXbY5-oDaY4gReDgy7BXhRcNw5NyAi",
-    },
-}
+# ── Deal registry — loaded from tenant drive-docs.yaml at import time ─────────
+# Multi-tenant: reads via $COS_CONFIG_DIR or glob discovery (PD1 invariant —
+# no hardcoded tenant slugs in this public-repo file).
+def _load_deal_registry() -> dict:
+    """Build the DEALS dict from drive-docs.yaml deal_docs section.
+    Each entry needs `alias_regex` + `drive_folder_id` + `outputs_folder_id`."""
+    import glob as _glob
+    import yaml as _yaml
+
+    env = os.environ.get("COS_CONFIG_DIR")
+    candidates = []
+    if env:
+        candidates.append(Path(env) / "drive-docs.yaml")
+    candidates.extend(Path(p) for p in _glob.glob(str(Path.home() / "cos-pipeline-config-*/drive-docs.yaml")))
+
+    drive_docs_path = next((p for p in candidates if p.exists()), None)
+    if not drive_docs_path:
+        return {}
+
+    try:
+        docs = _yaml.safe_load(drive_docs_path.read_text())
+    except Exception:
+        return {}
+
+    deals = {}
+    for deal_id, entry in (docs.get("deal_docs") or {}).items():
+        alias_regex = entry.get("alias_regex")
+        if not alias_regex:
+            continue
+        root_folder_id = entry.get("drive_folder_id")
+        outputs_folder_id = entry.get("outputs_folder_id")
+        if not (root_folder_id and outputs_folder_id):
+            continue
+        deals[deal_id] = {
+            "re": re.compile(alias_regex, re.IGNORECASE),
+            "root_folder_id": root_folder_id,
+            "outputs_folder_id": outputs_folder_id,
+        }
+    return deals
+
+DEALS = _load_deal_registry()
 
 # ── File classification ───────────────────────────────────────────────────────
 SESSION_ARTIFACT_EXTS = {".jsx", ".html", ".tsx"}

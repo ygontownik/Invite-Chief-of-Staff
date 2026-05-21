@@ -476,6 +476,18 @@ def cmd_read_file(args):
     print(drive_read_file_text(args.file_id))
 
 
+def cmd_write_file_by_id(args):
+    """Overwrite a Drive plain-text file by file ID. Reads new content from stdin."""
+    text = sys.stdin.read()
+    if not text.strip():
+        die("empty stdin — refusing to write empty content")
+    if args.dry_run:
+        print(f"[DRY-RUN] would overwrite file {args.file_id} with {len(text)} chars")
+        return
+    drive_overwrite_text_file(args.file_id, text)
+    print(f"OK wrote {len(text)} chars to {args.file_id}")
+
+
 _DEAL_DOC_FIELDS = {
     "status":  "status",
     "brief":   "master_brief",
@@ -897,6 +909,7 @@ def build_parser():
     s = sub.add_parser("list-deals"); s.add_argument("--filter")
     s = sub.add_parser("list-new-files"); s.add_argument("deal_id")
     s = sub.add_parser("read-file"); s.add_argument("file_id")
+    s = sub.add_parser("write-file-by-id"); s.add_argument("file_id")
     s = sub.add_parser("read-deal-doc"); s.add_argument("deal_id"); s.add_argument("kind", choices=["status", "brief", "lps", "terms", "actions"])
     s = sub.add_parser("write-deal-doc"); s.add_argument("deal_id"); s.add_argument("kind", choices=["status", "brief"])
     s = sub.add_parser("write-actions-md"); s.add_argument("deal_id")
@@ -916,6 +929,7 @@ HANDLERS = {
     "list-deals": cmd_list_deals,
     "list-new-files": cmd_list_new_files,
     "read-file": cmd_read_file,
+    "write-file-by-id": cmd_write_file_by_id,
     "read-deal-doc": cmd_read_deal_doc,
     "write-deal-doc": cmd_write_deal_doc,
     "write-actions-md": cmd_write_actions_md,

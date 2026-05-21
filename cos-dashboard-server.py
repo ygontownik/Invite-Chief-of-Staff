@@ -2755,6 +2755,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(404, {'error': 'deal-briefing-latest.md not yet generated'})
         elif self.path == '/data':
             self._handle_data(user=user)
+        elif self.path == '/dash/mobile' or self.path == '/dash/mobile/':
+            # Phone-optimized owner view. Owner-only by policy (recruiting +
+            # awaiting + recent intel are sensitive).
+            if user != 'owner':
+                self._send_403(); return
+            self._handle_mobile_dashboard()
         elif self.path == '/cache-status':
             # Quick endpoint to check how fresh the cache is. Also surfaces
             # per-section age so the UI can flag stale tiles even when the
@@ -3753,6 +3759,220 @@ class Handler(BaseHTTPRequestHandler):
     # Both endpoints share a 5-minute in-memory cache keyed on path so the
     # briefing page can poll without hammering Google APIs. Token refresh is
     # handled lazily; if the token is missing we return a clear error payload.
+
+    def _handle_mobile_dashboard(self):
+        """GET /dash/mobile — phone-optimized owner view.
+
+        Renders a single-column HTML page from the same dashboard-data.json +
+        deal-system-data.json sources the desktop dashboard uses. No client-
+        side JS dependency. Light theme only (per L0011). ≥44px tap targets.
+
+        Sections:
+          1. Today — calendar events + today's items
+          2. Awaiting — top 5 awaiting-external items per active deal
+          3. Recent intel — last 24h of dealIntel entries
+        """
+        from datetime import datetime as _dt, timedelta as _td
+        from html import escape as _esc
+
+        try:
+            data = json.loads(STATE_PATH.read_text()) if STATE_PATH.exists() else {}
+        except Exception:
+            data = {}
+        try:
+            deal_sys = json.loads(DEAL_SYSTEM_DATA.read_text()) if DEAL_SYSTEM_DATA.exists() else {}
+        except Exception:
+            deal_sys = {}
+
+        now = _dt.now()
+        today_iso = now.strftime('%Y-%m-%d')
+        cutoff = now - _td(hours=24)
+
+        # ── Today: calendar + today list ────────────────────────────────────
+        calendar = data.get('calendar') or []
+        today_items = data.get('today') or []
+        upcoming_calls = data.get('upcomingCalls') or []
+
+        # ── Awaiting per deal: top 5 each from awaitingExternal grouped by deal_id ─
+        awaiting = data.get('awaitingExternal') or []
+        by_deal: dict = {}
+        for item in awaiting:
+            # `dashboard_path` looks like "Deal Pipeline › <Deal Name> › ..."
+            dp = (item.get('dashboard_path') or '').split('›')
+            deal_name = (dp[1].strip() if len(dp) >= 2 else item.get('parent_id') or 'Other')[:60]
+            by_deal.setdefault(deal_name, []).append(item)
+        # Sort deals by total awaiting count desc and trim to 5 each
+        deals_ordered = sorted(by_deal.items(), key=lambda kv: -len(kv[1]))
+
+        # ── Recent intel last 24h ───────────────────────────────────────────
+        intel = data.get('dealIntel') or []
+        recent = []
+        for it in intel:
+            ts = it.get('source_ref', {}).get('date') if isinstance(it.get('source_ref'), dict) else None
+            ts = ts or it.get('addedDate') or it.get('date') or ''
+            try:
+                dt = _dt.fromisoformat(ts[:19].replace('Z', ''))
+                if dt >= cutoff:
+                    recent.append((dt, it))
+            except Exception:
+                # If timestamp unparseable, fall back to date-only string match
+                if ts and ts[:10] == today_iso:
+                    recent.append((now, it))
+        recent.sort(key=lambda t: t[0], reverse=True)
+        recent = recent[:20]
+
+        # ── HTML render ─────────────────────────────────────────────────────
+        def _item_html(content: str, sub: str = '') -> str:
+            sub_html = (f'<div class="sub">{_esc(sub)}</div>' if sub else '')
+            return f'<li class="row">{_esc(content)}{sub_html}</li>'
+
+        sections = []
+
+        # Section 1 — Today
+        today_rows = []
+        for ev in calendar[:8]:
+            title = ev.get('title') or ev.get('summary') or '(calendar event)'
+            t_start = ev.get('start') or ev.get('time') or ''
+            today_rows.append(_item_html(title, t_start))
+        for c in upcoming_calls[:6]:
+            title = c.get('title') or c.get('with') or '(upcoming call)'
+            t_start = c.get('time') or c.get('when') or ''
+            today_rows.append(_item_html(title, t_start))
+        if not today_rows:
+            for t in today_items[:8]:
+                if isinstance(t, dict):
+                    today_rows.append(_item_html(
+                        t.get('what') or t.get('title') or '(today)',
+                        t.get('who') or ''))
+        if not today_rows:
+            today_rows.append('<li class="row empty">No items for today.</li>')
+        sections.append(
+            '<section><h2>Today</h2><ul class="list">'
+            + ''.join(today_rows) + '</ul></section>'
+        )
+
+        # Section 2 — Awaiting per deal
+        if not deals_ordered:
+            sections.append(
+                '<section><h2>Awaiting actions</h2>'
+                '<ul class="list"><li class="row empty">Nothing awaiting external.</li></ul></section>'
+            )
+        else:
+            deal_blocks = []
+            for deal_name, items in deals_ordered:
+                top = items[:5]
+                rows = []
+                for it in top:
+                    content = (it.get('content') or it.get('context') or '')[:200]
+                    cp = it.get('counterparty') or ''
+                    due = it.get('due') or ''
+                    sub_bits = [b for b in (cp, f'due {due}' if due else '') if b]
+                    rows.append(_item_html(content, ' • '.join(sub_bits)))
+                deal_blocks.append(
+                    f'<div class="deal-block">'
+                    f'<h3>{_esc(deal_name)} <span class="count">({len(items)})</span></h3>'
+                    f'<ul class="list">{"".join(rows)}</ul>'
+                    f'</div>'
+                )
+            sections.append(
+                '<section><h2>Awaiting actions</h2>' + ''.join(deal_blocks) + '</section>'
+            )
+
+        # Section 3 — Recent intel last 24h
+        intel_rows = []
+        for _, it in recent:
+            content = (it.get('content') or '')[:240]
+            cp = it.get('counterparty') or ''
+            dp = (it.get('dashboard_path') or '').split('›')
+            deal = (dp[1].strip() if len(dp) >= 2 else '')[:40]
+            sub_bits = [b for b in (deal, cp) if b]
+            intel_rows.append(_item_html(content, ' • '.join(sub_bits)))
+        if not intel_rows:
+            intel_rows.append('<li class="row empty">No new intel in last 24h.</li>')
+        sections.append(
+            '<section><h2>Recent intel (24h)</h2><ul class="list">'
+            + ''.join(intel_rows) + '</ul></section>'
+        )
+
+        # Cache age
+        fetched_at = data.get('fetchedAt', '')
+        age_mins = ''
+        if fetched_at:
+            try:
+                age_mins = str(int((now - _dt.fromisoformat(fetched_at)).total_seconds() / 60)) + 'm'
+            except Exception:
+                age_mins = ''
+
+        page = f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#f7f3ea">
+<title>Dash · Mobile</title>
+<style>
+  :root {{
+    --bg: #faf7f0;
+    --paper: #fffdf7;
+    --ink: #1f2117;
+    --muted: #6a6754;
+    --accent: #5a4a1c;
+    --line: #e6dfc9;
+    --shadow: 0 1px 0 rgba(0,0,0,0.04);
+  }}
+  * {{ box-sizing: border-box; }}
+  html, body {{ margin: 0; padding: 0; background: var(--bg); color: var(--ink);
+                font: 16px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+                -webkit-text-size-adjust: 100%; }}
+  header {{ position: sticky; top: 0; background: var(--paper); border-bottom: 1px solid var(--line);
+            padding: 14px 16px; z-index: 10; box-shadow: var(--shadow); }}
+  header h1 {{ font-size: 18px; margin: 0; font-weight: 600; letter-spacing: -0.01em; }}
+  header .meta {{ font-size: 12px; color: var(--muted); margin-top: 2px; }}
+  header .refresh {{ position: absolute; right: 8px; top: 8px; min-width: 56px; min-height: 44px;
+                     border: 1px solid var(--line); background: var(--paper); color: var(--accent);
+                     border-radius: 10px; font-size: 14px; padding: 0 12px; }}
+  main {{ padding: 12px 12px 96px; max-width: 100%; }}
+  section {{ margin-bottom: 18px; }}
+  section h2 {{ font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em;
+                color: var(--muted); margin: 6px 6px 8px; font-weight: 600; }}
+  ul.list {{ list-style: none; margin: 0; padding: 0; background: var(--paper);
+             border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+             box-shadow: var(--shadow); }}
+  li.row {{ padding: 14px 16px; min-height: 44px; border-bottom: 1px solid var(--line);
+            display: block; word-wrap: break-word; }}
+  li.row:last-child {{ border-bottom: none; }}
+  li.row.empty {{ color: var(--muted); font-style: italic; }}
+  li.row .sub {{ font-size: 13px; color: var(--muted); margin-top: 4px; }}
+  .deal-block {{ margin-bottom: 12px; }}
+  .deal-block h3 {{ font-size: 15px; margin: 12px 6px 6px; font-weight: 600; }}
+  .deal-block .count {{ color: var(--muted); font-weight: 400; font-size: 13px; }}
+  footer {{ padding: 16px; text-align: center; color: var(--muted); font-size: 12px; }}
+  footer a {{ color: var(--accent); min-height: 44px; display: inline-block; padding: 12px 16px; }}
+</style>
+</head>
+<body>
+<header>
+  <h1>Dash · Mobile</h1>
+  <div class="meta">{_esc(today_iso)}{' · cache ' + _esc(age_mins) if age_mins else ''}</div>
+  <button class="refresh" onclick="location.reload()">Reload</button>
+</header>
+<main>
+{''.join(sections)}
+</main>
+<footer>
+  <a href="/">Desktop view</a> · <a href="/deals/">Deal pipeline</a>
+</footer>
+</body>
+</html>
+"""
+        body = page.encode('utf-8')
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self.send_header('Content-Length', str(len(body)))
+        self.send_header('Cache-Control', 'no-store')
+        self.end_headers()
+        self.wfile.write(body)
 
     def _handle_briefing_intel(self):
         """GET /briefing/intel.json — daily briefing synopsis from compiled dashboard-data.json.

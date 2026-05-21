@@ -3,6 +3,33 @@
 This file tells Claude Code how to work within the `~/dashboards/` tree.
 It is the single source of behavioral truth for any agent editing files here.
 
+## Session start (READ FIRST)
+
+On the first message of any session in this ecosystem:
+
+1. Read [`docs/CONTEXT-MANIFEST.yaml`](CONTEXT-MANIFEST.yaml) — the canonical
+   task-to-doc registry. It tells you which docs to load for any task type
+   (dashboard, deal work, new deal onboarding, Drive org, etc.).
+2. Read [`docs/INDEX.md`](INDEX.md) for the human-readable view.
+3. For task-specific work, follow the `must_read` list for that task type,
+   or run `/load-context <task>` to auto-load them.
+
+**Do not search the doc tree blindly.** The manifest exists so you can find
+the right docs in one lookup.
+
+## Edit-in-place rule (invariant I11)
+
+**Never recreate a Drive document whose ID appears in
+`config/drive-docs.yaml`, `deal-system-data.json`, or any claude.ai project
+instructions.** Always edit by ID — via Deal Sync Writer `setContent()` or
+`DriveApp.setContent()`. Recreation creates a new file with a new ID,
+silently breaks every reference, and forces the registered ID to drift.
+
+If you absolutely must create a new gdoc (e.g., a genuinely new concept),
+add the new ID to `drive-docs.yaml` in the same commit, and tag the
+`files().create()` call with `# NEW REGISTERED DOC`. The Category 21
+pre-commit lint enforces this once deployed.
+
 ## The one-location rule
 
 **Every concern lives in exactly one place.** Do not duplicate files, do
