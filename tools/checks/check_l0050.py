@@ -31,6 +31,56 @@ _ALLOWLIST = {
     "unknown", "n/a", "tcip", "tomac",
 }
 
+# Single-token firm names that genuinely occur in infrastructure /
+# private equity workflows and should NOT be flagged as "invented".
+# This is a general list — any subscriber's pipeline will encounter
+# these firms by name. Add tenant-specific firms via the config hook
+# below.
+_KNOWN_FIRMS_GENERIC = {
+    "apollo", "blackstone", "brookfield", "carlyle", "kkr", "stonepeak",
+    "warburg", "ares", "tpg", "fortress", "macquarie", "ardian",
+    "arclight", "ecp", "isquared", "quantum", "ridgewood", "nuveen",
+    "capstone",          # Capstone Partners / Capstone Infrastructure — real
+    "bain", "advent", "vista", "thoma", "permira", "hellman",
+    "lazard", "moelis", "jefferies", "evercore", "guggenheim",
+    "deutsche", "barclays", "rbc", "wells", "jpmorgan", "goldman", "citi",
+    "vinson", "kirkland", "skadden", "latham", "cravath", "wachtell",
+    "pjt", "blackrock", "nicepak", "fit",  # plus Yoni's deals via alias
+    "berkshire", "hanover", "stonewater", "axium", "antin",
+    "starwood", "global", "mubadala", "adia", "gic", "cppib", "cdpq",
+    "norwegian", "temasek", "khazanah", "psp",
+    "duke", "exelon", "nextera", "vistra", "constellation", "calpine",
+    "talen", "engie", "edf", "iberdrola", "rwe", "shell", "bp", "chevron",
+    "exxon", "totalenergies", "eni", "equinor",
+}
+
+
+def _load_tenant_known_firms() -> set[str]:
+    """Optional per-tenant extension. Reads
+    ~/cos-pipeline-config-*/firm_context.yaml :: known_firms (list)
+    and folds it into the allowlist. Safe to fail — missing config
+    returns empty set."""
+    import glob
+    try:
+        import yaml  # type: ignore
+    except ImportError:
+        return set()
+    out: set[str] = set()
+    for cfg in glob.glob(str(HOME / "cos-pipeline-config-*" / "firm_context.yaml")):
+        try:
+            data = yaml.safe_load(Path(cfg).read_text()) or {}
+            extras = data.get("known_firms") or []
+            if isinstance(extras, list):
+                for x in extras:
+                    if isinstance(x, str) and x.strip():
+                        out.add(x.strip().lower())
+        except Exception:
+            continue
+    return out
+
+
+_KNOWN_FIRMS = _KNOWN_FIRMS_GENERIC | _load_tenant_known_firms()
+
 _TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z\-']{1,}")
 
 
@@ -80,6 +130,10 @@ def run() -> dict[str, Any]:
             if not who:
                 continue
             if who.lower() in _ALLOWLIST:
+                continue
+            if who.lower() in _KNOWN_FIRMS:
+                # Real firm name in the infra/PE universe — never invented
+                # even if it doesn't appear in the same item's context.
                 continue
             if not _is_single_capitalized(who):
                 continue
