@@ -22,7 +22,7 @@ from googleapiclient.discovery import build
 
 _HERE      = Path(__file__).parent             # ~/dashboards/app/
 _ROOT      = _HERE.parent                                 # ~/dashboards/
-CREDS_PATH        = Path.home() / 'credentials/token.json'         # calendar.readonly only
+CREDS_PATH        = Path.home() / 'credentials/token.json'         # shared union token (drive + documents + mail + calendar.readonly)
 GDRIVE_PICKLE_PATH = Path.home() / 'credentials/gdrive_token.pickle' # drive + documents
 STATE_PATH = _ROOT / 'data' / 'compiled' / 'dashboard-data.json'
 
@@ -1021,6 +1021,11 @@ def parse_followups(text):
     import re as _re_fu
     _WAIT_TAG = _re_fu.compile(r'^\s*\[\s*(waiting|awaiting)(?:\s+on\s+[^\]]*)?\s*\]\s*',
                                _re_fu.IGNORECASE)
+    # HISTORICAL guard — rows from calls older than 7 days are tagged
+    # [HISTORICAL — call YYYY-MM-DD] by cos_otter_backfill.py so the dashboard
+    # / action layer can filter them out. They remain in the Follow-ups doc
+    # for archival but never surface as live action items.
+    _HIST_TAG = _re_fu.compile(r'^\s*\[\s*HISTORICAL\b', _re_fu.IGNORECASE)
     for line in text.split('\n'):
         line = line.strip()
         if not line.startswith('|') or '---|' in line:
@@ -1034,6 +1039,23 @@ def parse_followups(text):
         context       = parts[7] if len(parts) > 7 else ''
         dashboard_path = parts[8] if len(parts) > 8 else ''
         due_clean = due if due and due != 'TBD' else ''
+
+        # ── [HISTORICAL] tag — skip rows from stale calls (>7d old) ─────────
+        # The Follow-ups doc retains the row for archival; dashboard hides it.
+        # Two detection paths:
+        #   1. Forward-going: cos_otter_backfill.py prepends [HISTORICAL — call YYYY-MM-DD] to `what`
+        #   2. Retroactive: source column contains "call — YYYY-MM-DD" where date > 7d ago
+        if _HIST_TAG.match(what):
+            continue
+        # Retroactive guard — match "call — YYYY-MM-DD..." source pattern
+        try:
+            _src_date_match = _re_fu.search(r'call\s*[—\-]\s*(\d{4}-\d{2}-\d{2})', src or '')
+            if _src_date_match:
+                _src_date = _src_date_match.group(1)
+                if _src_date < (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d'):
+                    continue
+        except Exception:
+            pass
 
         # ── [waiting] tag support (ROUTING-SPEC §4.1) ──────────────────────
         # A row prefixed with [waiting] or [awaiting on X] is a third-party
@@ -2268,6 +2290,14 @@ def get_calendar(cal_svc):
         is_scheduled = ev_id in scheduled_ids   # launchd job already registered
         will_record  = has_video                 # will be auto-recorded when scheduler runs
 
+        # Attendees — names + emails, excluding self. Useful for SMS
+        # correlation (text from someone on the calendar that day routes
+        # to that workstream/deal).
+        ev_attendees = [{
+            'name':  a.get('displayName', '').strip(),
+            'email': a.get('email', '').strip().lower(),
+        } for a in ev.get('attendees', []) if not a.get('self')]
+
         delta = (day - today).days
         day_lbl = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][day.weekday()] + f' {day.month}/{day.day}'
         if delta not in day_buckets:
@@ -2278,6 +2308,9 @@ def get_calendar(cal_svc):
             'workstream':  ws,
             'willRecord':  will_record,
             'isScheduled': is_scheduled,
+            'date':        day.isoformat(),
+            'start':       dt_str,
+            'attendees':   ev_attendees,
         })
 
         if delta <= 3:
@@ -2672,6 +2705,27 @@ def main(dry_run: bool = False):
             print(f'cos-dashboard-fetch: suppressed {len(arr)-len(filtered)} spurious {key} item(s)')
             state[key] = filtered
 
+    # HISTORICAL guard — items from calls older than 7 days are tagged either
+    # with [HISTORICAL prefix on content or historical:true. Filter them from
+    # all live action arrays so the dashboard never surfaces them as actionable.
+    def _is_historical(it):
+        if not isinstance(it, dict):
+            return False
+        if it.get('historical') is True:
+            return True
+        for fld in ('content', 'what', 'key_feedback', 'feedback'):
+            v = it.get(fld) or ''
+            if isinstance(v, str) and v.lstrip().lower().startswith('[historical'):
+                return True
+        return False
+
+    for key in ('awaitingExternal', 'dealIntel', 'originationInbox', 'statusUpdates', 'followUps'):
+        arr = state.get(key, []) or []
+        filtered = [it for it in arr if not _is_historical(it)]
+        if len(filtered) != len(arr):
+            print(f'cos-dashboard-fetch: filtered {len(arr)-len(filtered)} historical {key} item(s)')
+            state[key] = filtered
+
     now = datetime.now()
 
     # Read today's content tracker (new articles/reports detected by track_new_substack_articles.py)
@@ -2840,11 +2894,30 @@ def main(dry_run: bool = False):
                 'filesSeen': 0, 'linesRead': 0,
             }
 
+    # --- Tier 1 synthesis: rank actionable items across HQ + Personal sources.
+    # No LLM. Lives inline so synthesis recomputes every cache refresh.
+    try:
+        import sys as _sys
+        _sys.path.insert(0, str(_ROOT / "app"))
+        from lib.prioritize import synthesize_tier1
+        _deal_sys_path = _ROOT / "data" / "compiled" / "deal-system-data.json"
+        _deal_sys = json.loads(_deal_sys_path.read_text()) if _deal_sys_path.exists() else {}
+        _synth = synthesize_tier1(live_data, _deal_sys)
+        # Preserve any Tier 2 prose already in state (only Tier 1 refreshes here).
+        _prev_synth = (state.get("prioritySynthesis") or {})
+        for k in ("prose", "worthNoticing", "clusters", "tier2GeneratedAt"):
+            if k in _prev_synth:
+                _synth[k] = _prev_synth[k]
+        live_data["prioritySynthesis"] = _synth
+    except Exception as e:
+        print(f"prioritize warning: {e}", file=sys.stderr)
+        # Non-fatal: continue without synthesis rather than failing the whole fetch.
+
     # Merge: live data wins over stale cached values; curated fields from state are preserved.
     # CRITICAL: never overwrite manual override maps — they are written by the dashboard UI
     # and must survive every refresh cycle.
     merged = {**state, **live_data}
-    for preserve_key in ('_workstreamOverrides', '_stageOverrides', '_pinnedItems', '_hiddenItems', '_dismissedFollowUps', '_dismissedEmailIds'):
+    for preserve_key in ('_workstreamOverrides', '_stageOverrides', '_pinnedItems', '_hiddenItems', '_dismissedFollowUps', '_dismissedEmailIds', 'prioritySynthesis'):
         if preserve_key in state and preserve_key not in live_data:
             merged[preserve_key] = state[preserve_key]
 

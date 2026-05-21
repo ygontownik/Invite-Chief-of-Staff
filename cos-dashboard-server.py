@@ -3839,6 +3839,9 @@ Runs async — returns immediately, hook completes in ~30-60 sec on background.<
             'dealPortfolio':          state.get('dealPortfolio',          {}),
             # Track G — costs/quota tile (populated by costs_aggregator via fetch.py)
             'costs':                  state.get('costs',                  {}),
+            # Priority Synthesis — Tier 1 (always present) + Tier 2 prose (when fresh).
+            # Written by app/lib/prioritize.py inside cos-dashboard-fetch.py.
+            'prioritySynthesis':      state.get('prioritySynthesis',      {}),
         }
         data = _filter_data_for_user(data, user)
         self.send_json(200, data)
