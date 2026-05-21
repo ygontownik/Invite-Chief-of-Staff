@@ -2648,3 +2648,41 @@ markdown table (Due column only — status preserved). Then ran
 1. `smoke` tenant-leak regression (53 leaks across probes) — unrelated workstream
 2. `U2` market-intel deal readthroughs (compile-dashboard.py doesn't preserve
    `readthroughs` field; pre-existing latent issue surfaced by my recompile)
+
+---
+
+## TOPIC — PRIORITY SYNTHESIS
+
+### 2026-05-21 — Two-tier synthesis: rules-as-spine, LLM-as-augment, graceful fallback
+
+When adding any "synthesis" or "prioritization" or "what should I focus on"
+layer to the dashboard, build it as **two independent tiers**:
+
+- **Tier 1: deterministic Python** — pure rules over already-loaded data.
+  Free, fast (<1s), 100% reliable. Always renders. Lives inline in the
+  existing cache refresh (`cos-dashboard-fetch.py`), not as a separate
+  routine. Score formulas live in `config/<topic>-weights.yaml` so the
+  user can tune without code changes.
+
+- **Tier 2: Claude Max prose** via `_claude_dispatch` (never raw
+  Anthropic SDK — rule CC1). Produces narrative + cross-item connections +
+  surfacing-the-missing callouts. Runs on a cadence (registered in
+  `config/schedule.yaml`) plus on `/wrap`. Wrap the `_claude_dispatch`
+  call with the QC1 quota-pattern catcher.
+
+- **Graceful fallback contract:** Tier 2 must NEVER be required for the
+  pane to render. If Tier 2 output is missing (quota, offline, not yet
+  computed), the pane shows Tier 1 only and continues. A Tier-2 failure
+  that breaks the pane is a P0 — fix immediately or roll back the Tier-2
+  integration. Detection: the template's prose section uses
+  `{% if synth.prose %}...{% endif %}` not an unconditional include.
+
+**Why this matters:** the constraint of "must work without the LLM" forces
+separation of concerns. The deterministic spine becomes testable in
+isolation; the LLM augmentation becomes replaceable (different model,
+different prompt, different cadence) without touching the spine. Avoid
+designs where Tier 1 and Tier 2 are tangled — that's the trap to watch
+for in PR review.
+
+**Reference design:** `docs/PLAN-synthesis-pane.md` (committed
+2026-05-21).
