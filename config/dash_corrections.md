@@ -2717,29 +2717,47 @@ for in PR review.
 
 ## TOPIC — REGEX WORD BOUNDARIES AT UNDERSCORES
 
-### 2026-05-21 — `\b` doesn't fire between letter and underscore
+### 2026-05-21 — `\b` doesn't fire between letter and underscore (both ends)
 
-Pattern: `\b(deal_name)\b` fails to match `deal_name_<suffix>` filenames
-because `_` is a word character in regex. Between `name` (word) and `_`
-(word), there is no boundary — `\b` fails.
+Pattern: `\b(deal_name)\b` fails on BOTH ends when the deal slug is
+embedded in an underscore-separated filename:
+
+- **Trailing:** `deal_name_<suffix>` — between `name` (word) and `_`
+  (word), no boundary. `\b` fails.
+- **Leading:** `<prefix>_deal_name` (e.g. `OWNER_DEAL_Pitch.pptx`) —
+  between `_` (word) and `D` (word), no boundary. `\b` fails.
+
+Caught the trailing-end bug first; the leading-end bug surfaced when
+auditing `_Unsorted/` for stranded files and finding 48 files that
+*contained* deal slugs but weren't routing because of the prefix bug
+(distributed across 5 deal aliases in the tenant config).
 
 This bites any deal alias in `drive-docs.yaml` whose regex ends with `\b`
 and is expected to match files from capture pipelines that produce
 `<slug>_<title>.md` style filenames.
 
 **Detection:** `grep "alias_regex:" cos-pipeline-config-*/drive-docs.yaml`
-— any pattern ending in `)\b` is suspect. Verify with:
+— any pattern with leading or trailing `\b` against an alphabetic token
+is suspect. Verify both directions with:
 ```python
 import re
-re.search(r'\b(deal_name)\b', 'deal_name_v3.docx')  # None — BROKEN
-re.search(r'\b(deal_name)(?![a-z])', 'deal_name_v3.docx')  # match — fixed
+# trailing-end bug
+re.search(r'\b(deal_name)\b', 'deal_name_v3.docx')             # None — BROKEN
+# leading-end bug
+re.search(r'\b(deal_name)\b', 'PREFIX_deal_name_v3.docx')      # None — BROKEN
+# both ends fixed
+p = r'(?<![a-z0-9])(deal_name)(?![a-z])'
+re.search(p, 'deal_name_v3.docx', re.I)                        # matches ✓
+re.search(p, 'PREFIX_deal_name_v3.docx', re.I)                 # matches ✓
+re.search(p, 'mydeal_name.docx', re.I)                         # None — guard ✓
 ```
 
-**Fix:** replace trailing `\b` with `(?![a-z])` (or `(?![a-z0-9])` if
-numeric suffixes shouldn't match either). The lookahead matches when not
-followed by a lowercase letter — allows `_`, digit, hyphen, space,
-end-of-string. False-positive guard preserved: `deal_name` won't match
-`deal_namespace_review.pdf` because `s` is a lowercase letter.
+**Fix:** Replace `\b...\b` with `(?<![a-z0-9])...(?![a-z])`. The
+lookbehind ensures no preceding letter/digit, the lookahead ensures
+no following lowercase letter. Allows `_`, digit (trailing), hyphen,
+space, start/end-of-string. False-positive guards preserved:
+`deal_name` won't match `deal_namespace_review.pdf` (trailing `s`)
+nor `mydeal_name.docx` (leading `y`).
 
 **Audited 2026-05-21:** 7 of 9 deal aliases in a tenant config had
 this bug — only 2 had been fixed or structured differently. Sweep
