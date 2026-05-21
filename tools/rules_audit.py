@@ -82,29 +82,111 @@ def _load_ledger() -> dict[str, Any]:
     return yaml.safe_load(LEDGER_PATH.read_text()) or {}
 
 
-def _find_check_module(rule_code: str | None, rule_id: str) -> Path | None:
-    """Look for a check module that matches this rule. Tries (in order):
-      1. check_<rule_code_lower>.py (e.g. check_lf1.py for LF1)
-      2. check_<rule_id_lower>.py   (e.g. check_l0001.py)
-      3. check_<rule_code_lower without trailing digits>_*.py (loose match)
+# Regex to pull rule codes out of a check module's rule_ref string.
+# Matches LEARNINGS-LEDGER-shaped codes (1-3 capital letters + digits like LF1,
+# CC1, EP1, AA1, G2, M3) plus L0001-style ledger IDs.
+_RULE_CODE_RE = re.compile(r"\b([A-Z]{1,3}\d{1,4})\b")
+
+
+def _build_check_index() -> dict[str, dict[str, Any]]:
+    """Run every check_*.py module ONCE upfront, extract its rule_ref via the
+    standard `rule_ref` field, and return a `{code: {path, status, summary,
+    details, ref}}` index keyed by every code the check claims to enforce.
+
+    This is the matcher upgrade: a check module like check_relative_dates.py
+    (filename doesn't match AB1) emits `rule_ref: "dash_corrections.md :: AB1"`,
+    so the index ends up with both 'check_relative_dates.py' (filename) AND
+    'AB1' (extracted code) as keys pointing to the same result.
+
+    Cached at module-load time so we don't re-run checks per-rule. ~18 checks,
+    ~3-5s total — acceptable for a daily audit.
     """
+    index: dict[str, dict[str, Any]] = {}
     if not CHECKS_DIR.exists():
+        return index
+    for path in sorted(CHECKS_DIR.glob("check_*.py")):
+        result = _run_check_module(path)
+        entry = {
+            "path": path,
+            "filename": path.name,
+            "status": result["status"],
+            "summary": result["summary"],
+            "details": result.get("details"),
+            "rule_ref": result.get("rule_ref"),
+        }
+        # Index by filename stem (so check_lf1.py is reachable as "lf1")
+        fname_stem = path.stem.replace("check_", "", 1)
+        index.setdefault(fname_stem.lower(), entry)
+        # Index by every code we can extract from rule_ref
+        rule_ref = str(result.get("rule_ref") or "")
+        for m in _RULE_CODE_RE.finditer(rule_ref):
+            code = m.group(1)
+            # First-wins so a rule_ref like "dash_corrections.md :: AA1"
+            # binds AA1 → check_aa1.py and doesn't get overwritten if
+            # another check happens to mention AA1 in passing.
+            index.setdefault(code.lower(), entry)
+    return index
+
+
+def _run_check_module(path: Path) -> dict[str, Any]:
+    """Load and run a check_*.py module, returning its dict result.
+    Captures the rule_ref field too so the index can use it for binding."""
+    spec = importlib.util.spec_from_file_location(
+        f"_rules_audit_{path.stem}", path
+    )
+    if spec is None or spec.loader is None:
+        return {"status": "fail", "summary": f"could not load {path.name}"}
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except Exception as exc:
+        return {
+            "status": "fail",
+            "summary": f"{path.name}: import error: {exc}",
+            "rule_ref": "",
+        }
+    run = getattr(module, "run", None)
+    if not callable(run):
+        return {"status": "fail", "summary": f"{path.name}: no run() callable", "rule_ref": ""}
+    try:
+        raw = run()
+        if not isinstance(raw, dict):
+            return {"status": "fail", "summary": f"{path.name}: bad return type", "rule_ref": ""}
+        return {
+            "status": str(raw.get("status") or "unknown").lower(),
+            "summary": str(raw.get("summary") or path.stem),
+            "details": raw.get("details"),
+            "rule_ref": raw.get("rule_ref", ""),
+        }
+    except Exception as exc:
+        return {
+            "status": "fail",
+            "summary": f"{path.name}: raised {type(exc).__name__}: {exc}",
+            "rule_ref": "",
+        }
+
+
+def _find_check_in_index(rule_code: str | None, rule_id: str,
+                         index: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
+    """Look up a check entry in the pre-built index by rule_code or rule_id.
+    Tries (in order):
+      1. rule_code lowercased — catches both filename and rule_ref bindings
+      2. rule_id lowercased   — catches check_l0001.py style
+      3. rule_code without trailing digits, loose prefix match
+    """
+    if not index:
         return None
-    candidates: list[str] = []
-    if rule_code:
-        candidates.append(f"check_{rule_code.lower()}.py")
-    candidates.append(f"check_{rule_id.lower()}.py")
-    for name in candidates:
-        p = CHECKS_DIR / name
-        if p.exists():
-            return p
-    # Loose match — strip trailing digits, look for prefix match
+    if rule_code and rule_code.lower() in index:
+        return index[rule_code.lower()]
+    if rule_id and rule_id.lower() in index:
+        return index[rule_id.lower()]
     if rule_code:
         prefix = re.sub(r"\d+$", "", rule_code.lower())
         if prefix and len(prefix) >= 2:
-            matches = list(CHECKS_DIR.glob(f"check_{prefix}*.py"))
-            if len(matches) == 1:
-                return matches[0]
+            # Find unique prefix match
+            candidates = [k for k in index if k.startswith(prefix)]
+            if len(candidates) == 1:
+                return index[candidates[0]]
     return None
 
 
@@ -124,42 +206,6 @@ def _classify_enforcement_field(enforced_by: str) -> str:
     return "unknown"
 
 
-def _run_check_module(path: Path) -> dict[str, Any]:
-    """Load and run a check_*.py module, returning its dict result."""
-    spec = importlib.util.spec_from_file_location(
-        f"_rules_audit_{path.stem}", path
-    )
-    if spec is None or spec.loader is None:
-        return {"status": "fail", "summary": f"could not load {path.name}"}
-    module = importlib.util.module_from_spec(spec)
-    try:
-        spec.loader.exec_module(module)
-    except Exception as exc:
-        return {
-            "status": "fail",
-            "summary": f"{path.name}: import error: {exc}",
-            "traceback": traceback.format_exc(),
-        }
-    run = getattr(module, "run", None)
-    if not callable(run):
-        return {"status": "fail", "summary": f"{path.name}: no run() callable"}
-    try:
-        raw = run()
-        if not isinstance(raw, dict):
-            return {"status": "fail", "summary": f"{path.name}: bad return type"}
-        return {
-            "status": str(raw.get("status") or "unknown").lower(),
-            "summary": str(raw.get("summary") or path.stem),
-            "details": raw.get("details"),
-        }
-    except Exception as exc:
-        return {
-            "status": "fail",
-            "summary": f"{path.name}: raised {type(exc).__name__}: {exc}",
-            "traceback": traceback.format_exc(),
-        }
-
-
 def audit() -> dict[str, Any]:
     """Run the full audit and return the report dict (does not write to disk)."""
     ledger = _load_ledger()
@@ -167,11 +213,20 @@ def audit() -> dict[str, Any]:
     if not isinstance(learnings, list):
         sys.exit("ERROR: LEARNINGS-LEDGER.yaml has no `learnings:` list")
 
+    # Build the check index ONCE upfront — runs every check_*.py module a
+    # single time and lets us bind rules by filename, rule_id, OR rule_ref
+    # extracted code. Catches checks like check_relative_dates.py (filename
+    # doesn't match AB1) whose run() emits rule_ref="dash_corrections.md :: AB1".
+    check_index = _build_check_index()
+
     rules_out: list[dict[str, Any]] = []
     counts = {
         "enforced": 0, "violated": 0, "warned": 0,
         "paper_rule": 0, "informational": 0, "deprecated": 0,
     }
+    # Track which check files were bound to a ledger rule so we can report
+    # orphan checks (enforcement exists but no canonical rule yet).
+    bound_check_paths: set[str] = set()
 
     for entry in learnings:
         if not isinstance(entry, dict):
@@ -191,11 +246,11 @@ def audit() -> dict[str, Any]:
         enforced_by = str(entry.get("enforced_by") or "")
         enforcement_kind = _classify_enforcement_field(enforced_by)
 
-        check_path = _find_check_module(rule_code_s, rule_id)
+        check_entry = _find_check_in_index(rule_code_s, rule_id, check_index)
 
-        if check_path:
-            res = _run_check_module(check_path)
-            check_status = res["status"]
+        if check_entry:
+            bound_check_paths.add(check_entry["filename"])
+            check_status = check_entry["status"]
             if check_status == "pass":
                 classification = "enforced"
                 counts["enforced"] += 1
@@ -212,9 +267,10 @@ def audit() -> dict[str, Any]:
                 "id": rule_id, "rule_code": rule_code_s,
                 "title": entry.get("title"),
                 "classification": classification,
-                "check_module": check_path.name,
+                "check_module": check_entry["filename"],
                 "check_status": check_status,
-                "check_summary": res["summary"],
+                "check_summary": check_entry["summary"],
+                "rule_ref": check_entry.get("rule_ref"),
                 "enforced_by_field": enforced_by,
             })
         else:
