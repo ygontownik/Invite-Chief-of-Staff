@@ -289,7 +289,32 @@ def audit() -> dict[str, Any]:
                 "enforcement_kind": enforcement_kind,
             })
 
-    total = sum(counts.values())
+    # Compute orphan checks: check modules in tools/checks/ that emit a real
+    # rule_ref but were never bound to any ledger entry above. These are
+    # "promotion opportunities" — the rule is enforced in code but hasn't
+    # been promoted to LEARNINGS-LEDGER.yaml as a canonical entry yet.
+    # Iterate unique entries (the index has multiple keys pointing to the
+    # same entry — filename stem + every extracted rule code).
+    seen_filenames: set[str] = set()
+    orphan_checks: list[dict[str, Any]] = []
+    for entry in check_index.values():
+        fname = entry["filename"]
+        if fname in seen_filenames:
+            continue
+        seen_filenames.add(fname)
+        if fname in bound_check_paths:
+            continue
+        orphan_checks.append({
+            "filename": fname,
+            "rule_ref": str(entry.get("rule_ref") or ""),
+            "status": entry.get("status"),
+            "summary": entry.get("summary"),
+        })
+    orphan_checks.sort(key=lambda x: x["filename"])
+    counts["orphan_checks"] = len(orphan_checks)
+
+    # Orphan checks are informational; they do NOT influence overall_status.
+    total = sum(v for k, v in counts.items() if k != "orphan_checks")
     health = (
         "fail" if counts["violated"] > 0 else
         "warn" if counts["paper_rule"] >= 5 or counts["warned"] > 0 else
@@ -304,11 +329,23 @@ def audit() -> dict[str, Any]:
         "counts": counts,
         "overall_status": health,
         "rules": rules_out,
-        "next_actions": _next_actions(counts, rules_out),
+        "orphan_checks": orphan_checks,
+        "next_actions": _next_actions(counts, rules_out, orphan_checks),
     }
 
 
-def _next_actions(counts: dict[str, int], rules: list[dict[str, Any]]) -> list[str]:
+def _orphan_short_label(entry: dict[str, Any]) -> str:
+    """Compact label for an orphan check: filename + extracted code if any."""
+    fname = entry["filename"]
+    ref = entry.get("rule_ref") or ""
+    m = _RULE_CODE_RE.search(ref)
+    if m:
+        return f"{fname} ({m.group(1)})"
+    return fname
+
+
+def _next_actions(counts: dict[str, int], rules: list[dict[str, Any]],
+                  orphan_checks: list[dict[str, Any]] | None = None) -> list[str]:
     """One-line action suggestions surfaced on the dashboard tile."""
     out = []
     if counts["violated"] > 0:
@@ -323,6 +360,12 @@ def _next_actions(counts: dict[str, int], rules: list[dict[str, Any]]) -> list[s
             f"GAP: {counts['paper_rule']} paper-rule(s) — add check_*.py for: "
             + ", ".join(f"{r['rule_code'] or r['id']}" for r in gaps[:5])
         )
+    if orphan_checks:
+        out.append(
+            f"INFO: {len(orphan_checks)} orphan check(s) — checks enforcing "
+            "rules not yet in LEARNINGS-LEDGER: "
+            + ", ".join(_orphan_short_label(o) for o in orphan_checks[:8])
+        )
     if not out:
         out.append("All enforced rules passing. No paper-rule gaps.")
     return out
@@ -330,24 +373,34 @@ def _next_actions(counts: dict[str, int], rules: list[dict[str, Any]]) -> list[s
 
 def _print_report(report: dict[str, Any], gaps_only: bool = False) -> None:
     c = report["counts"]
+    orphans = report.get("orphan_checks") or []
     print(f"rules_audit: {report['overall_status'].upper()} · "
           f"{report['total_rules']} rules · "
           f"{c['enforced']} enforced · "
           f"{c['violated']} violated · "
           f"{c['paper_rule']} paper-rule gaps · "
           f"{c['informational']} informational · "
-          f"{c['deprecated']} deprecated")
+          f"{c['deprecated']} deprecated · "
+          f"{len(orphans)} orphan checks")
     print()
     if gaps_only:
         gaps = [r for r in report["rules"] if r["classification"] == "paper_rule"]
-        if not gaps:
+        if not gaps and not orphans:
             print("No paper-rule gaps. All code-enforced rules have a check module.")
             return
-        print(f"Paper-rule gaps ({len(gaps)}):")
-        for r in gaps:
-            rc = r.get("rule_code") or r.get("id")
-            print(f"  {rc:8s} {r.get('title')}")
-            print(f"           enforced_by: {r.get('enforced_by_field')}")
+        if gaps:
+            print(f"Paper-rule gaps ({len(gaps)}):")
+            for r in gaps:
+                rc = r.get("rule_code") or r.get("id")
+                print(f"  {rc:8s} {r.get('title')}")
+                print(f"           enforced_by: {r.get('enforced_by_field')}")
+        if orphans:
+            if gaps:
+                print()
+            print(f"Orphan checks ({len(orphans)}) — code enforces a rule not in LEARNINGS-LEDGER:")
+            for o in orphans:
+                print(f"  {o['filename']:34s} {o.get('rule_ref') or '(no rule_ref)'}")
+                print(f"           status: {o.get('status')} · {o.get('summary')}")
         return
     for r in report["rules"]:
         cls = r["classification"]
@@ -367,6 +420,11 @@ def _print_report(report: dict[str, Any], gaps_only: bool = False) -> None:
         elif cls == "paper_rule":
             suffix = "  ← needs check_*.py"
         print(f"  {marker} {rc:8s} {title}{suffix}")
+    if orphans:
+        print()
+        print(f"Orphan checks ({len(orphans)}) — code enforces a rule not in LEARNINGS-LEDGER:")
+        for o in orphans:
+            print(f"  ◇ {o['filename']:34s} {o.get('rule_ref') or '(no rule_ref)'}")
     print()
     for a in report["next_actions"]:
         print(a)
