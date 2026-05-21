@@ -172,10 +172,18 @@ Bullets format (one per substantive change, grouped by chat-session if multi-cha
 - onboard FIT deal end-to-end smoke test — commit XXXXXXX
 ```
 
-### 5b. DECISIONS.md — append only if decisions made
+### 5b. DECISIONS.md — append ONLY if decisions were made
 
-Read `~/dashboards/docs/DECISIONS.md`. For each material decision flagged
-this session (architectural choice, irreversible action, trade-off made):
+**Conditional:** evaluate from STEP 3 + STEP 4 extracted content whether any
+material decisions occurred this session (across all chats). Heuristic:
+look for "DECISION:" markers, explicit "decided to X" / "chose X over Y"
+phrases, or commit messages containing "decision:" or "decided".
+
+If zero material decisions: **SKIP this sub-step entirely** — do NOT write
+an empty `## YYYY-MM-DD` header. Most sessions don't have decisions; the
+file should stay terse.
+
+If one or more decisions found, append for each:
 
 ```
 ## 2026-05-21
@@ -186,8 +194,6 @@ this session (architectural choice, irreversible action, trade-off made):
 - Rejected: <alternative not chosen, with reason>
 - Reversibility: <can we undo? how?>
 ```
-
-If no decisions made, skip — do not write an empty header.
 
 ### 5c. drive-docs.yaml — surgical upsert by key
 
