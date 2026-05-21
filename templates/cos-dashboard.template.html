@@ -3555,6 +3555,16 @@ function buildRulesOfTheRoad() {
       <div style="font-size:10px;color:#94a3b8;margin-top:3px"><span style="color:#64748b">enforced_by:</span> ${esc(g.enforcedBy || '—')}</div>
     </div>`).join('');
 
+  const orphansRows = (rc.orphans || []).map(o => `
+    <div style="padding:7px 12px;border-bottom:1px solid rgba(148,163,184,0.1)">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+        <span style="font-weight:600;font-size:12px;color:#0ea5e9">◇ ${esc(o.filename || '—')}</span>
+        <span style="font-size:10px;color:${(o.status === 'pass' ? '#16a34a' : o.status === 'warn' ? '#f59e0b' : '#dc2626')}">${esc(o.status || '—')}</span>
+      </div>
+      <div style="font-size:10px;color:#94a3b8;margin-top:3px"><span style="color:#64748b">rule_ref:</span> ${esc(o.rule_ref || '— (no rule_ref field)')}</div>
+      <div style="font-size:10px;color:#64748b;margin-top:2px;font-family:var(--font-data, monospace)">${esc(o.summary || '')}</div>
+    </div>`).join('');
+
   const nextActions = (rc.nextActions || []).map(a =>
     `<div style="font-size:10px;color:#475569;margin-top:3px">▸ ${esc(a)}</div>`
   ).join('');
@@ -3563,14 +3573,15 @@ function buildRulesOfTheRoad() {
   <div class="card" id="${rrid}" style="margin-bottom:18px">
     <div class="card-title card-title-btn" onclick="collapseToggle('${rrid}')">
       <div class="dot" style="background:${statusDot}"></div>Rules of the Road
-      <span class="card-count">${rc.totalRules} ledger rules · ${c.enforced || 0} enforced · ${c.violated || 0} violated · ${c.paper_rule || 0} paper-rule gaps</span>
+      <span class="card-count">${rc.totalRules} ledger rules · ${c.enforced || 0} enforced · ${c.violated || 0} violated · ${c.paper_rule || 0} gaps · ${c.orphan_checks || 0} orphans</span>
       <span class="collapse-chevron ${collapsed ? 'closed' : 'open'}" style="margin-left:auto;font-size:11px;color:var(--ink-ghost)">${collapsed ? '▸' : '▾'}</span>
     </div>
     ${collapsed ? '' : `
-      <div style="display:flex;gap:8px;padding:10px 12px">
+      <div style="display:flex;gap:8px;padding:10px 12px;flex-wrap:wrap">
         ${subTile('enforced',   'Enforced',  c.enforced       || 0, '#16a34a', 'pass / warn')}
         ${subTile('violated',   'Violated',  c.violated       || 0, '#dc2626', 'check_*.py FAIL')}
         ${subTile('gaps',       'Paper-rule gaps', c.paper_rule || 0, '#a78bfa', 'no check yet')}
+        ${subTile('orphans',    'Orphans',   c.orphan_checks  || 0, '#0ea5e9', 'check, no ledger rule')}
         ${subTile('info',       'Manual',    c.informational  || 0, '#64748b', 'no code audit')}
       </div>
       <div id="rotr-d-violated" style="display:${(c.violated || 0) > 0 ? 'block' : 'none'};border-top:1px solid rgba(148,163,184,0.12)">
@@ -3581,6 +3592,10 @@ function buildRulesOfTheRoad() {
         <div style="padding:6px 12px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#a78bfa;background:rgba(167,139,250,0.05)">Paper-rule gaps · top ${(rc.paperRules || []).length}</div>
         ${gapsRows || '<div style="padding:8px 12px;font-size:11px;color:#94a3b8;font-style:italic">No gaps.</div>'}
       </div>
+      <div id="rotr-d-orphans" style="display:none;border-top:1px solid rgba(148,163,184,0.12)">
+        <div style="padding:6px 12px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#0ea5e9;background:rgba(14,165,233,0.05)">Orphan checks · top ${(rc.orphans || []).length} · code enforcing rules not yet in LEARNINGS-LEDGER</div>
+        ${orphansRows || '<div style="padding:8px 12px;font-size:11px;color:#94a3b8;font-style:italic">No orphans — every check binds to a canonical ledger rule.</div>'}
+      </div>
       <div style="padding:8px 12px;background:rgba(167,139,250,0.04);border-top:1px solid rgba(148,163,184,0.12);font-size:10px;color:#64748b">
         ${nextActions || '▸ All enforced rules passing. No paper-rule gaps.'}
         <div style="margin-top:6px;color:#94a3b8;font-style:italic">Run <code>python3 ~/cos-pipeline/tools/rules_audit.py --apply</code> to refresh. Last: ${ranStr || 'never'}.</div>
@@ -3590,8 +3605,8 @@ function buildRulesOfTheRoad() {
 }
 
 function toggleRotrDetail(id) {
-  // Three details panels: violated (default expanded if any), gaps, enforced+info (no-op for now).
-  const panels = ['violated', 'gaps'];
+  // Four details panels: violated (default expanded if any), gaps, orphans, enforced+info (no-op).
+  const panels = ['violated', 'gaps', 'orphans'];
   if (id === 'enforced' || id === 'info') return;  // no detail panel for these
   panels.forEach(k => {
     const el = document.getElementById('rotr-d-' + k);

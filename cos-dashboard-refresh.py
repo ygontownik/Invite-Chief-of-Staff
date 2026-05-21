@@ -254,6 +254,15 @@ def _load_rules_compliance() -> dict:
         }
         for r in rules if r.get('classification') == 'paper_rule'
     ][:10]
+    orphans = [
+        {
+            'filename':  o.get('filename'),
+            'rule_ref':  o.get('rule_ref'),
+            'status':    o.get('status'),
+            'summary':   (o.get('summary') or '')[:200],
+        }
+        for o in (data.get('orphan_checks') or [])
+    ][:10]
     return {
         'ranAt':         data.get('ran_at'),
         'totalRules':    data.get('total_rules', 0),
@@ -262,6 +271,7 @@ def _load_rules_compliance() -> dict:
         'nextActions':   data.get('next_actions', []),
         'violations':    violations,
         'paperRules':    paper_rules,
+        'orphans':       orphans,
     }
 
 
