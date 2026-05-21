@@ -1530,13 +1530,16 @@ function buildSynthesisPane(isPersonal) {
 
   let rankedHTML = '';
   if (ranked.length) {
-    rankedHTML = `<ol class="synth-ranked">${ranked.map((it, i) => `
-      <li>
+    rankedHTML = `<ol class="synth-ranked">${ranked.map((it, i) => {
+      const tip = `Score ${it.score} · ${(it.reasons||[]).join(' · ')} · source: ${it.source}${it.deal ? ' · deal: ' + it.deal : ''}`;
+      return `
+      <li title="${esc(tip)}">
         <span class="synth-rank">${i+1}.</span>
         <span class="synth-title">${esc(it.title)}</span>
         ${it.deal ? `<span class="synth-deal">${esc(it.deal)}</span>` : ''}
         <span class="synth-reasons">${(it.reasons||[]).map(esc).join(' · ')}</span>
-      </li>`).join('')}</ol>`;
+      </li>`;
+    }).join('')}</ol>`;
   }
 
   let railsHTML = '';
