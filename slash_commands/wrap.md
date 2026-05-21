@@ -625,6 +625,71 @@ print(f"Wrote {P}")
 PYEOF
 ```
 
+Then PRINT (don't write to file — emit to terminal) a **session summary**
+followed by the next-chat paste-block. The summary lets Yoni eyeball what
+happened in a single screen without opening the handoff doc.
+
+### 11a. Session summary (terminal-only, scannable)
+
+Compose from data already collected in earlier steps. Print exactly this
+shape — keep alignment, keep the box rules, never wrap a row mid-line:
+
+```
+═══════════════════════════════════════════════════════════════
+/wrap summary — <ISO timestamp>
+═══════════════════════════════════════════════════════════════
+
+✦ Health       <p> pass · <w> warn · <f> fail   (Δ vs start: <±fails> fail · <±warns> warn)
+               <2-3 one-liners on notable check transitions or persistent fails>
+
+✦ Drive        Edited in place (I11)              <N> docs
+                   • <doc name>   <fileId tail>
+                   • <doc name>   <fileId tail>
+                   • ...
+               Created                              <N> docs   <✓ EP1 clean if 0 / ⚠ review if >0>
+               Orphans trashed                      <N> IDs
+               Registered IDs resolving           <hit>/<total>  <✓ or ⚠>
+
+✦ Local files moved (file_organizer + router)
+               Downloads top: <before> → <after>   (<n> routed)
+               Desktop top:   <before> → <after>   (<n> routed)
+               Documents:     <before> → <after>
+
+✦ Commits      <repo-name padded>  <sha>  <subject>
+               <repo-name padded>  <sha>  <subject>
+               <repo-name padded>  <sha>  <subject>
+
+✦ Pushed       <all 3 repos ✓ / partial: list which / none>
+
+✦ Learnings    captured <N> new (<L00XX rule_code: title>, ...)
+
+✦ Outstanding  <N> items rolled into SESSION-HANDOFF-<today>.md §4b:
+               1. <item>
+               2. <item>
+               ...
+
+✦ Failures     <none / list each: step, what failed, where logged>
+
+═══════════════════════════════════════════════════════════════
+Next-chat paste-block ↓↓↓
+═══════════════════════════════════════════════════════════════
+```
+
+**Data sources for each line:**
+- Health: STEP 8 snapshot + the pre-/wrap baseline captured at STEP 1
+- Drive edited-in-place: list every fileId touched by sync_system_docs.py + sync_learnings.py + sync_setup_to_drive.py (these all use Deal Sync Writer setContent)
+- Drive created: should be 0 in normal /wrap. If >0, it means /new-deal ran and registered new IDs — show them
+- Orphans trashed: STEP 7b output (orphan_drive_cleanup.py result)
+- Registered IDs resolving: STEP 7 Drive integrity audit
+- Local files moved: tail of `~/dashboards/logs/local-organizer.log` since last wrap + `~/dashboards/logs/local-file-router.log` since last wrap
+- Commits: `git -C <repo> log <last-wrap-sha>..HEAD --oneline` for each of the 3 repos
+- Pushed: STEP 10 result
+- Learnings: STEP 5d output (count + ids of approved candidates)
+- Outstanding: SESSION-HANDOFF §4b numbered list (truncate at 5 items, link to §4b for the rest)
+- Failures: SYNC_FAILURES from STEP 6 + CADENCE_STALENESS from STEP 8 + any STEP-level errors logged to wrap.log
+
+### 11b. Next-chat paste-block
+
 Then PRINT (don't write to file — emit to terminal) the exact paste-block
 for the next chat:
 
@@ -692,4 +757,4 @@ print('wrap lock released')
 ## OUTSTANDING REQUESTS (per OR1)
 
 Always end with: "/wrap completed. Outstanding items rolled into
-SESSION-HANDOFF-<today>.md §4b. Next-chat paste-block above."
+SESSION-HANDOFF-<today>.md §4b. Session summary + next-chat paste-block above."
