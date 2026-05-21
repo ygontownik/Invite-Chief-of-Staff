@@ -36,7 +36,7 @@ import yaml
 _HERE = Path(__file__).resolve().parent
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
-from coordination import lock as coord_lock
+from coordination import lock as coord_lock, mark_run
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 HOME         = Path.home()
@@ -305,6 +305,11 @@ def main() -> int:
     violations += audit_project_instructions(docs_svc, deal_docs, registered_ids, args.section)
 
     write_report(violations, all_ids, dry_run=False)
+
+    # Record successful completion in coordination state so /wrap STEP 8c
+    # cadence-staleness check can see when this script last ran. Fixed
+    # 2026-05-21 after /wrap pt 4 surfaced "never recorded" warning.
+    mark_run("reference_integrity_audit.py")
 
     if violations:
         print(f"\n{LOG_PREFIX} VIOLATIONS ({len(violations)}):")

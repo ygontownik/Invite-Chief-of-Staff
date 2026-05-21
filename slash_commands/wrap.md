@@ -99,13 +99,18 @@ python3 ~/cos-pipeline/tools/coordination.py status
 
 ## STEP 4 — Cross-chat reconciliation (parallel sessions)
 
-**CRITICAL:** Use Python `os.stat().st_mtime` comparison, NOT `find -newermt`.
-The `find` syntax with ISO timestamps is flaky and silently returns empty
-on macOS. Use the Python equivalent:
+**CRITICAL:** Use Python with content-filter, NOT bare `find -newermt`.
+- `find -newermt` is flaky on macOS with ISO timestamps (silently empty).
+- `mtime > T0` alone returns 100s of false positives because background
+  hooks (intel_capture, learning_capture) touch many old JSONLs.
+
+Real filter: a JSONL is a "live parallel chat" only if it contains an
+ACTUAL USER-TYPED message (not a tool result, not a system reminder)
+timestamped after T0:
 
 ```bash
 python3 << 'PYEOF'
-import os, sys
+import json, os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -118,22 +123,62 @@ all_jsonls = sorted(PROJECTS.glob("*.jsonl"), key=lambda p: p.stat().st_mtime, r
 this_session = all_jsonls[0] if all_jsonls else None
 print(f"This session: {this_session.name if this_session else 'NONE'}")
 
-parallel = [p for p in all_jsonls
-            if p.stat().st_mtime > T0_EPOCH and p != this_session]
-print(f"Parallel sessions modified since T0: {len(parallel)}")
-for p in parallel[:10]:
-    mt = datetime.fromtimestamp(p.stat().st_mtime, tz=timezone.utc).isoformat()
-    print(f"  {p.name} (mtime={mt}, size={p.stat().st_size})")
+def has_real_user_msg_since(jsonl_path, t0_iso):
+    """Return True if the JSONL has a user-TYPED message (not tool result,
+    not system reminder) timestamped after t0_iso. Reads only the tail."""
+    try:
+        # Read last ~200 lines for speed (typical chats fit, long ones we get recent)
+        with open(jsonl_path, 'rb') as f:
+            f.seek(0, 2)
+            size = f.tell()
+            f.seek(max(0, size - 200_000))  # last 200KB
+            tail = f.read().decode('utf-8', errors='ignore')
+    except Exception:
+        return False
+    for line in tail.splitlines():
+        if '"type":"user"' not in line and '"role":"user"' not in line:
+            continue
+        try:
+            obj = json.loads(line)
+        except Exception:
+            continue
+        ts = obj.get('timestamp', '')
+        if ts <= t0_iso:
+            continue
+        # Must NOT be a tool_result wrapper
+        msg = obj.get('message', {})
+        content = msg.get('content', [])
+        if isinstance(content, list):
+            # Real user text: at least one element with type=text and no tool_use_id
+            for c in content:
+                if isinstance(c, dict) and c.get('type') == 'text' and 'tool_use_id' not in c:
+                    txt = c.get('text', '')
+                    # Filter out system-reminder pseudo-user messages
+                    if '<system-reminder>' in txt and txt.count('\n') < 3:
+                        continue
+                    return True
+        elif isinstance(content, str) and content.strip():
+            return True
+    return False
 
-# Save list for next steps
+mtime_candidates = [p for p in all_jsonls
+                    if p.stat().st_mtime > T0_EPOCH and p != this_session]
+print(f"JSONLs with mtime > T0: {len(mtime_candidates)}")
+
+real_parallel = [p for p in mtime_candidates if has_real_user_msg_since(p, T0_ISO)]
+print(f"With real user activity since T0: {len(real_parallel)}")
+for p in real_parallel[:10]:
+    mt = datetime.fromtimestamp(p.stat().st_mtime, tz=timezone.utc).isoformat()
+    print(f"  {p.name} (mtime={mt}, {p.stat().st_size:,}B)")
+
 with open('/tmp/wrap_parallel_sessions.txt', 'w') as f:
-    f.write('\n'.join(str(p) for p in parallel))
+    f.write('\n'.join(str(p) for p in real_parallel))
 PYEOF
 ```
 
 **Fallback signal if JSONL scan finds 0 but commits suggest otherwise:**
 parallel work may have committed/pushed before /wrap saw their JSONL flush.
-In that case, use `git log --since="$T0" --author=` filtering to identify
+In that case, use `git log --since="$T0"` filtering to identify
 parallel-chat commits and group those by author/timestamp clusters.
 
 For each parallel-chat JSONL: read it line-by-line, extract:
