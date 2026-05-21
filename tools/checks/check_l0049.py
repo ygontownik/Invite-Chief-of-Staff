@@ -79,6 +79,7 @@ def run() -> dict[str, Any]:
 
     follow_ups = data.get("followUps") or []
     violations: list[dict[str, Any]] = []
+    manual_exempt = 0
     for fu in follow_ups:
         if not isinstance(fu, dict):
             continue
@@ -86,6 +87,14 @@ def run() -> dict[str, Any]:
         if not who:
             continue
         if who.lower() == principal_first:
+            # `_manual: true` is the documented escape hatch — Yoni can
+            # intentionally mark a followUp as his own action, in which case
+            # clean_follow_ups in cos-dashboard-refresh deliberately preserves
+            # it. The check honors the same exemption — otherwise every
+            # manual action becomes a phantom violation.
+            if fu.get("_manual"):
+                manual_exempt += 1
+                continue
             violations.append({
                 "id": fu.get("id"),
                 "who": who,
@@ -112,6 +121,7 @@ def run() -> dict[str, Any]:
         "details": {
             "principal_first": principal_first,
             "total_follow_ups": len(follow_ups),
+            "manual_exempt": manual_exempt,
             "violation_count": n,
             "violations": violations[:20],
         },
