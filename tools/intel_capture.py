@@ -380,6 +380,11 @@ def route_block(block_data, surface_label):
     if not deal_id:
         log_error(surface_label, "<no deal>", "block missing 'deal:' field")
         return None, None, "error"
+    # Silently skip DEAL-INTEL blocks with deal_id == none/null/empty — those
+    # come from non-deal claude.ai projects (Dashboard Buildout etc.) that get
+    # scraped by /capture-deal-chats. Logging them creates noise (5K+ errors/day).
+    if str(deal_id).strip().lower() in ("none", "null", "", "n/a"):
+        return None, None, "skip"
     if deal_id not in registered:
         log_error(surface_label, deal_id, f"deal '{deal_id}' not in registry")
         return deal_id, None, "error"

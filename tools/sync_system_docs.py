@@ -40,7 +40,7 @@ HOLDER = "sync_system_docs.py"
 STATE_PATH = Path.home() / "credentials" / "sync_system_docs_state.json"
 
 # Which reference_docs entries this script mirrors (others are not Markdown).
-MIRRORED_KEYS = {"readme", "system_reference", "user_manual", "skills_catalog"}
+MIRRORED_KEYS = {"readme", "system_reference", "user_manual", "skills_catalog", "my_skills"}
 
 
 def find_drive_docs() -> Path:

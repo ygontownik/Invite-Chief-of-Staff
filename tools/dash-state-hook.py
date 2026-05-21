@@ -25,7 +25,7 @@ import subprocess
 import pickle
 import re
 import glob
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 # ── Tenant-agnostic path discovery ────────────────────────────────────────────
@@ -775,6 +775,123 @@ def run_artifact_pull(dry_run: bool = False) -> bool:
         return False
 
 
+def run_learning_capture_scan():
+    """Scan the most recent Claude Code session transcript for rule-shaped
+    statements and queue them for the morning briefing's "Review proposed
+    learnings" section. High-precision regex; false-positive rate kept low
+    by requiring directive phrasing.
+
+    State: ~/credentials/learning_capture_state.json — {last_scanned_uuid, last_ts}
+    Queue: ~/dashboards/data/compiled/proposed-learnings.jsonl (append-only)
+
+    Cheap — pure file I/O + regex. No LLM calls.
+    """
+    import re as _re
+    import json as _json
+    import glob as _glob
+
+    projects_dir = Path.home() / ".claude/projects/-Users-ygontownik-Documents-Claude"
+    state_path = Path.home() / "credentials/learning_capture_state.json"
+    queue_path = Path.home() / "dashboards/data/compiled/proposed-learnings.jsonl"
+
+    if not projects_dir.exists():
+        return False
+
+    state = {}
+    if state_path.exists():
+        try:
+            state = _json.loads(state_path.read_text())
+        except _json.JSONDecodeError:
+            state = {}
+    last_scanned = state.get("last_scanned_uuid", "")
+    last_ts = state.get("last_ts", 0)
+
+    # Find transcripts modified since last scan
+    transcripts = sorted(
+        _glob.glob(str(projects_dir / "*.jsonl")),
+        key=lambda p: Path(p).stat().st_mtime,
+        reverse=True,
+    )
+    if not transcripts:
+        return False
+
+    # Only scan transcripts newer than last_ts (skip everything already processed)
+    new_transcripts = [t for t in transcripts if Path(t).stat().st_mtime > last_ts]
+    if not new_transcripts:
+        return False
+
+    # High-precision directive patterns (low recall by design — better than false positives)
+    PATTERNS = [
+        _re.compile(r"\bgoing forward[,:]?\s+([^.\n]{20,200}\.)", _re.IGNORECASE),
+        _re.compile(r"\bfrom now on[,:]?\s+([^.\n]{20,200}\.)", _re.IGNORECASE),
+        _re.compile(r"\bnew rule[,:]?\s+([^.\n]{20,200}\.)", _re.IGNORECASE),
+        _re.compile(r"\bnever\s+(do\s+)?([^.\n]{20,200}\.)\s*(?:that|this)?", _re.IGNORECASE),
+        _re.compile(r"\balways\s+(do\s+)?([^.\n]{20,200}\.)\s*(?:that|this)?", _re.IGNORECASE),
+        _re.compile(r"\bthe rule is[,:]?\s+([^.\n]{20,200}\.)", _re.IGNORECASE),
+    ]
+
+    proposed = []
+    newest_uuid = last_scanned
+    newest_ts = last_ts
+    for t_path in new_transcripts[:3]:  # cap at 3 most-recent to bound work
+        try:
+            content = Path(t_path).read_text(errors="ignore")
+        except (OSError, UnicodeDecodeError):
+            continue
+        session_id = Path(t_path).stem
+        t_mtime = Path(t_path).stat().st_mtime
+        if t_mtime > newest_ts:
+            newest_ts = t_mtime
+            newest_uuid = session_id
+
+        # Only look at USER turns (more directive than assistant turns)
+        # Simple heuristic: split by JSON lines, pick user-role entries.
+        for line in content.splitlines():
+            try:
+                turn = _json.loads(line)
+            except _json.JSONDecodeError:
+                continue
+            if turn.get("type") != "user":
+                continue
+            msg = turn.get("message", {})
+            text = msg.get("content", "")
+            if isinstance(text, list):
+                text = " ".join(c.get("text", "") for c in text if isinstance(c, dict))
+            if not isinstance(text, str) or len(text) < 30:
+                continue
+
+            for pattern in PATTERNS:
+                for m in pattern.finditer(text):
+                    snippet = m.group(0).strip()
+                    # Dedup within the session
+                    if any(p.get("snippet") == snippet and p.get("session_id") == session_id
+                           for p in proposed):
+                        continue
+                    # Skip if it looks like a question rather than a directive
+                    if "?" in snippet[-20:]:
+                        continue
+                    proposed.append({
+                        "session_id": session_id,
+                        "ts": t_mtime,
+                        "snippet": snippet[:400],
+                        "captured_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                    })
+
+    if proposed:
+        queue_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(queue_path, "a") as f:
+            for p in proposed:
+                f.write(_json.dumps(p) + "\n")
+        print(f"[learning-capture] queued {len(proposed)} candidate(s) to {queue_path.name}",
+              file=sys.stderr)
+
+    state["last_scanned_uuid"] = newest_uuid
+    state["last_ts"] = newest_ts
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(_json.dumps(state, indent=2))
+    return len(proposed) > 0
+
+
 def maybe_mirror_actions_to_drive():
     """For each registered deal, if its local data/deals/<deal>/actions.md is
     newer than the tracker, push the content to the Drive actions doc
@@ -941,6 +1058,12 @@ def main():
     # Routes any ---DEAL-INTEL--- blocks emitted during CC sessions into the
     # corresponding deal's log.json before next /deal-sync cycle.
     run_intel_capture_scan()
+
+    # LEARNING-CAPTURE scan — find rule-shaped statements in the session
+    # transcript ("going forward, X" / "always Y" / "from now on Z"), queue
+    # them for review in next morning briefing. Closes the dynamic-learnings
+    # loop (cheap regex; high-precision/low-recall by design).
+    run_learning_capture_scan()
 
     # actions.md local→Drive mirror — pushes per-deal actions.md to its Drive
     # _Claude Context/ doc whenever the local file mtime is newer than the
