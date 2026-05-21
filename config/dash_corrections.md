@@ -2630,16 +2630,7 @@ available without external context (most are real diligence work that didn't
 get checked off but is still pending). Default action: push Due to 2026-06-04
 (today + 14 days). Status field left unchanged (`open` / `in-progress`).
 
-**Counts by deal:**
-- cholla: 6
-- pfs: 6
-- bbeh: 5
-- pngts: 5
-- unitil: 8 (4 captured in initial sweep + 4 stragglers picked up on second pass)
-- thunderhead: 3
-- align_infra: 1
-
-**Total:** 34 actions rolled. After recompile, `check_past_due_actions` reports
+**Scope:** 34 actions across 7 active deals (per-deal counts intentionally omitted from this public-repo file per PD1; details in each deal's `data/deals/<id>/actions.md` in the private dashboards repo). After recompile, `check_past_due_actions` reports
 0 past-due of 63 open. Health went from 3 fails to 2.
 
 **Caveat:** This is a default-judgment bulk operation. Yoni should review the
