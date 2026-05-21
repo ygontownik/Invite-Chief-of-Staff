@@ -1,3 +1,8 @@
+# noqa: claude-dispatch-exempt — preserves api-mode prompt-caching path.
+# Subscription mode goes through _claude_dispatch (line ~200); the api-mode
+# branch at line ~216 legitimately calls anthropic.Anthropic() directly so
+# the per-token caching telemetry (cache_creation_input_tokens, etc.) stays
+# observable. Reuse of _claude_dispatch on api mode would lose that signal.
 """cached_client.py — sandbox SDK wrapper for the static-core system prompt.
 
 Splits `system_prompt_v1.md` on its two `<!-- CACHE_BREAKPOINT_N -->` markers

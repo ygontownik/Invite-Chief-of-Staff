@@ -181,10 +181,21 @@ def _find_check_in_index(rule_code: str | None, rule_id: str,
     if rule_id and rule_id.lower() in index:
         return index[rule_id.lower()]
     if rule_code:
+        # Loose prefix match: tighter rules to avoid false-positives like
+        # SM1 → smoke_tenant_leaks (strips "1", matches "sm*" which is too
+        # promiscuous). Require:
+        #   1. prefix length >= 3 chars (so 'sm' doesn't match)
+        #   2. candidate key follows prefix with a DIGIT, not an arbitrary
+        #      letter (so SM1 doesn't bind to 'smoke_tenant_leaks' but DOES
+        #      bind to 'sm1' or 'sm2' if such a check existed)
         prefix = re.sub(r"\d+$", "", rule_code.lower())
-        if prefix and len(prefix) >= 2:
-            # Find unique prefix match
-            candidates = [k for k in index if k.startswith(prefix)]
+        if prefix and len(prefix) >= 3:
+            candidates = [
+                k for k in index
+                if k.startswith(prefix)
+                and len(k) > len(prefix)
+                and k[len(prefix)].isdigit()
+            ]
             if len(candidates) == 1:
                 return index[candidates[0]]
     return None
