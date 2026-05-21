@@ -1016,7 +1016,9 @@ def run_learning_capture_scan():
     import json as _json
     import glob as _glob
 
-    projects_dir = Path.home() / ".claude/projects/-Users-ygontownik-Documents-Claude"
+    # Claude Code encodes cwd by replacing '/' with '-' in the projects dir name.
+    _doc_claude = str(Path.home() / "Documents" / "Claude")
+    projects_dir = Path.home() / ".claude" / "projects" / _doc_claude.replace("/", "-")
     state_path = Path.home() / "credentials/learning_capture_state.json"
     queue_path = Path.home() / "dashboards/data/compiled/proposed-learnings.jsonl"
 
@@ -1194,7 +1196,9 @@ def run_skill_telemetry_scan():
     import json as _json
     import glob as _glob
 
-    projects_dir = Path.home() / ".claude/projects/-Users-ygontownik-Documents-Claude"
+    # Claude Code encodes cwd by replacing '/' with '-' in the projects dir name.
+    _doc_claude = str(Path.home() / "Documents" / "Claude")
+    projects_dir = Path.home() / ".claude" / "projects" / _doc_claude.replace("/", "-")
     state_path = Path.home() / "credentials/skill_telemetry_state.json"
     out_path = Path.home() / "dashboards/data/compiled/skill-telemetry.jsonl"
 

@@ -623,7 +623,7 @@ REGISTERED DEALS:
 
 LAYER 2 — Workstream items (for operational dashboard):
 Content types:
-- my_action: concrete follow-up action Yoni or the team must take
+- my_action: concrete follow-up action the principal or the team must take
 - awaiting_external: commitment or deliverable owed by a third party
 - lp_intel: intelligence about an LP, capital partner, or fundraising counterparty
 - origination_idea: a new deal/asset/company not in the registered deal list above
@@ -655,7 +655,7 @@ Return a JSON object with EXACTLY this structure:
       "counterparty": "<Firm — Person if relevant>",
       "parent_id": "<deal_id or lp-slug if applicable, else omit>",
       "due": "<YYYY-MM-DD if action has deadline, else omit>",
-      "owner": "<Yoni|Mark|external — omit if unclear>"
+      "owner": "<principal|team|external — omit if unclear>"
     }}
   ]
 }}
@@ -663,7 +663,7 @@ Return a JSON object with EXACTLY this structure:
 Rules:
 - deals[]: only registered deals with MEANINGFUL new intel; omit brief mentions
 - envelope_items[]: capture everything else — LP mentions, new deal ideas, action items, themes
-- For actions from the call: include as my_action (owner=Yoni/Mark) or awaiting_external (owner=external)
+- For actions from the call: include as my_action (owner=principal/team) or awaiting_external (owner=external)
 - For new companies/assets discussed as potential deals: use origination_idea
 - For LP or investor mentions with new intel: use lp_intel
 - If neither layer has anything meaningful, return {{"call_date": "...", "deals": [], "envelope_items": []}}

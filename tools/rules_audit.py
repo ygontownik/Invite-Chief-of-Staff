@@ -13,7 +13,7 @@ enforcement code exists yet, it's a **paper rule** — looks rigorous on
 paper, but the system isn't actually enforcing it.
 
 The "learn going forward" property: the audit reads LEARNINGS-LEDGER
-at every run, not at install time. So when Yoni adds rule L0050 via
+at every run, not at install time. So when the principal adds rule L0050 via
 /propose-learning tomorrow, the next audit run automatically includes
 it without any code change here.
 

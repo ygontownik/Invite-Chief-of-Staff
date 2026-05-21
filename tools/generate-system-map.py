@@ -296,7 +296,7 @@ DEAL FOLDER FILES (Drive) ──► /deal-sync (every 2h, headless `claude -p`)
                                        ├─► writes {deal}_status.md (Drive)
                                        ├─► writes {deal}_master_brief.md (Drive)
                                        ├─► writes {deal}_dashboard_entry.json (Drive)
-                                       └─► regenerates ACTIVE DEAL PIPELINE in TCIP Firm Context
+                                       └─► regenerates ACTIVE DEAL PIPELINE in the Firm Context doc
 
 CLAUDE CODE / claude.ai DEAL-INTEL blocks ──► intel_capture ──► log.json ──► /deal-sync next cycle
 
@@ -326,7 +326,7 @@ def main():
     sections.append(f"**Last regenerated:** {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     sections.append(f"")
     sections.append(f"This file is the canonical reference for how every artifact, pipeline, and slash")
-    sections.append(f"command in the COS / TCIP system fits together. **Read this BEFORE making any**")
+    sections.append(f"command in the pipeline system fits together. **Read this BEFORE making any**")
     sections.append(f"**architectural recommendation** — it captures connections you may otherwise miss.")
     sections.append(f"")
     sections.append(f"Regenerated automatically by `dash-state-hook.py` when `drive-docs.yaml` or")

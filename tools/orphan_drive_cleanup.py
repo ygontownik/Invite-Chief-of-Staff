@@ -2,8 +2,8 @@
 """
 orphan_drive_cleanup.py — Trash orphan Drive folders/files left by failed /new-deal runs.
 
-tcip_new_deal.py stashes pre-existing Drive IDs in `_orphan_ids_pending_cleanup`
-when overwriting a same-deal_id stub entry (see tcip_new_deal.py:1048-1058).
+The new-deal script stashes pre-existing Drive IDs in `_orphan_ids_pending_cleanup`
+when overwriting a same-deal_id stub entry (see the new-deal writer module).
 This tool walks deal-system-data.json, finds those entries, and trashes the
 listed IDs via Drive API.
 

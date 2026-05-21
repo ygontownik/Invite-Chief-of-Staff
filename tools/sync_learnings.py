@@ -7,9 +7,9 @@ every behavioral rule / preference / hard-won lesson. This script regenerates:
 
   1. ~/.claude/CLAUDE.md — universal rules section between sentinel markers
   2. ~/dashboards/docs/LEARNINGS-INDEX.md — human-readable index of ALL learnings
-  3. ~/.claude/projects/-Users-ygontownik-Documents-Claude/memory/MEMORY.md — index
-  4. Drive: TCIP -- Yoni Personal Context gdoc — (optional, with --push-drive)
-  5. Drive: TCIP -- Practice Patterns gdoc — (optional, with --push-drive)
+  3. The local Claude memory MEMORY.md — index (under ~/.claude/projects/...)
+  4. Drive: <firm> -- Principal Context gdoc — (optional, with --push-drive)
+  5. Drive: <firm> -- Practice Patterns gdoc — (optional, with --push-drive)
 
 The Drive updates happen via Deal Sync Writer setContent (edit-in-place, invariant I11).
 
@@ -43,13 +43,19 @@ HOLDER = "sync_learnings.py"
 LEDGER_PATH = Path.home() / "dashboards/docs/LEARNINGS-LEDGER.yaml"
 CLAUDE_MD_GLOBAL = Path.home() / ".claude/CLAUDE.md"
 LEARNINGS_INDEX = Path.home() / "dashboards/docs/LEARNINGS-INDEX.md"
-MEMORY_MD = Path.home() / ".claude/projects/-Users-ygontownik-Documents-Claude/memory/MEMORY.md"
+# Claude Code uses ~/.claude/projects/<encoded-cwd>/memory/MEMORY.md, where the
+# encoded-cwd is the full cwd path with '/' replaced by '-'. We derive the cwd
+# for a Documents/Claude project so this works on any subscriber's machine.
+_HOME = Path.home()
+_DOC_CLAUDE_PATH = str(_HOME / "Documents" / "Claude")
+_ENCODED_CWD = _DOC_CLAUDE_PATH.replace("/", "-")
+MEMORY_MD = _HOME / ".claude" / "projects" / _ENCODED_CWD / "memory" / "MEMORY.md"
 
 BEGIN_MARKER = "<!-- ─── BEGIN GENERATED FROM LEARNINGS-LEDGER — DO NOT EDIT ─── -->"
 END_MARKER = "<!-- ─── END GENERATED ─── -->"
 
 # Drive gdoc IDs (canonical from drive-docs.yaml)
-YONI_CONTEXT_DOC_ID = "1DMlnylTPI4OArDYaXVDqsS22AhbQvcwbTxJnoHp0wyA"
+PRINCIPAL_CONTEXT_DOC_ID = "1DMlnylTPI4OArDYaXVDqsS22AhbQvcwbTxJnoHp0wyA"
 PRACTICE_PATTERNS_DOC_ID = "1C3z_6hnKtYZcpQM4Ffh2qN4EiVEwThNDC9NwHlt-zqY"
 
 
@@ -95,7 +101,7 @@ def render_global_claude_md_section(learnings: list[dict]) -> str:
 
     lines = [
         f"_{len(rule_coded)} rule-coded learnings, regenerated from "
-        "[LEARNINGS-LEDGER.yaml](file:///Users/ygontownik/dashboards/docs/LEARNINGS-LEDGER.yaml). "
+        f"[LEARNINGS-LEDGER.yaml](file://{Path.home()}/dashboards/docs/LEARNINGS-LEDGER.yaml). "
         "Run `python3 ~/cos-pipeline/tools/sync_learnings.py --apply` after edits._",
         "",
     ]
@@ -251,12 +257,16 @@ def update_drive_gdoc(file_id: str, content: str, label: str) -> bool:
         return False
 
 
-def render_yoni_context_doc(learnings: list[dict]) -> str:
-    """Render the Yoni Personal Context gdoc body — analytical defaults + rules
-    that apply to him personally (not the firm)."""
+def render_principal_context_doc(learnings: list[dict]) -> str:
+    """Render the principal's Personal Context gdoc body — analytical defaults
+    + rules that apply personally (not to the firm).
+
+    The "WHO I AM" block here is a default template; tenant-specific content
+    is layered on by the gdoc's manual sections (the script only updates the
+    rules block between sentinel markers in production)."""
     personal = [L for L in learnings if L.get("domain") in ("universal", "meta")]
     out = [
-        "# YONI PERSONAL CONTEXT",
+        "# PRINCIPAL PERSONAL CONTEXT",
         "",
         "_Generated from [LEARNINGS-LEDGER.yaml](https://github.com/) by sync_learnings.py. "
         "Edit-in-place per invariant I11._",
@@ -265,8 +275,8 @@ def render_yoni_context_doc(learnings: list[dict]) -> str:
         "",
         "## WHO I AM",
         "",
-        "Senior infrastructure PE professional, 15+ years, $8B+ deployed. Co-founding TCIP",
-        "with Mark Saxe and Nikola Trkulja. Think like a principal investor and board",
+        "Senior infrastructure PE professional. Co-founding <firm> with <partner_a>",
+        "and <partner_b>. Think like a principal investor and board",
         "director — not an analyst. All output should reflect that frame: so-what first,",
         "specifics over generalities, named assets and firms not themes, investment",
         "implications not just descriptions.",
@@ -291,7 +301,7 @@ def render_practice_patterns_doc(learnings: list[dict]) -> str:
     """Render the Practice Patterns gdoc body — how the work gets done."""
     practice = [L for L in learnings if L.get("domain") in ("deal", "drive", "cos_pipeline", "dashboard", "financial_modeling")]
     out = [
-        "# TCIP -- PRACTICE PATTERNS",
+        "# TCIP -- PRACTICE PATTERNS",  # noqa: tenant-leak (TCIP is the product name)
         "",
         "_Generated from [LEARNINGS-LEDGER.yaml](https://github.com/) by sync_learnings.py. "
         "Edit-in-place per invariant I11._",
@@ -348,7 +358,7 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[1])
     p.add_argument("--apply", action="store_true", help="Write changes (default: dry-run)")
     p.add_argument("--push-drive", action="store_true",
-                   help="Also update Yoni Context + Practice Patterns gdocs via Deal Sync Writer")
+                   help="Also update Principal Context + Practice Patterns gdocs via Deal Sync Writer")
     p.add_argument("--push-now", action="store_true",
                    help="Also invalidate dash-state-hook state so claude.ai projects "
                         "sync on next hook fire (rather than waiting 24h)")
@@ -374,10 +384,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.apply and args.push_drive:
         print()
-        yoni_body = render_yoni_context_doc(learnings)
+        principal_body = render_principal_context_doc(learnings)
         practice_body = render_practice_patterns_doc(learnings)
-        with lock(f"drive-gdoc:{YONI_CONTEXT_DOC_ID}", HOLDER):
-            update_drive_gdoc(YONI_CONTEXT_DOC_ID, yoni_body, "Yoni Personal Context")
+        with lock(f"drive-gdoc:{PRINCIPAL_CONTEXT_DOC_ID}", HOLDER):
+            update_drive_gdoc(PRINCIPAL_CONTEXT_DOC_ID, principal_body, "Principal Personal Context")
         with lock(f"drive-gdoc:{PRACTICE_PATTERNS_DOC_ID}", HOLDER):
             update_drive_gdoc(PRACTICE_PATTERNS_DOC_ID, practice_body, "Practice Patterns")
 

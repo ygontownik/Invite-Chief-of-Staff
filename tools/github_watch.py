@@ -6,7 +6,7 @@ Reads ~/dashboards/config/repos-to-watch.yaml, hits the GitHub REST API
 for each repo's recent releases + commits, writes a consolidated report
 to ~/dashboards/data/compiled/github-intelligence.json.
 
-Scheduled by ~/Library/LaunchAgents/com.yoni.github-watch.plist
+Scheduled by ~/Library/LaunchAgents/com.<principal>.github-watch.plist
 (Sunday 07:00). LaunchAgent is installed-but-disabled until the user
 flips RunAtLoad → true or runs `launchctl load …`.
 

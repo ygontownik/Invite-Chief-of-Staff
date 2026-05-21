@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-setup_deal_outputs.py — Retroactive _Outputs/ setup for TCIP deal folders.
+setup_deal_outputs.py — Retroactive _Outputs/ setup for registered deal folders.
 
 For each deal in drive-docs.yaml that lacks outputs_folder_id:
   1. Create _Outputs/ subfolder in the deal's drive_folder_id (idempotent)
@@ -228,7 +228,7 @@ def process_deal(svc, deal_id, deal_cfg, yaml_path, dry_run=False):
 # ── main ──────────────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="Retroactive _Outputs/ setup for TCIP deals")
+    parser = argparse.ArgumentParser(description="Retroactive _Outputs/ setup for registered deals")
     parser.add_argument("--deal", nargs="+", metavar="DEAL_ID", help="Limit to specific deal IDs")
     parser.add_argument("--dry-run", action="store_true", help="Print plan, no Drive writes")
     args = parser.parse_args()

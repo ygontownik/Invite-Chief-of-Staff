@@ -1,6 +1,6 @@
 #!/opt/homebrew/bin/python3
 """
-entity_graph_build.py — Foundation entity knowledge graph for TCIP/CoS
+entity_graph_build.py — Foundation entity knowledge graph for the pipeline
 =======================================================================
 Walks the registry + deal logs + compiled dashboard data and emits a
 JSONL graph of People / Firms / Assets / Deals / Filings / Topics with
@@ -568,7 +568,7 @@ def last_spoke(name: str) -> dict | None:
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 def main() -> int:
-    p = argparse.ArgumentParser(description="Build/query the TCIP entity graph")
+    p = argparse.ArgumentParser(description="Build/query the entity graph")
     p.add_argument("--dry-run", action="store_true",
                    help="Build in memory, print stats, do not write the JSONL")
     p.add_argument("--query", nargs="+", metavar=("CMD", "ARG"),

@@ -192,12 +192,14 @@ def get_token():
     return creds.token
 
 
-# Calendar API uses a SEPARATE token at ~/credentials/token.json. The gdrive
-# pickle is Drive+Docs only (widening would force a reconsent + pickle
-# invalidation), so we keep the calendar.readonly scope in its own token file
-# and lazy-refresh it on demand. Failures here are silent — the caller falls
-# back to title-based participant extraction.
-_CAL_TOKEN_PATH = Path.home() / "credentials/token.json"
+# Calendar API uses a DEDICATED token at ~/credentials/gcal_token.json with
+# only the calendar.readonly scope. Critically, this is NOT the shared
+# ~/credentials/token.json — loading the shared token with a narrow scope
+# list and then refreshing causes google-auth to write back a scope-narrowed
+# token, silently destroying the drive/documents/mail scopes on the shared
+# file. Codified 2026-05-21 after that exact bug surfaced. See the
+# [Never narrow scopes on the shared token.json] memory note.
+_CAL_TOKEN_PATH = Path.home() / "credentials/gcal_token.json"
 
 
 def get_calendar_token():
@@ -1185,13 +1187,13 @@ EXTRACTION TASKS:
    Codified 2026-05-12 after a deal action appeared twice from same call due to first-name vs full-name mismatch.
 
    WHO ATTRIBUTION RULE (rule W1) — the `who` field is the person or firm who OWNS the action (must do the work), NOT the subject of the action.
-   • If a TCIP team member needs to reach out to / email / call an external party → `who` is the team member (first name only). The external party belongs in `what`. Example: "Email Eddie Dunn at John Hancock re: infra opportunities" → who="Yoni" (not "Eddie Dunn (John Hancock)").
-   • An external party can only be `who` if they are an ACTIVE SPEAKER in this transcript — meaning they spoke lines and made a commitment in their own voice. Appearing only in the call TITLE or being MENTIONED by others does NOT make them a participant. Example: a call titled "DealCo FIT" where only Alex (DealCo) speaks means FIT is NOT a participant — actions attributed to FIT must be reassigned to the TCIP team member who will follow up with them.
+   • If a team member needs to reach out to / email / call an external party → `who` is the team member (first name only). The external party belongs in `what`. Example: "Email Eddie Dunn at John Hancock re: infra opportunities" → who="<principal>" (not "Eddie Dunn (John Hancock)").
+   • An external party can only be `who` if they are an ACTIVE SPEAKER in this transcript — meaning they spoke lines and made a commitment in their own voice. Appearing only in the call TITLE or being MENTIONED by others does NOT make them a participant. Example: a call titled "DealCo FIT" where only Alex (DealCo) speaks means FIT is NOT a participant — actions attributed to FIT must be reassigned to the team member who will follow up with them.
    • If an external party WAS an active speaker and explicitly committed to something → they can be `who`. Example: Alex Rivera is speaking and says "I'll run the IRR scenarios by Wednesday" → who="Alex Rivera / DealCo".
-   • "Map / compile / share information" tasks belong to the person who HAS the information, not the person who would benefit from it. Example: on a call with Marc Borzykowski (Vector), "map Vector's bus shelter zones" → who="Marc Borzykowski / Vector" because Marc has the Vector data, not who="Yoni".
+   • "Map / compile / share information" tasks belong to the person who HAS the information, not the person who would benefit from it. Example: on a call with Marc Borzykowski (Vector), "map Vector's bus shelter zones" → who="Marc Borzykowski / Vector" because Marc has the Vector data, not who="<principal>".
    • If you cannot determine which team member owns the action, default to `who="{_PRINCIPAL_FIRST}"`.
    Codified 2026-05-12 after external parties (Eddie Dunn, Doug Bogie, Latano, Manulife contact, etc.) were incorrectly assigned as `who` on weekly-call actions.
-   Refined 2026-05-12: (a) title-mention ≠ call participant (FIT in call title but not speaking → not `who`); (b) info-holder owns the mapping/sharing task (Marc Borzykowski has Vector data → Marc is `who` for Vector zone mapping, not Yoni).
+   Refined 2026-05-12: (a) title-mention ≠ call participant (FIT in call title but not speaking → not `who`); (b) info-holder owns the mapping/sharing task (Marc Borzykowski has Vector data → Marc is `who` for Vector zone mapping, not <principal>).
 
    ACTION CONSOLIDATION RULE (rule C1) — when the same person on this call has multiple related actions that together constitute one analytical task or deliverable, emit ONE consolidated item instead of separate items.
    • Signs consolidation applies: same `who`, same deal/workstream, actions are sequential steps in one analysis, or the actions share the same due date and context.
@@ -1456,7 +1458,11 @@ def extract_all(transcript_text, title, hint_category="auto", pipeline_context="
     # Strip control characters that invalidate JSON (tabs/newlines/CR are fine;
     # other C0 controls — \x00-\x08, \x0b, \x0c, \x0e-\x1f — are not).
     raw = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", raw)
-    return json.loads(raw)
+    # strict=False allows unescaped \t \n \r inside string values — Claude
+    # occasionally emits multi-line strings (e.g. context fields) without
+    # escaping. Without this, we get "Invalid control character at: line 1
+    # column N" parse errors that abort the whole transcript.
+    return json.loads(raw, strict=False)
 
 
 # ── Dedup tracker ─────────────────────────────────────────────────────────────
@@ -1526,6 +1532,7 @@ def _write_to_deal_logs(deal_log_entries, call_date, file_name, doc_link):
                 "what": summary,
                 "source_url": doc_link,
                 "source_title": file_name,
+                "historical": bool(entry.get("historical")),
             })
             log_data["updated_at"] = now_iso
             log_path.write_text(json.dumps(log_data, indent=2, ensure_ascii=False))
@@ -1950,12 +1957,18 @@ def process_transcript(token, file_id, file_name, hint_category, source_label, s
     try:
         _normalize_extraction_in_place(data, _norm, stats)
         if stats.get("entity_speaker_unresolved", 0) > 0:
+            # Soft-warn (matches cos_transcript_hook.py behavior). Root cause is
+            # almost always the Calendar API 403 (token missing calendar.readonly
+            # scope) — without attendee hints, Claude can't ground "Speaker N"
+            # labels. Allow processing to continue so the memo + most actions
+            # still land; surviving "Speaker N" lines will be filtered downstream
+            # or flagged for manual cleanup.
             print(
-                f"    ❌  HARD ERROR — {stats['entity_speaker_unresolved']} 'Speaker N' tokens "
-                f"survived extraction; STEP 3B speaker resolution failed. Aborting transcript.",
+                f"    ⚠️   {stats['entity_speaker_unresolved']} 'Speaker N' tokens "
+                f"unresolved — calendar attendee hint likely unavailable. "
+                f"Continuing with partial extraction.",
                 file=sys.stderr,
             )
-            return None
         ent_n = (stats.get("entity_phonetic", 0) +
                  stats.get("entity_canonical_match", 0) +
                  stats.get("entity_unresolved_vague", 0))
@@ -1978,6 +1991,46 @@ def process_transcript(token, file_id, file_name, hint_category, source_label, s
     deal_intel = data.get("deal_intel", [])
     summary     = data.get("one_line_summary", "")
 
+    # ── HISTORICAL CALL GUARD ────────────────────────────────────────────────
+    # Calls older than HISTORICAL_DAYS days are tagged so the dashboard /
+    # action layer can filter them out. Memo + overlay header still write
+    # (archival value); follow-ups, contacts, intel rows, deal-log entries,
+    # and routed envelope items get a [HISTORICAL — call YYYY-MM-DD] tag so
+    # they don't surface as live action items.
+    HISTORICAL_DAYS = 7
+    is_historical = False
+    try:
+        _cd = datetime.strptime(call_date, "%Y-%m-%d") if call_date else None
+        if _cd is not None:
+            _today_dt = datetime.strptime(today, "%Y-%m-%d") if isinstance(today, str) else datetime.now()
+            _age_days = (_today_dt - _cd).days
+            is_historical = _age_days > HISTORICAL_DAYS
+    except Exception:
+        is_historical = False
+
+    _HIST_TAG = f"[HISTORICAL — call {call_date}] " if is_historical else ""
+    if is_historical:
+        print(f"    🕰  Historical call (age > {HISTORICAL_DAYS}d) — tagging downstream writes with [HISTORICAL]", flush=True)
+        # Prepend the tag to user-visible action.what / intel.key_feedback /
+        # rec_intel.feedback so they're filterable everywhere they surface.
+        for a in actions or []:
+            if isinstance(a, dict) and a.get("what") and not str(a["what"]).startswith("[HISTORICAL"):
+                a["what"] = _HIST_TAG + str(a["what"])
+        for di in deal_intel or []:
+            if isinstance(di, dict) and di.get("key_feedback") and not str(di["key_feedback"]).startswith("[HISTORICAL"):
+                di["key_feedback"] = _HIST_TAG + str(di["key_feedback"])
+        if isinstance(rec_intel, dict) and rec_intel.get("feedback"):
+            if not str(rec_intel["feedback"]).startswith("[HISTORICAL"):
+                rec_intel["feedback"] = _HIST_TAG + str(rec_intel["feedback"])
+        # Flag envelope items so routing-v2 + dashboard filter respect historicity.
+        for ei in (data.get("envelope_items") or []):
+            if isinstance(ei, dict):
+                ei["historical"] = True
+        # Flag deal_log_entries.
+        for dle in (data.get("deal_log_entries") or []):
+            if isinstance(dle, dict):
+                dle["historical"] = True
+
     print(f"    Category: {category} | Actions: {len(actions)} | Contacts: {len(contacts)}", flush=True)
     if summary:
         print(f"    Summary: {summary}", flush=True)
@@ -1986,9 +2039,10 @@ def process_transcript(token, file_id, file_name, hint_category, source_label, s
     envelope_items_pre = data.get("envelope_items", []) or []
     _backfill_action_dashboard_paths(actions, envelope_items_pre, deal_intel, category)
 
-    # Write outputs
+    # Write outputs — pass HISTORICAL tag through for People doc header
     n_added   = write_followups(token, actions, file_name, doc_link, stats)
-    write_people(token, contacts, file_name, today, stats)
+    _people_title = (f"[HISTORICAL — call {call_date}] {file_name}" if is_historical else file_name)
+    write_people(token, contacts, _people_title, today, stats)
     rec_result   = "No change"
     deal_result = "No change"
     if category == "Recruiting" or (rec_intel and rec_intel.get("firm")):

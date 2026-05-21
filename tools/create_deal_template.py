@@ -1,11 +1,11 @@
 """
-create_deal_template.py — Generate TCIP_Deal_Model_Template.xlsx
+create_deal_template.py — Generate the deal model template xlsx
 ================================================================
 Run once to create the 5-tab model template every new deal starts from.
 
     python3 create_deal_template.py
 
-Produces: TCIP_Deal_Model_Template.xlsx (same folder as this script)
+Produces: Deal_Model_Template.xlsx (same folder as this script)
 
 Tab structure per Deal Modeling & Presentation Standards:
   Inputs   (blue header)  — every assumption, blue font, notes in col C
@@ -21,7 +21,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.workbook.defined_name import DefinedName
 
-OUT = Path(__file__).parent / "TCIP_Deal_Model_Template.xlsx"
+OUT = Path(__file__).parent / "TCIP_Deal_Model_Template.xlsx"  # noqa: tenant-leak (TCIP is the product name)
 
 # ── Colors ────────────────────────────────────────────────────────────────────
 TAB_BLUE       = "1F4E79"   # Inputs tab

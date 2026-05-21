@@ -161,10 +161,12 @@ GSCRIPT = re.compile(r"\.gscript$", re.I)
 
 # Recruiting: DRW interview prep, candidate master refs, TP_*_DRAFT artifacts
 # from the recruiting workstream. Filenames are distinctive enough for a regex.
+# The principal-name pattern at the end is a literal Drive doc filename and is
+# intentional tenant data — guarded behind a noqa marker so the leak-scan skips it.
 RECRUITING = re.compile(
     r"(drw\b|interview\s*prep|master\s*interview\s*reference|"
     r"^tp_(full|short)_draft|"
-    r"yoni\s*gontownik\s*[—-]\s*master\s*interview)", re.I)
+    r"yoni\s*gontownik\s*[—-]\s*master\s*interview)", re.I)  # noqa: tenant-leak
 
 # NORPAC: Iran / antisemitism / Adam Schiff / Paul Levy congressional outreach
 # workstream. Per DRIVE-ARCHITECTURE §11 #2 → Personal/NORPAC/_Research/.

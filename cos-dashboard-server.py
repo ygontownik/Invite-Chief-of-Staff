@@ -2843,6 +2843,9 @@ class Handler(BaseHTTPRequestHandler):
             if parsed.path in ('/admin/transcripts', '/admin/transcripts/'):
                 self._handle_admin_transcripts()
                 return
+            if parsed.path in ('/admin/overlay', '/admin/overlay/'):
+                self._handle_admin_overlay_form(qs)
+                return
             flash = None
             if 'ftype' in qs and 'fmsg' in qs:
                 flash = (qs['ftype'][0], qs['fmsg'][0])
@@ -3128,6 +3131,123 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Cache-Control', 'no-store')
         self.end_headers()
         self.wfile.write(body)
+
+    def _handle_admin_overlay_form(self, qs):
+        """Owner-only: render a simple HTML form for triggering the transcript
+        overlay on a specific Google Doc ID. POSTs to /admin/process-transcript.
+        Path D from the 2026-05-21 session — gives the principal a one-click way to
+        overlay an arbitrary transcript (e.g. from a non-watched folder) or
+        re-overlay after manual edits, without dropping to the CLI.
+        """
+        import html as _html
+        flash = ''
+        ftype = (qs.get('ftype') or [''])[0]
+        fmsg  = (qs.get('fmsg')  or [''])[0]
+        if ftype and fmsg:
+            color = '#0a5d2d' if ftype == 'ok' else '#a02020'
+            flash = (f'<div style="background:#fef9e7;border-left:4px solid {color};'
+                     f'padding:12px 16px;margin:16px 0;border-radius:4px;'
+                     f'color:{color};font-weight:500;">{_html.escape(fmsg)}</div>')
+        page = f"""<!DOCTYPE html>
+<html><head><title>Transcript Overlay — Admin</title>
+<style>
+  body {{ font-family: -apple-system, system-ui, sans-serif; background:#faf7f2; color:#1b2a3e;
+          max-width: 720px; margin: 40px auto; padding: 0 24px; }}
+  h1 {{ font-size: 22px; margin: 0 0 8px; }}
+  .sub {{ color: #5a6b80; margin-bottom: 24px; font-size: 14px; }}
+  form {{ background:#fff; border:1px solid #e5dfd2; border-radius:8px; padding:24px; }}
+  label {{ display:block; font-weight:600; margin: 14px 0 6px; font-size: 13px; }}
+  input[type=text] {{ width: 100%; padding: 10px 12px; border: 1px solid #d0c8b7;
+                       border-radius: 6px; font-size: 14px; box-sizing: border-box;
+                       font-family: ui-monospace, monospace; }}
+  button {{ margin-top: 18px; background:#1b2a3e; color:#fff; border:0;
+            padding: 10px 22px; border-radius: 6px; font-size: 14px; cursor: pointer; }}
+  button:hover {{ background:#2a3a52; }}
+  .hint {{ color:#7a8a9c; font-size:12px; margin-top:4px; }}
+  .nav {{ font-size: 13px; margin-bottom: 24px; }}
+  .nav a {{ color:#1b2a3e; text-decoration: none; margin-right:16px; }}
+</style></head>
+<body>
+<div class="nav"><a href="/admin/">← Admin</a> <a href="/">Dashboard</a></div>
+<h1>Transcript Overlay</h1>
+<div class="sub">Run <code>cos_transcript_hook.py</code> on a specific Google Doc.
+Use for transcripts in non-watched folders, or to re-overlay after manual edits.
+Runs async — returns immediately, hook completes in ~30-60 sec on background.</div>
+{flash}
+<form method="POST" action="/admin/process-transcript">
+  <label for="doc_id">Google Doc ID</label>
+  <input type="text" id="doc_id" name="doc_id" required
+         placeholder="e.g. 1ry68HAwInrULqx1h6DXSyUkMptDX66ZcmTzPYpdhlQQ"
+         pattern="[A-Za-z0-9_-]{{20,}}" />
+  <div class="hint">From the Drive URL: docs.google.com/document/d/<b>DOC_ID</b>/edit</div>
+
+  <label for="title">Title (optional — defaults to "Manual Overlay")</label>
+  <input type="text" id="title" name="title"
+         placeholder="e.g. Catch-Up: GridFree / Principal Name" />
+
+  <label for="category">Category hint (optional)</label>
+  <input type="text" id="category" name="category" value="auto"
+         placeholder="auto | deal | recruiting | other" />
+
+  <button type="submit">Trigger Overlay</button>
+</form>
+</body></html>"""
+        body = page.encode('utf-8')
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/html; charset=utf-8')
+        self.send_header('Content-Length', str(len(body)))
+        self.send_header('Cache-Control', 'no-store')
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _handle_admin_process_transcript(self):
+        """Owner-only: POST handler that kicks off cos_transcript_hook.py
+        asynchronously for a given Google Doc ID. Returns a redirect back
+        to /admin/overlay with a flash message. Hook runs ~30-60s in
+        background — caller doesn't wait."""
+        import urllib.parse as _up
+        import subprocess as _sp
+        clen = int(self.headers.get('Content-Length') or 0)
+        body = self.rfile.read(clen).decode('utf-8') if clen else ''
+        form = {k: (v[0] if v else '') for k, v in _up.parse_qs(body).items()}
+        doc_id = (form.get('doc_id') or '').strip()
+        title  = (form.get('title')  or 'Manual Overlay').strip() or 'Manual Overlay'
+        category = (form.get('category') or 'auto').strip() or 'auto'
+
+        # Validate doc_id shape (Drive file IDs are 20+ chars, [A-Za-z0-9_-])
+        import re as _re_v
+        if not _re_v.match(r'^[A-Za-z0-9_-]{20,}$', doc_id):
+            self._redirect_flash('/admin/overlay', 'err',
+                                 f'Invalid doc_id: {doc_id[:40]}')
+            return
+
+        # Kick off the hook in background. Hook is gdocs-only — won't work
+        # for plain-text Drive files (those need cos_otter_backfill.py --id).
+        try:
+            hook = str(Path.home() / 'cos-pipeline' / 'cos_transcript_hook.py')
+            _sp.Popen(
+                [sys.executable, hook,
+                 '--doc-id', doc_id,
+                 '--title',  title,
+                 '--category', category],
+                stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
+                start_new_session=True,
+            )
+            self._redirect_flash('/admin/overlay', 'ok',
+                                 f'Overlay triggered for {doc_id[:12]}…{doc_id[-6:]} '
+                                 f'(title: {title}). Check Drive in ~30-60s.')
+        except Exception as e:
+            self._redirect_flash('/admin/overlay', 'err',
+                                 f'Failed to launch hook: {e}')
+
+    def _redirect_flash(self, base_path, ftype, fmsg):
+        """302 redirect with flash query params — used by admin POST handlers."""
+        from urllib.parse import quote as _q
+        loc = f'{base_path}?ftype={_q(ftype)}&fmsg={_q(fmsg)}'
+        self.send_response(302)
+        self.send_header('Location', loc)
+        self.send_header('Content-Length', '0')
+        self.end_headers()
 
     def _get_spend_data(self, days: int = 30) -> dict:
         """Aggregate Anthropic API spend — shared by admin tab and /admin/spend page."""
@@ -4511,12 +4631,21 @@ class Handler(BaseHTTPRequestHandler):
         # POSTs must come from localhost OR be authenticated as owner.
         # Routines on the Mac curl localhost directly (no auth needed);
         # remote browsers must present owner credentials.
+        #
+        # PARTNER-TIER WHITELIST: a few low-impact endpoints can be invoked
+        # by partner-tier users too (e.g. dismissing a false-positive SMS
+        # signal on an awaiting item — no data destruction, scoped to one
+        # signal array). Keep this list short and audit each addition.
+        _POST_PARTNER_OK = {
+            '/api/awaiting/dismiss-sms-signals',
+            '/api/followup/dismiss-completion-signals',  # mirror endpoint for commitment-pair chip
+        }
         if not self._is_localhost():
             user = self._authenticate()
             if user is None:
                 self._send_401()
                 return
-            if user != 'owner':
+            if user != 'owner' and self.path not in _POST_PARTNER_OK:
                 self._send_403()
                 return
         if self.path == '/refresh':
@@ -4549,6 +4678,10 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_patch()
         elif self.path == '/item/delete':
             self._handle_item_delete()
+        elif self.path == '/api/awaiting/dismiss-sms-signals':
+            self._handle_dismiss_sms_signals()
+        elif self.path == '/api/followup/dismiss-completion-signals':
+            self._handle_dismiss_completion_signals()
         elif self.path == '/item/undelete':
             self._handle_item_undelete()
         elif self.path == '/topics/save':
@@ -4604,6 +4737,12 @@ class Handler(BaseHTTPRequestHandler):
                 if user != 'owner':
                     self._send_403(); return
             self._handle_admin_update()
+        elif self.path == '/admin/process-transcript':
+            if not self._is_localhost():
+                user = self._authenticate()
+                if user != 'owner':
+                    self._send_403(); return
+            self._handle_admin_process_transcript()
         elif self.path == '/admin/schedule-dial-in':
             if not self._is_localhost():
                 user = self._authenticate()
@@ -5275,6 +5414,68 @@ function copyInstructions() {{
         except Exception:
             return None
 
+    def _handle_dismiss_completion_signals(self):
+        """POST /api/followup/dismiss-completion-signals — clear
+        _possibly_completed[] on one followUp. Used by the UI "× Dismiss signal"
+        button on the commitment-pair chip when the ack was unrelated."""
+        body = self._read_json_body()
+        if body is None:
+            self.send_json(400, {'ok': False, 'error': 'invalid JSON'}); return
+        item_id = str(body.get('id') or '').strip()
+        if not item_id:
+            self.send_json(400, {'ok': False, 'error': 'id required'}); return
+        if not STATE_PATH.exists():
+            self.send_json(500, {'ok': False, 'error': 'dashboard-data missing'}); return
+        try:
+            data = json.loads(STATE_PATH.read_text())
+        except Exception as e:
+            self.send_json(500, {'ok': False, 'error': f'read failed: {e}'}); return
+        found = False
+        for fu in data.get('followUps', []):
+            # actionKey is the JS-side fkey — usually fu.id; match either way.
+            if fu.get('id') == item_id or (fu.get('id') or '') == item_id:
+                if fu.get('_possibly_completed'):
+                    fu['_possibly_completed'] = []
+                    found = True
+                break
+        if not found:
+            self.send_json(404, {'ok': False, 'error': 'followup not found or no signals'}); return
+        tmp = STATE_PATH.with_suffix('.tmp')
+        tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+        tmp.replace(STATE_PATH)
+        self.send_json(200, {'ok': True, 'id': item_id})
+
+    def _handle_dismiss_sms_signals(self):
+        """POST /api/awaiting/dismiss-sms-signals — clear _sms_signals[] on one
+        awaiting item. Used by the UI "× Dismiss signal" button when an SMS
+        match was a false positive (real SMS arrived but didn't actually
+        resolve the awaiting item). The item itself stays open."""
+        body = self._read_json_body()
+        if body is None:
+            self.send_json(400, {'ok': False, 'error': 'invalid JSON'}); return
+        item_id = str(body.get('id') or '').strip()
+        if not item_id:
+            self.send_json(400, {'ok': False, 'error': 'id required'}); return
+        if not STATE_PATH.exists():
+            self.send_json(500, {'ok': False, 'error': 'dashboard-data missing'}); return
+        try:
+            data = json.loads(STATE_PATH.read_text())
+        except Exception as e:
+            self.send_json(500, {'ok': False, 'error': f'read failed: {e}'}); return
+        found = False
+        for it in data.get('awaitingExternal', []):
+            if it.get('id') == item_id:
+                if it.get('_sms_signals'):
+                    it['_sms_signals'] = []
+                    found = True
+                break
+        if not found:
+            self.send_json(404, {'ok': False, 'error': 'item not found or no signals'}); return
+        tmp = STATE_PATH.with_suffix('.tmp')
+        tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+        tmp.replace(STATE_PATH)
+        self.send_json(200, {'ok': True, 'id': item_id})
+
     def _handle_item_delete(self):
         body = self._read_json_body()
         if body is None:
@@ -5334,7 +5535,7 @@ function copyInstructions() {{
     def _handle_learning_accept(self):
         """Promote a candidate to the /propose-learning review queue.
         Does NOT write to LEARNINGS-LEDGER.yaml directly — that file is
-        canonical and edited via the interactive skill so Yoni gets to
+        canonical and edited via the interactive skill so the principal gets to
         author the structured fields (rule_code, domain, confidence, etc).
         We just append the snippet to a queue the skill picks up first.
         """

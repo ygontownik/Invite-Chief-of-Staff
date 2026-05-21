@@ -8,7 +8,7 @@ import sys
 import re
 from pathlib import Path
 
-sys.path.insert(0, '/Users/ygontownik/credentials')
+sys.path.insert(0, str(Path.home() / 'credentials'))
 
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build

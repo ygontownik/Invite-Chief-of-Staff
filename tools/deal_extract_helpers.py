@@ -53,7 +53,7 @@ Sub-commands (each prints structured output the slash command can parse):
     regenerate-pipeline-section
         Read replacement section content from stdin, replace the body
         between AUTO-GENERATED-PIPELINE-START/END markers in the
-        TCIP Firm Context doc.
+        Firm Context doc.
 
 Usage examples:
     python3 deal_extract_helpers.py list-deals

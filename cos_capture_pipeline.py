@@ -301,7 +301,7 @@ def build_system_prompt(ctx: dict) -> str:
 
         "\nEvery deal-related action must be classified as TEAM or DEAL.\n"
         "Set `content_type` accordingly:\n\n"
-        "  TEAM → content_type: my_action (lands in followUps — Yoni's active task list)\n"
+        "  TEAM → content_type: my_action (lands in followUps — principal's active task list)\n"
         "    Use for: outreach, scheduling, introductions, calls to set up,\n"
         "    meetings to confirm, emails to send, people to contact.\n"
         "    Key test: does this require a specific named external party to act?\n\n"
@@ -309,7 +309,7 @@ def build_system_prompt(ctx: dict) -> str:
         "    Use for: internal analysis, financial modeling, diligence research,\n"
         "    data pulls, market checks, valuation work, deck preparation with\n"
         "    no specific external deadline or named recipient.\n"
-        "    Key test: could Yoni do this alone, without any specific counterparty?\n\n"
+        "    Key test: could the principal do this alone, without any specific counterparty?\n\n"
         "  GRAY AREA: if an action involves both coordination AND analysis,\n"
         "    emit ONE my_action item covering the external-facing commitment.\n"
         "    Only split into two if the analytical and coordination parts have\n"

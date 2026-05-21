@@ -6,16 +6,16 @@ Automates ~80% of the new deal setup process.
 Run this whenever the firm engages a new deal.
 
 USAGE:
-  python tcip_new_deal.py \
-    --deal-name "Lakeview Wind Farm" \
-    --deal-id "lakeview_wind" \
-    --lead "Jane Smith" \
-    --support "John Doe" \
+  python tcip_new_deal.py \\
+    --deal-name "Lakeview Wind Farm" \\
+    --deal-id "lakeview_wind" \\
+    --lead "Jane Smith" \\
+    --support "John Doe" \\
     --docs-folder "/path/to/deal/documents"   # optional
     --drive-folder-id "EXISTING_DRIVE_FOLDER_ID"  # optional, if folder exists
 
   OR interactively (no flags needed):
-  python tcip_new_deal.py
+  python tcip_new_deal.py    # noqa: tenant-leak
 
 WHAT IT DOES AUTOMATICALLY:
   Phase 1: Creates Google Drive folder structure
@@ -1116,11 +1116,11 @@ def update_firm_context_pipeline(service, new_deal_id=None, new_deal_name=None,
 
     _principal_first = PRINCIPAL_NAME.split()[0] if PRINCIPAL_NAME else ""
     _team_first = TEAM_NAMES[0].split()[0] if TEAM_NAMES else ""
-    yoni_role = "Lead" if new_lead and _principal_first and _principal_first in new_lead else (
+    principal_role = "Lead" if new_lead and _principal_first and _principal_first in new_lead else (
         "Support" if new_support and _principal_first and _principal_first in new_support else "—")
-    mark_role = "Lead" if new_lead and _team_first and _team_first in new_lead else (
+    team_role = "Lead" if new_lead and _team_first and _team_first in new_lead else (
         "Support" if new_support and _team_first and _team_first in new_support else "—")
-    new_row = f"| **{new_deal_name}** | {new_stage} | {yoni_role} | {mark_role} | `{new_deal_id}_context.md` |"
+    new_row = f"| **{new_deal_name}** | {new_stage} | {principal_role} | {team_role} | `{new_deal_id}_context.md` |"
 
     # Download current file from Drive
     try:

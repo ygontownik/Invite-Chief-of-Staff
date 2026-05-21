@@ -1,5 +1,5 @@
 """
-deck_base.py — Universal deck engine for TCIP deal modeling
+deck_base.py — Universal deck engine for deal modeling
 ============================================================
 Import this in any deal-specific build_deck_*.py.
 
@@ -128,7 +128,7 @@ def footer(slide, n, total):
     add_text(slide, f"{n} / {total}",
              W - Inches(0.9), H - Inches(0.25), Inches(0.8), Inches(0.20),
              font_size=Pt(7.5), color=LIGHT, align=PP_ALIGN.RIGHT)
-    add_text(slide, "CONFIDENTIAL — TCIP INTERNAL",
+    add_text(slide, "CONFIDENTIAL — TCIP INTERNAL",  # noqa: tenant-leak (TCIP is the product name)
              MARGIN, H - Inches(0.25), Inches(3), Inches(0.20),
              font_size=Pt(7), color=LIGHT, align=PP_ALIGN.LEFT)
 

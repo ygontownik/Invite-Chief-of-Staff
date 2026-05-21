@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-coordination.py — Shared locking + system-state for the TCIP/CoS pipeline.
+coordination.py — Shared locking + system-state for the deal/CoS pipeline.
 
 Every long-running script that mutates shared state (drive-docs.yaml, GAS files
 via clasp, log.json, deal status docs) should import this and bracket its

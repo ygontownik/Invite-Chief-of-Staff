@@ -5,7 +5,7 @@ sync_setup_to_drive.py — Mirror Claude Code setup files to Drive for visibilit
 Maintains a Drive folder (_System/_Claude Code Setup/) containing read-only
 mirrors of:
   - ~/.claude/commands/*.md            → skills/        (one gdoc per skill)
-  - ~/Library/LaunchAgents/com.{yoni,tomaccove,tcip}.*.plist → launchagents/
+  - ~/Library/LaunchAgents/com.<principal>.*.plist → launchagents/
   - ~/.claude/CLAUDE.md                → global/CLAUDE.md
   - ~/dashboards/scripts/wrap_auto.sh  → global/wrap_auto.sh
   - ~/dashboards/scripts/load-secrets.sh → global/load-secrets.sh
@@ -29,22 +29,47 @@ HOME = Path.home()
 REGISTRY_PATH = HOME / "cos-pipeline-config-tomac/claude_code_setup_drive_ids.json"
 STATE_PATH = HOME / "credentials/setup_drive_sync_state.json"
 
+
+def _load_launchagent_prefixes() -> list[str]:
+    """Return tenant-specific LaunchAgent name prefixes from firm_context.yaml.
+
+    Falls back to a generic ['principal'] if firm_context isn't available
+    — this script is run against an already-installed tenant; absent config
+    just means nothing to mirror.
+    """
+    try:
+        import yaml as _yaml  # type: ignore
+        for _candidate in (
+            HOME / "cos-pipeline-config-tomac" / "firm_context.yaml",
+            HOME / "dashboards" / "config" / "firm_context.yaml",
+        ):
+            if _candidate.exists():
+                _data = _yaml.safe_load(_candidate.read_text()) or {}
+                _prefixes = _data.get("launchagent_prefixes")
+                if isinstance(_prefixes, list) and _prefixes:
+                    return [str(p).strip() for p in _prefixes if p]
+    except Exception:
+        pass
+    return ["principal"]
+
+
+_LAUNCHAGENT_PREFIXES = _load_launchagent_prefixes()
+
+
 # Source -> target-subfolder-key mapping
 SOURCES = [
     # Personal skills
     {"glob": HOME / ".claude/commands/*.md",
      "subfolder": "skills",
      "name_pattern": "claude-code skill: {stem}"},
-    # LaunchAgents (multiple user prefixes)
-    {"glob": HOME / "Library/LaunchAgents/com.yoni.*.plist",
-     "subfolder": "launchagents",
-     "name_pattern": "launchagent: {stem}"},
-    {"glob": HOME / "Library/LaunchAgents/com.tomaccove.*.plist",
-     "subfolder": "launchagents",
-     "name_pattern": "launchagent: {stem}"},
-    {"glob": HOME / "Library/LaunchAgents/com.tcip.*.plist",
-     "subfolder": "launchagents",
-     "name_pattern": "launchagent: {stem}"},
+    # LaunchAgents — name prefixes loaded from firm_context.yaml so this
+    # public-repo script carries no hardcoded tenant identifiers.
+    *[
+        {"glob": HOME / f"Library/LaunchAgents/com.{_prefix}.*.plist",
+         "subfolder": "launchagents",
+         "name_pattern": "launchagent: {stem}"}
+        for _prefix in _LAUNCHAGENT_PREFIXES
+    ],
     # Globals
     {"glob": HOME / ".claude/CLAUDE.md",
      "subfolder": "global",

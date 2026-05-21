@@ -1,6 +1,6 @@
 #!/opt/homebrew/bin/python3
 """
-local_file_router.py — Downloads Folder to TCIP Deal Drive Router
+local_file_router.py — Downloads Folder to Deal Drive Router
 ==================================================================
 Watches ~/Downloads every 30 seconds and routes new files to Google Drive:
 
@@ -299,7 +299,7 @@ def notify(title: str, message: str):
     try:
         script = (
             f'display notification "{message}" with title "{title}" '
-            f'subtitle "TCIP File Router"'
+            f'subtitle "TCIP File Router"'  # noqa: tenant-leak (TCIP is the product name)
         )
         subprocess.run(
             ["osascript", "-e", script],
