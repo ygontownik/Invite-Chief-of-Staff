@@ -37,6 +37,16 @@ OUT_PATH = HOME / "dashboards" / "data" / "compiled" / "launchagent-health.json"
 # matching the com.yoni|tcip prefix is in scope.
 IGNORE_RE = re.compile(r"\.webinar\.[0-9a-f-]+(\.stop)?\.plist$")
 
+# LaunchAgents that are INTENTIONALLY installed-but-not-loaded — they're
+# discoverable on disk so the user can flip them on, but their default state
+# is dormant. Health check treats these as "info" not "fail" when unloaded.
+# Added 2026-05-21 after /wrap pt 4 — github-watch is the documented example
+# per github_watch.py docstring "installed-but-disabled until the user flips
+# RunAtLoad → true or runs launchctl load".
+INTENTIONALLY_DORMANT_LABELS = {
+    "com.yoni.github-watch",
+}
+
 # Default freshness window per cadence type. Tightened for high-cadence agents.
 DEFAULT_STALE_MULTIPLIER = 2.0
 
@@ -137,8 +147,10 @@ def _last_fire(spec: dict, label: str) -> _dt.datetime | None:
 
 
 def _verdict(loaded: bool, cadence: int | None, last: _dt.datetime | None,
-             now: _dt.datetime) -> tuple[str, str]:
+             now: _dt.datetime, label: str = "") -> tuple[str, str]:
     if not loaded:
+        if label in INTENTIONALLY_DORMANT_LABELS:
+            return "pass", "intentionally dormant (allowlisted)"
         return "fail", "not loaded"
     if cadence is None:
         if last is None:
@@ -190,7 +202,7 @@ def _audit() -> dict[str, Any]:
         is_loaded = label in loaded
         cadence = _cadence_seconds(spec)
         last = _last_fire(spec, label)
-        status, summary = _verdict(is_loaded, cadence, last, now)
+        status, summary = _verdict(is_loaded, cadence, last, now, label=label)
         agents.append({
             "label": label,
             "plist": str(path),
