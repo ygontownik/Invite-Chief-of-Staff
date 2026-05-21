@@ -12,18 +12,25 @@ strings (tomac, cholla, yoni, gontownik, etc.).
 STATUSES
 --------
 - pass  : 0 leaks across all probes
-- warn  : 1-100 leaks (typically docstring/comment residue + project-name
-          uses like "TCIP" which is the product, not a tenant slug)
-- fail  : 101+ leaks (likely real hardcoded tenant data in runtime code)
+- warn  : 1-30 leaks (residual TCIP project-name uses + a small tail
+          of legitimate code-identifier hits that the scanner can't
+          easily distinguish from real residue)
+- fail  : 31+ leaks (real regression: new docstring/comment residue
+          OR a runtime hardcode appearing in code paths)
 
-Threshold tuning: warn vs fail boundaries reflect that the cos-pipeline
-codebase has a slow-burning docstring-residue baseline (~50-70 hits from
-"yoni"/"gontownik"/"mark saxe"/"tcip" in comments and example text in
-HTML placeholders, command help, and `# Example:` blocks). These don't
-break a subscriber install — they're cosmetic. The fail threshold
-catches real regressions (a runtime hardcode appearing). Once the
-docstring sweep lands (parameterize examples to <principal>/<tenant>
-placeholders), tighten this back to ≥10.
+Threshold history:
+  v1 (initial)  : warn 1-50,  fail 51+   — first calibration, ~55 baseline
+  v2 (2026-05-21): warn 1-100, fail 101+ — temporary headroom during sweep
+  v3 (2026-05-21, post-sweep): warn 1-30, fail 31+
+       Set by commit ${this} after cos-pipeline@5535d8f swept docstrings
+       to placeholders (<principal>/<firm>/<partner_a>/<partner_b>) and
+       dropped the baseline from 55 → 17. The 30-hit fail boundary gives
+       ~13 hits of headroom above the cleaned baseline for natural
+       fluctuation while catching real regressions.
+
+Tighten further once the remaining ~17 hits are addressed individually
+(most are TCIP product-name references in PPT watermarks / file names
+that have legitimate runtime uses).
 """
 from __future__ import annotations
 
@@ -65,7 +72,7 @@ def run() -> dict:
 
     if leak_count == 0:
         status = "pass"
-    elif leak_count <= 100:
+    elif leak_count <= 30:
         status = "warn"
     else:
         status = "fail"
