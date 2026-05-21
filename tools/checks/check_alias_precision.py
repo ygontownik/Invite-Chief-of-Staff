@@ -129,6 +129,7 @@ def run() -> dict[str, Any]:
 
     return {
         "name": "alias_precision",
+        "rule_ref": "AP1",
         "status": status,
         "summary": summary,
         "details": {

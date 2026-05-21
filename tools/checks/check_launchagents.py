@@ -237,6 +237,7 @@ def run() -> dict[str, Any]:
     c = report["counts"]
     return {
         "name": "launchagents",
+        "rule_ref": "LA1",
         "status": report["overall"],
         "summary": (
             f"launchagents: {report['total']} total · "

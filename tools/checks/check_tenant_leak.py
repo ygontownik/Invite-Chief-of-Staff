@@ -215,6 +215,7 @@ def run() -> dict[str, Any]:
 
     return {
         "name": "tenant_leak",
+        "rule_ref": "TL1",
         "status": status,
         "summary": summary,
         "details": {
