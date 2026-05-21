@@ -827,15 +827,23 @@ def _learning_load_ledger_terms():
     return out
 
 
-def _learning_load_queue_norms():
-    """Return set of normalized snippets already in proposed-learnings.jsonl."""
+def _learning_load_queue_norms(tail_lines: int = 500):
+    """Return set of normalized snippets already in proposed-learnings.jsonl.
+
+    Bounded tail-read: only the last `tail_lines` entries are inspected so
+    this stays cheap as the queue grows. 500 is generous; the queue is
+    expected to be reviewed and drained on the morning briefing cycle.
+    """
     import json as _json
     q = Path.home() / "dashboards/data/compiled/proposed-learnings.jsonl"
     if not q.exists():
         return set()
     out = set()
     try:
-        for line in q.read_text(errors="ignore").splitlines():
+        lines = q.read_text(errors="ignore").splitlines()
+        if tail_lines and len(lines) > tail_lines:
+            lines = lines[-tail_lines:]
+        for line in lines:
             if not line.strip():
                 continue
             try:
@@ -850,6 +858,37 @@ def _learning_load_queue_norms():
     except Exception:
         pass
     return out
+
+
+def _learning_is_code_fragment(snippet: str) -> bool:
+    """Reject captures that look like code/markdown fragments rather than
+    natural-language rules. Filters:
+      - Contains a literal newline (multi-line — never a clean rule)
+      - Contains '//' (JS/C comment), '*/' (block-comment close),
+        or '**:' (markdown-bold label like '**Required**:')
+      - Starts mid-word (first char is lowercase AND not a rule-shape keyword)
+      - Length <35 or >240 chars
+    """
+    if not snippet:
+        return True
+    n = len(snippet)
+    if n < 35 or n > 240:
+        return True
+    if "\n" in snippet:
+        return True
+    if "//" in snippet or "**:" in snippet or "*/" in snippet:
+        return True
+    first = snippet.lstrip()[:1]
+    if first and first.islower():
+        # Allow if it leads with a known rule-shape keyword (defensive — the
+        # pattern matcher should already have ensured this, but be explicit).
+        head = snippet.lstrip().lower()
+        rule_heads = ("always", "never", "going forward", "from now on",
+                      "new rule", "the rule is", "don't", "do not",
+                      "make sure", "ensure", "must")
+        if not any(head.startswith(h) for h in rule_heads):
+            return True
+    return False
 
 
 def _learning_is_transcript_like(text: str) -> bool:
@@ -963,14 +1002,23 @@ def run_learning_capture_scan():
     if not new_transcripts:
         return False
 
-    # High-precision directive patterns (low recall by design — better than false positives)
+    # High-precision directive patterns (low recall by design — better than false positives).
+    # Truncation rule: stop at sentence-final period (period followed by whitespace+capital
+    # or end-of-line), NOT at any period — otherwise filenames like "_claude_dispatch.py"
+    # get sliced at the dot ("always use `_claude_dispatch."). Also stop at newline.
+    # Sentence terminator class: (?:[.!?](?=\s+[A-Z]|\s*$))
+    SENT_END = r"(?:[.!?](?=\s+[A-Z]|\s*$))"
+    BODY = r"(?:[^\n.!?]|\.(?!\s+[A-Z]|\s*$)|[!?](?!\s+[A-Z]|\s*$))"
+    # BODY: any non-newline-non-terminator char, OR a period/!/? that is NOT a terminator
+    # (i.e. mid-token like "_claude_dispatch.py" or "e.g."). This lets us swallow filenames
+    # while still respecting actual sentence boundaries.
     PATTERNS = [
-        _re.compile(r"\bgoing forward[,:]?\s+([^.\n]{20,200}\.)", _re.IGNORECASE),
-        _re.compile(r"\bfrom now on[,:]?\s+([^.\n]{20,200}\.)", _re.IGNORECASE),
-        _re.compile(r"\bnew rule[,:]?\s+([^.\n]{20,200}\.)", _re.IGNORECASE),
-        _re.compile(r"\bnever\s+(do\s+)?([^.\n]{20,200}\.)\s*(?:that|this)?", _re.IGNORECASE),
-        _re.compile(r"\balways\s+(do\s+)?([^.\n]{20,200}\.)\s*(?:that|this)?", _re.IGNORECASE),
-        _re.compile(r"\bthe rule is[,:]?\s+([^.\n]{20,200}\.)", _re.IGNORECASE),
+        _re.compile(rf"\bgoing forward[,:]?\s+({BODY}{{20,200}}{SENT_END})", _re.IGNORECASE),
+        _re.compile(rf"\bfrom now on[,:]?\s+({BODY}{{20,200}}{SENT_END})", _re.IGNORECASE),
+        _re.compile(rf"\bnew rule[,:]?\s+({BODY}{{20,200}}{SENT_END})", _re.IGNORECASE),
+        _re.compile(rf"\bnever\s+(do\s+)?({BODY}{{20,200}}{SENT_END})\s*(?:that|this)?", _re.IGNORECASE),
+        _re.compile(rf"\balways\s+(do\s+)?({BODY}{{20,200}}{SENT_END})\s*(?:that|this)?", _re.IGNORECASE),
+        _re.compile(rf"\bthe rule is[,:]?\s+({BODY}{{20,200}}{SENT_END})", _re.IGNORECASE),
     ]
 
     # LC1: load dedup sources once
@@ -1016,6 +1064,10 @@ def run_learning_capture_scan():
                     snippet = m.group(0).strip()
                     # Skip if it looks like a question rather than a directive
                     if "?" in snippet[-20:]:
+                        continue
+
+                    # LC1 filter 6: reject code/markdown fragments + length sanity
+                    if _learning_is_code_fragment(snippet):
                         continue
 
                     # LC1 filter 5: require imperative structure
