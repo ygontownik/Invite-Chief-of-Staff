@@ -398,6 +398,33 @@ chat_capture 4h, artifact_pull 4h, skill_telemetry 30min). /wrap doesn't
 re-trigger those — instead surfaces "X has not run in N hours" warnings
 if any have stalled (see Step 8 LaunchAgent + cadence check).
 
+### 6e. Refresh Priority Synthesis Tier 2 prose (Claude Max, free)
+
+The dashboard Priority Synthesis pane has a Tier 2 prose layer that
+runs cadenced (Mon-Fri 08:30/13:30/18:00 + Sun 08:30) via the
+`com.cospipeline.tomac.synthesis` LaunchAgent. /wrap fires a 5th
+synchronous tick so the recap's Paragraph 3 reads *fresh* prose, not
+prose that could be up to ~5h old.
+
+```bash
+python3 ~/dashboards/routines/compile/synthesize_prose.py --apply 2>&1 | \
+    tee -a ~/dashboards/logs/wrap-synthesis.log | tail -5
+```
+
+One Claude Opus 4.7 call via `_claude_dispatch` (Claude Max
+subscription per CC1 — never raw Anthropic SDK). ~3–8s. Free under
+Max.
+
+Graceful fallback: the script catches QC1 quota patterns and exits 0
+on quota/network/parse failures. If you see "Quota hit; skipping
+prose this tick" or "_claude_dispatch error (non-fatal)" in the log,
+the dashboard pane keeps showing Tier 1 only — recap's Paragraph 3
+falls back to mechanical composition from `tier1.hq[:3]` titles. No
+SESSION-HANDOFF §4b entry needed for the routine fallback case.
+
+Add a §4b entry ONLY if the script crashed (non-zero exit) or
+produced an unexpected error pattern — that signals a real bug.
+
 ---
 
 ## STEP 7 — Heavy lifting (things you'd forget to run)

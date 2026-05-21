@@ -971,6 +971,102 @@ body { padding: 0 !important; }
   .stats-bar                 { grid-template-columns: 1fr 1fr !important; }
   .cal-grid                  { grid-template-columns: repeat(3, 1fr) !important; }
 }
+
+/* ── Priority Synthesis pane ─────────────────────────────────────────── */
+.synth-pane {
+  background: #fdfbf7;
+  border: 1px solid #e8e0d4;
+  border-radius: 10px;
+  padding: 18px 20px;
+  margin-bottom: 18px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+}
+.synth-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 12px;
+  border-bottom: 1px solid #efe7d8;
+  padding-bottom: 8px;
+}
+.synth-header h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #5b4a32;
+}
+.synth-subtitle {
+  font-weight: 400;
+  color: #8b7e63;
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 12px;
+}
+.synth-fresh { font-size: 11px; color: #a99b7c; }
+.synth-prose {
+  font-size: 14px;
+  line-height: 1.55;
+  color: #2a241b;
+  background: #fff8ec;
+  border-left: 3px solid #c8a96e;
+  padding: 10px 14px;
+  border-radius: 4px;
+  margin-bottom: 10px;
+}
+.synth-worth {
+  font-size: 13px;
+  color: #5b4a32;
+  background: #f5ebd6;
+  padding: 8px 14px;
+  border-radius: 4px;
+  margin-bottom: 12px;
+}
+.synth-ranked { list-style: none; padding: 0; margin: 0 0 12px; }
+.synth-ranked li {
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  grid-template-rows: auto auto;
+  column-gap: 10px;
+  align-items: baseline;
+  padding: 7px 0;
+  border-bottom: 1px dotted #e8e0d4;
+  font-size: 13px;
+}
+.synth-ranked li:last-child { border-bottom: none; }
+.synth-rank { color: #a99b7c; font-weight: 700; grid-row: 1; }
+.synth-title { color: #2a241b; grid-row: 1; }
+.synth-deal {
+  font-size: 11px; color: #8b7e63; font-style: italic;
+  grid-column: 2 / 3; grid-row: 2;
+}
+.synth-reasons {
+  font-size: 11px; color: #a99b7c; font-style: italic;
+  grid-column: 3 / 4; grid-row: 1 / 3; align-self: center;
+}
+.synth-rails {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-top: 8px;
+}
+.synth-rail h4 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #8b7e63;
+  margin: 0 0 6px;
+  font-weight: 600;
+}
+.synth-rail ul { list-style: none; padding: 0; margin: 0; font-size: 12px; line-height: 1.5; }
+.synth-rail li { padding: 2px 0; color: #5b4a32; }
+.synth-rail .muted { color: #a99b7c; }
+@media (max-width: 720px) {
+  .synth-rails { grid-template-columns: 1fr; }
+  .synth-ranked li { grid-template-columns: 24px 1fr; }
+  .synth-reasons { grid-column: 1 / 3; grid-row: 2; padding-left: 34px; }
+}
 </style>
 </head>
 <body>
@@ -1393,11 +1489,89 @@ function buildDailyLayout(calls, fus, tomac, showRec) { // noqa: tenant-leak (to
   const todosForceWs = isPersonal ? null : 'tomac'; // noqa: tenant-leak (backward-compat workstream key)
 
   return `
+    ${buildSynthesisPane(isPersonal)}
     ${buildBriefingSynopsis()}
     ${showStatusTop ? `<div id="section-status-top">${buildStatusTopRow()}</div>` : ''}
     ${showStatusTop ? `<div id="section-costs">${renderCostsTile(window.DATA && window.DATA.costs)}</div>` : ''}
     ${showTodos ? `<div id="section-todos">${buildTodos(todosForceWs)}</div>` : ''}
     ${showRec   ? `<div id="section-recruiting">${buildPriorityTargets()}</div>` : ''}
+  `;
+}
+
+// ── Priority Synthesis pane ──────────────────────────────────────────────
+// Tier 1 (rule-based scoring) always renders; Tier 2 (Claude Max prose +
+// worthNoticing + clusters) renders only when present. Reads from
+// window.DATA.prioritySynthesis populated by cos-dashboard-fetch.py and
+// synthesize_prose.py respectively.
+function buildSynthesisPane(isPersonal) {
+  const ps = (window.DATA && window.DATA.prioritySynthesis) || {};
+  const t1 = ps.tier1 || {};
+  const surface = isPersonal ? 'personal' : 'hq';
+  const ranked = (t1[surface] || []).filter(it =>
+      typeof __isDeleted === 'function' ? !__isDeleted('synthesis', it.title) : true);
+  const drifting = (t1.drifting && t1.drifting[surface]) || [];
+  const blocked  = (t1.blocked  && t1.blocked[surface])  || [];
+
+  if (!ranked.length && !drifting.length && !blocked.length && !ps.prose) {
+    return '';
+  }
+
+  const esc = (s) => String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+  let proseHTML = '';
+  if (ps.prose) {
+    proseHTML = `<div class="synth-prose">${esc(ps.prose)}</div>`;
+  }
+  let worthHTML = '';
+  if (ps.worthNoticing) {
+    worthHTML = `<div class="synth-worth"><strong>Worth noticing:</strong> ${esc(ps.worthNoticing)}</div>`;
+  }
+
+  let rankedHTML = '';
+  if (ranked.length) {
+    rankedHTML = `<ol class="synth-ranked">${ranked.map((it, i) => `
+      <li>
+        <span class="synth-rank">${i+1}.</span>
+        <span class="synth-title">${esc(it.title)}</span>
+        ${it.deal ? `<span class="synth-deal">${esc(it.deal)}</span>` : ''}
+        <span class="synth-reasons">${(it.reasons||[]).map(esc).join(' · ')}</span>
+      </li>`).join('')}</ol>`;
+  }
+
+  let railsHTML = '';
+  if (drifting.length || blocked.length) {
+    const driftHTML = drifting.length ? `<div class="synth-rail">
+      <h4>Drifting</h4>
+      <ul>${drifting.map(d => `<li>${esc(d.title)} <span class="muted">— untouched ${d.idleDays}d</span></li>`).join('')}</ul></div>` : '';
+    const blockHTML = blocked.length ? `<div class="synth-rail">
+      <h4>Blocked</h4>
+      <ul>${blocked.map(b => `<li>Awaiting <strong>${esc(b.counterparty)}</strong> on ${esc(b.title)} <span class="muted">— ${b.daysWaiting != null ? b.daysWaiting + 'd' : '?'}</span></li>`).join('')}</ul></div>` : '';
+    railsHTML = `<div class="synth-rails">${driftHTML}${blockHTML}</div>`;
+  }
+
+  let freshHTML = '';
+  if (ps.tier2GeneratedAt) {
+    try {
+      const ts = new Date(ps.tier2GeneratedAt);
+      const mins = Math.round((Date.now() - ts.getTime()) / 60000);
+      const ago = mins < 60 ? `${mins}m ago` : `${Math.round(mins/60)}h ago`;
+      freshHTML = `<span class="synth-fresh">refreshed ${ago}</span>`;
+    } catch (e) {}
+  }
+
+  const subtitle = isPersonal ? 'Personal · what to move first' : 'HQ · what to move first';
+  return `
+    <section class="synth-pane" data-surface="${surface}">
+      <header class="synth-header">
+        <h2>Priority <span class="synth-subtitle">· ${subtitle}</span></h2>
+        ${freshHTML}
+      </header>
+      ${proseHTML}
+      ${worthHTML}
+      ${rankedHTML}
+      ${railsHTML}
+    </section>
   `;
 }
 
