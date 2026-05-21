@@ -2741,11 +2741,11 @@ followed by a lowercase letter — allows `_`, digit, hyphen, space,
 end-of-string. False-positive guard preserved: `deal_name` won't match
 `deal_namespace_review.pdf` because `s` is a lowercase letter.
 
-**Audited 2026-05-21:** 7 of 9 deal aliases in tomac config had this bug
-— only `align_infra` and `fit` had been fixed/structured differently.
-The other 7 (cholla, pngts, unitil, bbeh, pfs, thunderhead, gridfree)
-should be patched the same way for routing to match underscored
-capture-pipeline filenames.
+**Audited 2026-05-21:** 7 of 9 deal aliases in a tenant config had
+this bug — only 2 had been fixed or structured differently. Sweep
+patched the other 7 the same way for routing to match underscored
+capture-pipeline filenames. Full audit query for any tenant config:
+`grep "alias_regex:.*)\\\\b$" cos-pipeline-config-*/drive-docs.yaml`.
 
 ## TOPIC — SYMLINK WRITES TO PUBLIC-FIRST CANONICAL PATHS
 
