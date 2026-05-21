@@ -3951,6 +3951,33 @@ Runs async — returns immediately, hook completes in ~30-60 sec on background.<
 
         sections = []
 
+        # Section 0 — Priority Synthesis (Tier 1 + Tier 2 prose).
+        # Phone-first: this is where you'd most want the "what's first"
+        # answer, no time to scan 14 desktop sections. Reuses the same
+        # prioritySynthesis JSON populated by cos-dashboard-fetch.py +
+        # synthesize_prose.py. Renders compact (no Drifting/Blocked rails
+        # on mobile — those are second-pass scanning, not phone-first.)
+        ps = data.get('prioritySynthesis') or {}
+        t1 = ps.get('tier1') or {}
+        synth_rows = []
+        for i, it in enumerate((t1.get('hq') or [])[:5], 1):
+            reasons = ' · '.join(it.get('reasons') or [])
+            synth_rows.append(
+                f'<li class="row"><span class="rank">{i}.</span>'
+                f' {_esc(it.get("title", ""))}'
+                f'{("<div class=\"sub\">" + _esc(reasons) + "</div>") if reasons else ""}</li>'
+            )
+        if synth_rows or ps.get('prose'):
+            blocks = ['<section class="priority"><h2>Priority — what to move first</h2>']
+            if ps.get('prose'):
+                blocks.append(f'<div class="prose">{_esc(ps["prose"])}</div>')
+            if ps.get('worthNoticing'):
+                blocks.append(f'<div class="worth"><strong>Worth noticing:</strong> {_esc(ps["worthNoticing"])}</div>')
+            if synth_rows:
+                blocks.append('<ul class="list">' + ''.join(synth_rows) + '</ul>')
+            blocks.append('</section>')
+            sections.append(''.join(blocks))
+
         # Section 1 — Today
         today_rows = []
         for ev in calendar[:8]:
@@ -4072,6 +4099,15 @@ Runs async — returns immediately, hook completes in ~30-60 sec on background.<
   .deal-block .count {{ color: var(--muted); font-weight: 400; font-size: 13px; }}
   footer {{ padding: 16px; text-align: center; color: var(--muted); font-size: 12px; }}
   footer a {{ color: var(--accent); min-height: 44px; display: inline-block; padding: 12px 16px; }}
+  /* Priority Synthesis section (mobile) */
+  section.priority h2 {{ color: var(--accent); }}
+  section.priority .prose {{ background: var(--paper); border: 1px solid var(--line);
+                              border-left: 3px solid var(--accent); border-radius: 8px;
+                              padding: 12px 14px; margin: 0 0 10px;
+                              font-size: 15px; line-height: 1.5; box-shadow: var(--shadow); }}
+  section.priority .worth {{ background: #f5ebd6; border-radius: 8px; padding: 10px 14px;
+                              margin: 0 0 10px; font-size: 14px; color: var(--accent); }}
+  section.priority .rank {{ color: var(--muted); font-weight: 700; margin-right: 6px; }}
 </style>
 </head>
 <body>
