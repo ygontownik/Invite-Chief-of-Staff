@@ -756,12 +756,25 @@ def haiku_triage(email: dict) -> dict:
         return result
     except Exception as e:
         msg = str(e)
-        if "usage limit" in msg.lower() or "usage limits" in msg.lower():
+        # Broadened 2026-05-21: _claude_dispatch wraps the quota response as
+        # "HTTP Error 400: Bad Request" without surfacing the underlying
+        # "usage limits" JSON message, so the original substring check missed
+        # 723 quota errors in gmail-mini.log across the 2026-05-20 window.
+        # Any 400 in Haiku triage means stop trying — short-circuit the rest
+        # of the run. (Same pattern as intel_capture.py deal_id=none.)
+        msg_l = msg.lower()
+        quota_signals = (
+            "usage limit", "usage limits",
+            "http error 400", "error code: 400",
+            "subscription failed", "spend cap",
+        )
+        if any(sig in msg_l for sig in quota_signals):
             if not _API_SPEND_CAP_HIT:
                 _API_SPEND_CAP_HIT = True
                 log.warning(
-                    "Anthropic API spend cap hit — short-circuiting "
-                    "remaining Haiku triage calls in this run: %s", msg)
+                    "Anthropic API short-circuited (likely quota or 400) — "
+                    "skipping remaining Haiku triage calls in this run: %s",
+                    msg[:200])
             return {"category": "IGNORE", "confidence": 0.0,
                     "reason": "api spend cap hit", "one_liner": ""}
         log.error(f"Haiku triage failed for {email['id']}: {e}")
@@ -873,6 +886,12 @@ def sonnet_enrich(email: dict, category: str) -> dict:
         f"Body:\n{email['body'][:2500]}"
     )
 
+    # Share Haiku's spend-cap flag — once any Anthropic call returns 400 in
+    # this run, every subsequent call (Haiku or Sonnet) will too. Skip silently.
+    global _API_SPEND_CAP_HIT
+    if _API_SPEND_CAP_HIT:
+        return {}
+
     try:
         result = complete(
             user_query=user_query,
@@ -892,6 +911,21 @@ def sonnet_enrich(email: dict, category: str) -> dict:
         })
         return _parse_json_response(result["text"])
     except Exception as e:
+        msg = str(e)
+        msg_l = msg.lower()
+        quota_signals = (
+            "usage limit", "usage limits",
+            "http error 400", "error code: 400",
+            "subscription failed", "spend cap",
+        )
+        if any(sig in msg_l for sig in quota_signals):
+            if not _API_SPEND_CAP_HIT:
+                _API_SPEND_CAP_HIT = True
+                log.warning(
+                    "Anthropic API short-circuited (likely quota or 400) — "
+                    "skipping remaining Sonnet enrichment in this run: %s",
+                    msg[:200])
+            return {}
         log.error(f"Sonnet enrichment failed for {email['id']}: {e}")
         return {}
 
