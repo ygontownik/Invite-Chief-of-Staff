@@ -114,6 +114,7 @@ FUNDRAISING_PATH    = _ROOT / 'data' / 'user-state' / 'fundraising.json'
 PROPOSED_LEARNINGS_PATH = _ROOT / 'data' / 'compiled' / 'proposed-learnings.jsonl'
 REJECTED_LEARNINGS_PATH = _ROOT / 'data' / 'user-state' / 'rejected-learnings.json'
 DEFERRED_LEARNINGS_PATH = _ROOT / 'data' / 'user-state' / 'deferred-learnings.json'
+RULES_COMPLIANCE_PATH   = _ROOT / 'data' / 'compiled' / 'rules-compliance.json'
 STALE_THRESHOLD_MIN = 90   # trigger background re-fetch if cache older than this
 
 _FUNDRAISING_BUCKETS = ('direct_lps', 'gp_stakes', 'placement_agents', 'strategic')
@@ -209,6 +210,60 @@ def _is_substantive_learning(snippet: str) -> bool:
     if s[0].islower() and not (' — ' in s or '`' in s[:20]):
         return False
     return True
+
+def _load_rules_compliance() -> dict:
+    """Read ~/dashboards/data/compiled/rules-compliance.json (written by
+    ~/cos-pipeline/tools/rules_audit.py --apply). Returns a thin summary
+    for the dashboard tile: counts + top 10 violations + top 10 paper-rule
+    gaps. Returns {} on any failure — this is a soft surface, never a
+    hard dependency.
+
+    Schema served to the template:
+      {
+        ranAt: ISO string,
+        totalRules: int,
+        counts: {enforced, violated, warned, paper_rule, informational, deprecated},
+        overallStatus: 'pass'|'warn'|'fail',
+        violations: [{id, code, title, summary}, ...],   # top 10 by severity
+        paperRules: [{id, code, title, enforced_by}, ...] # top 10 by recency
+      }
+    """
+    if not RULES_COMPLIANCE_PATH.exists():
+        return {}
+    try:
+        data = json.loads(RULES_COMPLIANCE_PATH.read_text())
+    except Exception:
+        return {}
+    rules = data.get('rules') or []
+    violations = [
+        {
+            'id':       r.get('id'),
+            'code':     r.get('rule_code'),
+            'title':    (r.get('title') or '')[:120],
+            'summary':  (r.get('check_summary') or '')[:200],
+            'module':   r.get('check_module'),
+        }
+        for r in rules if r.get('classification') == 'violated'
+    ][:10]
+    paper_rules = [
+        {
+            'id':          r.get('id'),
+            'code':        r.get('rule_code'),
+            'title':       (r.get('title') or '')[:120],
+            'enforcedBy':  (r.get('enforced_by_field') or '')[:160],
+        }
+        for r in rules if r.get('classification') == 'paper_rule'
+    ][:10]
+    return {
+        'ranAt':         data.get('ran_at'),
+        'totalRules':    data.get('total_rules', 0),
+        'counts':        data.get('counts', {}),
+        'overallStatus': data.get('overall_status', 'pass'),
+        'nextActions':   data.get('next_actions', []),
+        'violations':    violations,
+        'paperRules':    paper_rules,
+    }
+
 
 def _load_proposed_learnings(today: str, cap: int = 20) -> list[dict]:
     """Read proposed-learnings.jsonl, de-dupe by snippet, filter out rejected
@@ -727,6 +782,10 @@ def assemble_data():
         'proposedLearnings':      _load_proposed_learnings(
                                        state.get('today', now.strftime('%Y-%m-%d'))
                                   ),
+        # Rules-of-the-Road tile — written by `python3 ~/cos-pipeline/tools/
+        # rules_audit.py --apply`. Soft surface: returns {} when the file is
+        # missing or unreadable; the template hides the tile in that case.
+        'rulesCompliance':        _load_rules_compliance(),
     }
 
     return data, state

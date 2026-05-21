@@ -1307,6 +1307,7 @@ function render() {
     ${state.statFocus ? '' : buildCorrections()}
     ${state.statFocus ? '' : buildFileSystemHealth()}
     ${state.statFocus ? '' : buildProposedLearnings()}
+    ${state.statFocus ? '' : buildRulesOfTheRoad()}
     <div class="updated">Auto-generated · ${esc(DATA.generatedAt)} · Sources: Gmail · Calendar · Drive · <span class="kbd">a</span>all <span class="kbd">j</span>jobs <span class="kbd">t</span>deals <span class="kbd">Esc</span>clear</div>
   `;
   applyActionOnly();
@@ -2023,6 +2024,10 @@ function buildAwaitingExternal(filter, compact) {
     const fuChip = fuResolved
       ? `<div style="font-size:10px;color:#16a34a;font-weight:600;margin-top:4px">✓ follow-up resolved — confirm closed or dismiss</div>`
       : '';
+    // SMS-signal chip — appears when imessages_capture has flagged this awaiting
+    // item as possibly resolved via an inbound text. Shows highest-confidence
+    // signal first; click expands all snippets + confirm/dismiss buttons.
+    const smsChip = _renderSmsChip(lead);
     return `
       <div style="padding:8px 12px;border-bottom:1px solid rgba(148,163,184,0.12);display:flex;gap:8px;align-items:flex-start">
         <div style="flex:1">
@@ -2033,6 +2038,7 @@ function buildAwaitingExternal(filter, compact) {
           <div style="font-size:11px;color:#475569;line-height:1.4">${esc(lead.content || '')}</div>
           ${ctxLine}
           ${fuChip}
+          ${smsChip}
           ${(()=>{ const r=lead.source_ref; if(!r||!r.title) return ''; const t=_cleanSrcTitle(r.title); const d=r.date?` · ${esc(r.date)}`:''; if(isVague) return ''; return `<div style="font-size:10px;color:#94a3b8;margin-top:3px">${r.doc_url?`<a href="${esc(r.doc_url)}" target="_blank" rel="noopener" style="color:#94a3b8;text-decoration:none">↗ ${esc(t)}</a>`:esc(t)}${d}</div>`; })()}
           ${(()=>{ const r=lead.source_ref; if(!r||!r.doc_url||!isVague) return ''; return `<div style="font-size:10px;color:#94a3b8;margin-top:3px"><a href="${esc(r.doc_url)}" target="_blank" rel="noopener" style="color:#94a3b8;text-decoration:none">↗ view source transcript</a></div>`; })()}
         </div>
@@ -2078,6 +2084,7 @@ function buildAwaitingExternal(filter, compact) {
         const fuChipRow = resolvedFuKeys.has(clusterKeyRow)
           ? `<div style="font-size:10px;color:#16a34a;font-weight:600;margin-top:4px">✓ follow-up resolved — confirm closed or dismiss</div>`
           : '';
+        const smsChipRow = _renderSmsChip(lead);
         return `<div style="padding:7px 12px;border-bottom:1px solid rgba(148,163,184,0.1);display:flex;gap:8px;align-items:flex-start">
           <div style="flex:1">
             <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:2px">
@@ -2087,6 +2094,7 @@ function buildAwaitingExternal(filter, compact) {
             <div style="font-size:11px;color:#475569;line-height:1.4">${esc(lead.content||'')}</div>
             ${showCtxRow ? `<div style="font-size:10px;color:#94a3b8;margin-top:2px">${esc(ctxRow)}</div>` : ''}
             ${fuChipRow}
+            ${smsChipRow}
             ${(()=>{ const r=lead.source_ref; if(!r||!r.title) return ''; const t=_cleanSrcTitle(r.title); const d=r.date?` · ${esc(r.date)}`:''; if(isVagueRow) return r.doc_url?`<div style="font-size:10px;color:#94a3b8;margin-top:3px"><a href="${esc(r.doc_url)}" target="_blank" rel="noopener" style="color:#94a3b8;text-decoration:none">↗ view source transcript</a></div>`:''; return `<div style="font-size:10px;color:#94a3b8;margin-top:3px">${r.doc_url?`<a href="${esc(r.doc_url)}" target="_blank" rel="noopener" style="color:#94a3b8;text-decoration:none">↗ ${esc(t)}</a>`:esc(t)}${d}</div>`; })()}
           </div>
           <button class="dismiss-btn" onclick="dismissAwaitingItem('${key}','${esc(c.display)}')" title="Dismiss permanently" style="flex-shrink:0;margin-top:2px">×</button>
@@ -2472,6 +2480,7 @@ function buildTeamActionsCard() {
       ? `<a href="${esc(f.linkedTo)}" target="_blank" style="color:#94a3b8;font-size:9px;margin-left:4px;text-decoration:none" title="Open source doc">↗</a>`
       : '';
     const overdueStyle = urgCls === 'overdue' ? 'border-left:3px solid #dc2626;background:rgba(220,38,38,0.04);' : '';
+    const completionChip = _renderCompletionChip(f);
     return `
     <div style="padding:5px 0 5px 6px;border-bottom:1px solid rgba(148,163,184,0.08);${overdueStyle}display:flex;gap:8px;align-items:flex-start">
       <div style="flex-shrink:0;width:6px;height:6px;border-radius:50%;background:${dotColor};margin-top:6px;display:inline-block"></div>
@@ -2483,6 +2492,7 @@ function buildTeamActionsCard() {
           ${f.addedDate ? `<span style="color:#b0b8c4"> · Updated ${fmtDate(f.addedDate)}</span>` : ''}
           ${linkedHtml}
         </div>
+        ${completionChip}
       </div>
       ${urgLbl ? `<span style="font-size:9px;font-weight:700;color:${urgColor};white-space:nowrap;letter-spacing:0.05em;text-transform:uppercase;flex-shrink:0">${esc(urgLbl)}</span>` : ''}
       <button class="dismiss-btn" onclick="event.stopPropagation();dismissAction('${fkey}','${fkey}')" title="Dismiss" style="flex-shrink:0;margin-top:2px">×</button>
@@ -3494,6 +3504,101 @@ function rejectLearning(id) {
   }).catch(_ => {
     if (row) row.style.opacity = '1';
     _showDismissToast('✗ Reject failed — check server.');
+  });
+}
+
+// ── Rules of the Road tile ─────────────────────────────────────
+// Surfaces DATA.rulesCompliance (written by
+// ~/cos-pipeline/tools/rules_audit.py --apply). Three signals:
+//   - Total rules in LEARNINGS-LEDGER
+//   - Violated (a check_*.py returned fail)
+//   - Paper-rule gaps (rule mentions code-enforcement but no check_*.py exists)
+// Click any of the 4 sub-tiles to expand a detail panel.
+function buildRulesOfTheRoad() {
+  const rc = DATA.rulesCompliance;
+  if (!rc || !rc.totalRules) return '';  // empty-state: hide entirely
+  const rrid = 'rules-of-the-road-card';
+  const collapsed = state.collapsed[rrid];
+  const c = rc.counts || {};
+  const statusDot = {
+    pass: '#16a34a', warn: '#f59e0b', fail: '#dc2626',
+  }[rc.overallStatus] || '#64748b';
+  const ranStr = rc.ranAt ? esc(String(rc.ranAt).slice(0, 16).replace('T', ' ')) : '';
+
+  const subTile = (id, label, count, color, hint) => {
+    const dim = (count === 0) ? 'opacity:0.45' : '';
+    return `
+    <div onclick="toggleRotrDetail('${id}')" style="flex:1;cursor:pointer;padding:10px 8px;text-align:center;background:rgba(148,163,184,0.04);border:1px solid rgba(148,163,184,0.12);border-radius:6px;${dim}">
+      <div style="font-size:22px;font-weight:700;color:${color};line-height:1">${count}</div>
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#64748b;margin-top:3px">${esc(label)}</div>
+      <div style="font-size:9px;color:#94a3b8;margin-top:2px">${esc(hint)}</div>
+    </div>`;
+  };
+
+  const violationsRows = (rc.violations || []).map(v => `
+    <div style="padding:7px 12px;border-bottom:1px solid rgba(148,163,184,0.1)">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+        <span style="font-weight:600;font-size:12px;color:#dc2626">✗ ${esc(v.code || v.id || '—')}</span>
+        <span style="font-size:10px;color:#94a3b8">${esc(v.module || '')}</span>
+      </div>
+      <div style="font-size:11px;color:#475569;line-height:1.4;margin-top:2px">${esc(v.title || '')}</div>
+      <div style="font-size:10px;color:#64748b;margin-top:3px;font-family:var(--font-data, monospace)">${esc(v.summary || '')}</div>
+    </div>`).join('');
+
+  const gapsRows = (rc.paperRules || []).map(g => `
+    <div style="padding:7px 12px;border-bottom:1px solid rgba(148,163,184,0.1)">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+        <span style="font-weight:600;font-size:12px;color:#a78bfa">○ ${esc(g.code || g.id || '—')}</span>
+        <span style="font-size:10px;color:#94a3b8">needs check_*.py</span>
+      </div>
+      <div style="font-size:11px;color:#475569;line-height:1.4;margin-top:2px">${esc(g.title || '')}</div>
+      <div style="font-size:10px;color:#94a3b8;margin-top:3px"><span style="color:#64748b">enforced_by:</span> ${esc(g.enforcedBy || '—')}</div>
+    </div>`).join('');
+
+  const nextActions = (rc.nextActions || []).map(a =>
+    `<div style="font-size:10px;color:#475569;margin-top:3px">▸ ${esc(a)}</div>`
+  ).join('');
+
+  return `
+  <div class="card" id="${rrid}" style="margin-bottom:18px">
+    <div class="card-title card-title-btn" onclick="collapseToggle('${rrid}')">
+      <div class="dot" style="background:${statusDot}"></div>Rules of the Road
+      <span class="card-count">${rc.totalRules} ledger rules · ${c.enforced || 0} enforced · ${c.violated || 0} violated · ${c.paper_rule || 0} paper-rule gaps</span>
+      <span class="collapse-chevron ${collapsed ? 'closed' : 'open'}" style="margin-left:auto;font-size:11px;color:var(--ink-ghost)">${collapsed ? '▸' : '▾'}</span>
+    </div>
+    ${collapsed ? '' : `
+      <div style="display:flex;gap:8px;padding:10px 12px">
+        ${subTile('enforced',   'Enforced',  c.enforced       || 0, '#16a34a', 'pass / warn')}
+        ${subTile('violated',   'Violated',  c.violated       || 0, '#dc2626', 'check_*.py FAIL')}
+        ${subTile('gaps',       'Paper-rule gaps', c.paper_rule || 0, '#a78bfa', 'no check yet')}
+        ${subTile('info',       'Manual',    c.informational  || 0, '#64748b', 'no code audit')}
+      </div>
+      <div id="rotr-d-violated" style="display:${(c.violated || 0) > 0 ? 'block' : 'none'};border-top:1px solid rgba(148,163,184,0.12)">
+        <div style="padding:6px 12px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#dc2626;background:rgba(220,38,38,0.05)">Violations (${(rc.violations || []).length})</div>
+        ${violationsRows || '<div style="padding:8px 12px;font-size:11px;color:#94a3b8;font-style:italic">No violations.</div>'}
+      </div>
+      <div id="rotr-d-gaps" style="display:none;border-top:1px solid rgba(148,163,184,0.12)">
+        <div style="padding:6px 12px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#a78bfa;background:rgba(167,139,250,0.05)">Paper-rule gaps · top ${(rc.paperRules || []).length}</div>
+        ${gapsRows || '<div style="padding:8px 12px;font-size:11px;color:#94a3b8;font-style:italic">No gaps.</div>'}
+      </div>
+      <div style="padding:8px 12px;background:rgba(167,139,250,0.04);border-top:1px solid rgba(148,163,184,0.12);font-size:10px;color:#64748b">
+        ${nextActions || '▸ All enforced rules passing. No paper-rule gaps.'}
+        <div style="margin-top:6px;color:#94a3b8;font-style:italic">Run <code>python3 ~/cos-pipeline/tools/rules_audit.py --apply</code> to refresh. Last: ${ranStr || 'never'}.</div>
+      </div>
+    `}
+  </div>`;
+}
+
+function toggleRotrDetail(id) {
+  // Three details panels: violated (default expanded if any), gaps, enforced+info (no-op for now).
+  const panels = ['violated', 'gaps'];
+  if (id === 'enforced' || id === 'info') return;  // no detail panel for these
+  panels.forEach(k => {
+    const el = document.getElementById('rotr-d-' + k);
+    if (!el) return;
+    if (k === id) {
+      el.style.display = (el.style.display === 'none' || !el.style.display) ? 'block' : 'none';
+    }
   });
 }
 
@@ -4586,6 +4691,132 @@ function _showDismissToast(msg) {
   el.style.opacity = '1';
   clearTimeout(el._timer);
   el._timer = setTimeout(function(){ el.style.opacity = '0'; }, 3200);
+}
+
+// SMS-signal chip renderer — shared by lead-card and section-row paths in
+// buildAwaitingExternal. Returns inline HTML or empty string. Click on the
+// header toggles the inline panel; confirmSmsResolved/dismissSmsSignals
+// handle the action buttons.
+function _renderSmsChip(lead) {
+  const sigs = Array.isArray(lead && lead._sms_signals) ? lead._sms_signals : [];
+  if (!sigs.length) return '';
+  const CONF_ORDER = {high: 0, medium: 1, low: 2};
+  const sorted = [...sigs].sort((a,b) => (CONF_ORDER[a.confidence] ?? 9) - (CONF_ORDER[b.confidence] ?? 9));
+  const top = sorted[0];
+  const color = {high:'#16a34a', medium:'#d97706', low:'#94a3b8'}[top.confidence] || '#94a3b8';
+  const itemId = esc(lead.id || '');
+  const snippets = sorted.map(s => {
+    const c = {high:'#16a34a', medium:'#d97706', low:'#94a3b8'}[s.confidence] || '#94a3b8';
+    return `<div style="font-size:10px;color:#475569;margin-top:3px;padding:4px 6px;background:#f8fafc;border-left:2px solid ${c};border-radius:2px">
+              <span style="font-weight:600">${esc(s.from || '?')}</span>
+              <span style="color:#94a3b8"> · ${esc(s.date || '')} · conf=${esc(s.confidence || '?')}</span>
+              ${s.ack ? '<span style="color:#16a34a;font-size:9px;margin-left:6px">✓ ACK</span>' : ''}
+              <div style="color:#64748b;margin-top:2px">${esc(s.snippet || '')}</div>
+            </div>`;
+  }).join('');
+  return `<div style="margin-top:4px" data-sms-chip="${itemId}">
+    <div style="font-size:10px;color:${color};font-weight:600;cursor:pointer;user-select:none"
+         onclick="(function(el){const p=el.nextElementSibling;p.style.display=p.style.display==='none'?'block':'none';})(this)">
+      📨 ${sigs.length} SMS signal${sigs.length>1?'s':''} (${esc(top.confidence)}) — review
+    </div>
+    <div style="display:none">${snippets}
+      <div style="display:flex;gap:6px;margin-top:6px">
+        <button onclick="confirmSmsResolved('${itemId}')"
+                style="flex:1;padding:4px 8px;font-size:10px;background:#16a34a;color:#fff;border:none;border-radius:3px;cursor:pointer">
+          ✓ Mark resolved
+        </button>
+        <button onclick="dismissSmsSignals('${itemId}')"
+                style="flex:1;padding:4px 8px;font-size:10px;background:#e2e8f0;color:#475569;border:none;border-radius:3px;cursor:pointer">
+          × Dismiss signal
+        </button>
+      </div>
+    </div>
+  </div>`;
+}
+
+// "Mark resolved" — treat the awaiting item as completed. Reuses the existing
+// tombstone path so it survives the next compile.
+function confirmSmsResolved(rawId) {
+  if (!rawId) return;
+  dismissAwaitingItem(rawId, '');
+  _showDismissToast('✓ Marked resolved (SMS-confirmed). Item tombstoned.');
+}
+
+// Commitment-pair chip: when imessages_capture has detected your outgoing
+// "I'll send X" followed by the counterparty's "got it" within 7 days,
+// the followUp gets a `_possibly_completed` array. UI surfaces a green
+// "✓ Likely complete (counterparty acked)" pill with confirm/dismiss buttons.
+function _renderCompletionChip(fu) {
+  const pcs = Array.isArray(fu && fu._possibly_completed) ? fu._possibly_completed : [];
+  if (!pcs.length) return '';
+  const sorted = [...pcs].sort((a,b) => (a.days_to_ack || 999) - (b.days_to_ack || 999));
+  const top = sorted[0];
+  const itemId = esc(fu.id || '');
+  const snippets = sorted.map(s =>
+    `<div style="font-size:10px;color:#475569;margin-top:3px;padding:4px 6px;background:#f0fdf4;border-left:2px solid #16a34a;border-radius:2px">
+       <span style="color:#94a3b8">acked ${esc(s.ack_date || '')} (${s.days_to_ack ?? '?'}d after commitment)</span>
+       <div style="color:#64748b;margin-top:2px">${esc(s.ack_text || '')}</div>
+     </div>`).join('');
+  return `<div style="margin-top:4px" data-completion-chip="${itemId}">
+    <div style="font-size:10px;color:#16a34a;font-weight:600;cursor:pointer;user-select:none"
+         onclick="(function(el){const p=el.nextElementSibling;p.style.display=p.style.display==='none'?'block':'none';})(this)">
+      ✓ Likely complete (${pcs.length} ack${pcs.length>1?'s':''}) — review
+    </div>
+    <div style="display:none">${snippets}
+      <div style="display:flex;gap:6px;margin-top:6px">
+        <button onclick="confirmFollowupComplete('${itemId}')"
+                style="flex:1;padding:4px 8px;font-size:10px;background:#16a34a;color:#fff;border:none;border-radius:3px;cursor:pointer">
+          ✓ Mark done
+        </button>
+        <button onclick="dismissCompletionSignals('${itemId}')"
+                style="flex:1;padding:4px 8px;font-size:10px;background:#e2e8f0;color:#475569;border:none;border-radius:3px;cursor:pointer">
+          × Dismiss signal
+        </button>
+      </div>
+    </div>
+  </div>`;
+}
+
+// "Mark done" on a followUp — tombstones it via the existing dismiss path.
+function confirmFollowupComplete(fkey) {
+  if (!fkey) return;
+  // Existing followUp dismiss
+  dismissAction(fkey, fkey);
+  _showDismissToast('✓ Followup marked done (commitment acked).');
+}
+
+// Clear _possibly_completed signals without resolving the followUp itself —
+// when the ack was about something else.
+function dismissCompletionSignals(fkey) {
+  if (!fkey) return;
+  fetch('/api/followup/dismiss-completion-signals', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({id: fkey})
+  }).then(r => r.ok ? _showDismissToast('× Completion signals cleared.') : null)
+    .catch(() => _showDismissToast('× Could not clear — server unreachable.'));
+  (DATA.followUps || []).forEach(f => {
+    if (actionKey(f) === fkey) f._possibly_completed = [];
+  });
+  render();
+}
+
+// "Dismiss signal" — clear the _sms_signals array on this item without
+// resolving the awaiting item itself. Useful when the SMS was about
+// something else and the matcher fired a false positive.
+function dismissSmsSignals(rawId) {
+  if (!rawId) return;
+  fetch('/api/awaiting/dismiss-sms-signals', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({id: rawId})
+  }).then(r => r.ok ? _showDismissToast('× SMS signals cleared for this item.') : null)
+    .catch(() => _showDismissToast('× Could not clear signals — server unreachable.'));
+  // Optimistic local update so the chip vanishes immediately
+  (DATA.awaitingExternal || []).forEach(it => {
+    if (it.id === rawId) it._sms_signals = [];
+  });
+  render();
 }
 
 // Awaiting-counterparty dismiss — stores the raw item id directly so the
