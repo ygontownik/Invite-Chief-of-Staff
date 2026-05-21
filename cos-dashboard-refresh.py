@@ -464,7 +464,7 @@ def find_data_block(html: str):
     return None, None
 
 # ── Follow-up cleanup (runs every refresh to survive pipeline re-runs) ────────
-def clean_follow_ups(fus: list, cutoff_days: int = 14, dismissed_set: set = None) -> tuple[list, int]:
+def clean_follow_ups(fus: list, cutoff_days: int = 5, dismissed_set: set = None) -> tuple[list, int]:
     """
     Remove dirty items from followUps every refresh so pipeline re-runs can't
     re-introduce them. Rules applied in order:
@@ -472,16 +472,24 @@ def clean_follow_ups(fus: list, cutoff_days: int = 14, dismissed_set: set = None
     0. Dismissed set    — drop items user explicitly dismissed via the UI
                           (stable who|what[:40] key)
     1. Date filter      — drop items whose due date is older than cutoff_days
-    2. Self-ref filter  — drop where who matches the principal/team
+                          (default 5d, tightened 2026-05-21 from 14d after
+                          audit found 45 of 108 visible items >7d stale and
+                          zero in the 14–30d band — the entire stale tail
+                          sat in the 5–14d window)
+    2. Self-ref filter  — drop where who matches the principal/team (exact)
                           (config: follow_ups.self_ref_names)
-    3. Blocklist        — specific who+what patterns we never want
+    3. Who-junk filter  — drop where who matches a junk substring
+                          ("Speaker N", "Unnamed", "Unidentified", etc.)
+                          (config: follow_ups.who_junk_patterns)
+    4. Blocklist        — specific who+what patterns we never want
                           (config: follow_ups.blocklist)
-    4. Dedup            — keep first occurrence of each
+    5. Dedup            — keep first occurrence of each
                           (who.lower, what[:60].lower) key
 
-    All tenant-specific patterns (self-ref names, who/what normalize tables,
-    blocklist) live in <config_dir>/config/dashboard-cleanup.yaml and are
-    loaded at module import (_CLEANUP_CFG). Missing file = no-op cleanup.
+    All tenant-specific patterns (self-ref names, who-junk substrings,
+    who/what normalize tables, blocklist) live in
+    <config_dir>/config/dashboard-cleanup.yaml and are loaded at module
+    import (_CLEANUP_CFG). Missing file = no-op cleanup.
     """
     from datetime import date as _date
 
@@ -524,6 +532,20 @@ def clean_follow_ups(fus: list, cutoff_days: int = 14, dismissed_set: set = None
     def _is_principal_self_ref(f):
         who = f.get('who', '').strip().lower()
         return who in _self_refs
+
+    # ── 2b. Who-junk substring filter (config-driven) ──
+    # Drops followups where who matches placeholder/junk text — e.g.
+    # "Speaker 1 (unidentified)", "Unnamed ex-Centerbridge PM",
+    # "EU power markets lawyer (to be identified)". Added 2026-05-21.
+    _who_junk = [str(p).lower().strip()
+                 for p in (fu_cfg.get('who_junk_patterns') or [])
+                 if str(p).strip()]
+
+    def _is_junk_who(f):
+        who = (f.get('who', '') or '').strip().lower()
+        if not who:
+            return False
+        return any(pat in who for pat in _who_junk)
 
     # ── 3a. Name normalizer (config-driven) ──
     # Each entry: {match: <who_substr>, replace: <canonical>}
@@ -586,6 +608,8 @@ def clean_follow_ups(fus: list, cutoff_days: int = 14, dismissed_set: set = None
         if _too_old(f):
             removed += 1; continue
         if _is_principal_self_ref(f) and not f.get('_manual'):
+            removed += 1; continue
+        if _is_junk_who(f) and not f.get('_manual'):
             removed += 1; continue
         if _is_blocklisted(f):
             removed += 1; continue
