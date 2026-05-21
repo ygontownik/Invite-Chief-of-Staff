@@ -2631,13 +2631,13 @@ get checked off but is still pending). Default action: push Due to 2026-06-04
 (today + 14 days). Status field left unchanged (`open` / `in-progress`).
 
 **Counts by deal:**
-- Cholla / Venus: 6
-- Pacific Fleet Solutions: 6
-- Black Bayou Energy Hub: 5
-- PNGTS: 5
-- Unitil Corporation: 8 (4 captured in initial sweep + 4 stragglers picked up on second pass)
-- Thunderhead DG: 3
-- Align Capital / Align Infra: 1
+- cholla: 6
+- pfs: 6
+- bbeh: 5
+- pngts: 5
+- unitil: 8 (4 captured in initial sweep + 4 stragglers picked up on second pass)
+- thunderhead: 3
+- align_infra: 1
 
 **Total:** 34 actions rolled. After recompile, `check_past_due_actions` reports
 0 past-due of 63 open. Health went from 3 fails to 2.
