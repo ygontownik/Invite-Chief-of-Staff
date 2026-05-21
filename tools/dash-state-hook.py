@@ -746,7 +746,7 @@ def run_artifact_pull(dry_run: bool = False) -> bool:
             logf.write(f"\n=== {started} artifact-pull START ({len(targets)} deals) ===\n")
             result = subprocess.run(
                 [
-                    CLAUDE_BIN, "-p", "/capture-deal-chats all --include-artifacts",
+                    CLAUDE_BIN, "-p", "/artifact-pull all",
                     "--allow-dangerously-skip-permissions",
                 ],
                 env=env,
