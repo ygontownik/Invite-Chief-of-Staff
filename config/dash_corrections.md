@@ -2617,3 +2617,43 @@ the JSONL will keep bloating. The follow-up is tracked as ACTION-002 in the
 **How to apply**: whenever a dashboard filter pass throws away >50% of source
 records as noise, file a follow-up task for the upstream producer. Don't let the
 tile filter become permanent infrastructure for a fixable producer bug.
+
+## 2026-05-21 — Bulk roll-forward of 34 past-due deal actions
+
+**Trigger:** `system_health.py` check_past_due_actions surfaced 34 open/in-progress
+actions across 7 deals with Due dates 2-13 days past today (2026-05-21). Per
+this doc's 2026-05-04 sweep convention, every past-due action must be
+classified: Resolved / Superseded / Stage-graduated / Rolled forward / Blocked.
+
+**Classification this round:** **Rolled forward** — no per-action ground truth
+available without external context (most are real diligence work that didn't
+get checked off but is still pending). Default action: push Due to 2026-06-04
+(today + 14 days). Status field left unchanged (`open` / `in-progress`).
+
+**Counts by deal:**
+- Cholla / Venus: 6
+- Pacific Fleet Solutions: 6
+- Black Bayou Energy Hub: 5
+- PNGTS: 5
+- Unitil Corporation: 8 (4 captured in initial sweep + 4 stragglers picked up on second pass)
+- Thunderhead DG: 3
+- Align Capital / Align Infra: 1
+
+**Total:** 34 actions rolled. After recompile, `check_past_due_actions` reports
+0 past-due of 63 open. Health went from 3 fails to 2.
+
+**Caveat:** This is a default-judgment bulk operation. Yoni should review the
+2026-06-04 batch sometime in the next 14 days and individually mark
+Resolved / Superseded / Blocked where appropriate. If any of these were
+actually completed and just not closed, the activity_log in each deal's
+log.json should show evidence.
+
+**Method:** Edited each deal's `~/dashboards/data/deals/<deal>/actions.md`
+markdown table (Due column only — status preserved). Then ran
+`python3 routines/compile/compile-dashboard.py` to regenerate
+`data/compiled/deal-system-data.json` which the health check reads.
+
+**Remaining fails after this sweep:**
+1. `smoke` tenant-leak regression (53 leaks across probes) — unrelated workstream
+2. `U2` market-intel deal readthroughs (compile-dashboard.py doesn't preserve
+   `readthroughs` field; pre-existing latent issue surfaced by my recompile)
