@@ -876,14 +876,39 @@ def _learning_is_code_comment_line(text: str, match_start: int) -> bool:
 
 
 def _learning_is_imperative(snippet: str) -> bool:
-    """Snippet must carry imperative / future-conditional structure."""
+    """Snippet must carry imperative / future-conditional structure.
+
+    Two-stage:
+      1. positive: at least one directive keyword
+      2. negative: no past-tense narrative cue or discourse marker that
+         would indicate descriptive prose ("never really raised...", "X always
+         worked because Y") rather than a prescriptive rule.
+    """
     import re as _re
     s = (snippet or "").lower()
-    return bool(_re.search(
+
+    if not _re.search(
         r"\b(always|never|must|going forward|from now on|the rule is|new rule|"
         r"don'?t|do not|make sure|ensure)\b",
         s,
-    ))
+    ):
+        return False
+
+    # Reject past-tense / discourse markers that signal descriptive narrative
+    # rather than a behavioral rule. "raised", "happened", "because", "but no" —
+    # these are how people describe events, not how rules are written.
+    # "because" intentionally NOT in this list — rules legitimately explain
+    # rationale ("never omit X because Y"). Reject only the strongest
+    # narrative cues: past-tense main-clause verbs + "but no explanation" tells.
+    narrative_markers = (
+        r"\b("
+        r"raised|happened|occurred|turned out|seemed|appeared|"
+        r"but no|but they were|but it was"
+        r")\b"
+    )
+    if _re.search(narrative_markers, s):
+        return False
+    return True
 
 
 def run_learning_capture_scan():

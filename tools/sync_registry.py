@@ -64,6 +64,7 @@ DRIVE_DOCS = find_drive_docs()
 GAS_DIR = Path.home() / "dashboards/routines/gas"
 TC_CONFIG_GS = GAS_DIR / "tc-config/tc_config.gs"
 DRIVE_ORG_GS = GAS_DIR / "drive-organizer/drive_organizer.gs"
+DEAL_SYSTEM_DATA = Path(__file__).resolve().parent / "deal-system-data.json"
 
 BEGIN_MARKER = "// ─── BEGIN GENERATED FROM drive-docs.yaml — DO NOT EDIT MANUALLY ───"
 END_MARKER = "// ─── END GENERATED ───"
@@ -223,6 +224,112 @@ def apply_to_drive_organizer(deal_docs: dict, dry_run: bool) -> bool:
     return True
 
 
+def render_deal_system_data(deal_docs: dict, existing: dict) -> dict:
+    """Build the compact deal-system-data.json view from drive-docs.yaml.
+
+    deal-system-data.json is a *derived view* — drive-docs.yaml is canonical.
+    But the file is also actively consumed by code that expects specific keys
+    and naming conventions. So our rule is **prefer-existing**: when a field
+    already has a value in deal-system-data.json, we preserve that value;
+    we only fill in fields that are missing. Renames, schema changes, and
+    long-form-name→short-form replacements are NEVER done by this regenerator.
+
+    This means the regenerator is most useful for:
+      - adding newly-registered deals from drive-docs.yaml that aren't yet
+        in deal-system-data.json
+      - filling in fields that drive-docs.yaml now has but the JSON doesn't
+        (e.g., project_url on a deal that was scaffolded without one)
+      - bootstrapping a clean deal-system-data.json from a fresh registry
+
+    Schema migrations (status_id → status_file_id, name shortening, etc.)
+    should be done by a separate one-off migration script, not silently
+    here on every sync.
+    """
+    existing_by_id = {
+        d.get("deal_id"): d
+        for d in (existing.get("deals") or [])
+        if isinstance(d, dict) and d.get("deal_id")
+    }
+
+    out_deals = []
+    today = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).strftime("%Y-%m-%d")
+
+    for deal_id, dd in deal_docs.items():
+        if not isinstance(dd, dict):
+            continue
+        prior = existing_by_id.get(deal_id)
+
+        if prior is None:
+            # New deal not yet in deal-system-data.json — bootstrap from drive-docs.yaml
+            status = dd.get("status") or {}
+            brief = dd.get("master_brief") or {}
+            entry = {
+                "deal_id":              deal_id,
+                "name":                 dd.get("name") or deal_id,
+                "stage":                "early",
+                "lead":                 dd.get("lead", ""),
+                "support":              dd.get("support", ""),
+                "organizer_aliases":    dd.get("organizer_aliases", []),
+                "drive_folder_id":      dd.get("drive_folder_id"),
+                "transcripts_folder_id": dd.get("transcripts_folder_id"),
+                "status_file_id":       status.get("doc_id"),
+                "brief_file_id":        brief.get("doc_id"),
+                "outputs_folder_id":    dd.get("outputs_folder_id"),
+                "session_log_file_id":  dd.get("session_log_file_id"),
+                "project_url":          dd.get("project_url"),
+                "created":              today,
+                "last_session":         today,
+                "deal_type":            dd.get("deal_type", ""),
+            }
+        else:
+            # Existing entry — prefer existing values; only fill in missing fields
+            entry = dict(prior)
+            # Fields safe to fill from drive-docs.yaml only when prior is None/empty
+            derived = {
+                "drive_folder_id":       dd.get("drive_folder_id"),
+                "transcripts_folder_id": dd.get("transcripts_folder_id"),
+                "outputs_folder_id":     dd.get("outputs_folder_id"),
+                "session_log_file_id":   dd.get("session_log_file_id"),
+                "project_url":           dd.get("project_url"),
+                "deal_type":             dd.get("deal_type"),
+            }
+            for k, v in derived.items():
+                if v and not entry.get(k):
+                    entry[k] = v
+
+        out_deals.append(entry)
+
+    return {"deals": out_deals}
+
+
+def apply_to_deal_system_data(deal_docs: dict, dry_run: bool) -> bool:
+    import json as _json
+    existing = {}
+    if DEAL_SYSTEM_DATA.exists():
+        try:
+            existing = _json.loads(DEAL_SYSTEM_DATA.read_text())
+        except _json.JSONDecodeError:
+            existing = {}
+
+    new_doc = render_deal_system_data(deal_docs, existing)
+    new_text = _json.dumps(new_doc, indent=2) + "\n"
+    old_text = DEAL_SYSTEM_DATA.read_text() if DEAL_SYSTEM_DATA.exists() else ""
+
+    if new_text == old_text:
+        print(f"  deal-system-data.json:  no change")
+        return False
+    if dry_run:
+        print(f"  deal-system-data.json:  WOULD UPDATE "
+              f"({len(old_text)} → {len(new_text)} chars, "
+              f"{len(existing.get('deals') or [])} → {len(new_doc['deals'])} deals)")
+    else:
+        DEAL_SYSTEM_DATA.write_text(new_text)
+        print(f"  deal-system-data.json:  UPDATED "
+              f"({len(old_text)} → {len(new_text)} chars, "
+              f"{len(existing.get('deals') or [])} → {len(new_doc['deals'])} deals)")
+    return True
+
+
 def clasp_push(project_dir: Path) -> bool:
     """Run `clasp push -f` from a clasp project dir."""
     try:
@@ -261,6 +368,7 @@ def main(argv: list[str] | None = None) -> int:
     with lock("drive-docs.yaml", HOLDER, ttl_seconds=180, timeout_seconds=60):
         changed_tc = apply_to_tc_config(deal_docs, pipeline_deals, dry_run=dry)
         changed_org = apply_to_drive_organizer(deal_docs, dry_run=dry)
+        changed_dsd = apply_to_deal_system_data(deal_docs, dry_run=dry)
 
     if args.apply and args.push:
         print()

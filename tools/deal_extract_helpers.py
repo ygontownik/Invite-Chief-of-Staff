@@ -613,14 +613,58 @@ def cmd_read_log_entries(args):
 
 def cmd_mark_log_captured(args):
     """Record that a log.json entry id has been folded into status/brief.
-    Idempotent — re-marking is a no-op."""
+
+    Writes two markers (both idempotent):
+      1. deal_extract_state.json — captured_log_ids dict for fast lookup
+      2. log.json — `folded_at` field stamped on the matching entry, so
+         log_compaction.py can archive folded entries deterministically
+         (matches the I12 invariant: log.json ≤ 80 KB once entries are
+         consumed into status.md + brief.md).
+    """
+    now_iso = datetime.now().isoformat()
+
+    # 1. External captured_log_ids map (legacy dedup signal)
     state = load_state()
     ds = deal_state(state, args.deal_id)
     if "captured_log_ids" not in ds:
         ds["captured_log_ids"] = {}
-    ds["captured_log_ids"][args.entry_id] = datetime.now().isoformat()
+    ds["captured_log_ids"][args.entry_id] = now_iso
     save_state(state)
-    print(f"OK marked {args.entry_id} captured for {args.deal_id}")
+
+    # 2. Inline `folded_at` on the log.json entry itself
+    log_path = os.path.expanduser(
+        f"~/dashboards/data/deals/{args.deal_id}/log.json"
+    )
+    marked_in_log = False
+    if os.path.exists(log_path):
+        try:
+            with open(log_path) as f:
+                raw = json.load(f)
+        except json.JSONDecodeError:
+            raw = None
+        if raw is not None:
+            # Handle both shapes: {entries: [...]} or [...] at root.
+            if isinstance(raw, dict):
+                entries = raw.get("entries", [])
+            elif isinstance(raw, list):
+                entries = raw
+            else:
+                entries = []
+            for e in entries:
+                if isinstance(e, dict) and e.get("id") == args.entry_id:
+                    # Set folded_at only if not already present (idempotent)
+                    if not e.get("folded_at"):
+                        e["folded_at"] = now_iso
+                        marked_in_log = True
+                    break
+            if marked_in_log:
+                if isinstance(raw, dict):
+                    raw["updated_at"] = now_iso
+                with open(log_path, "w") as f:
+                    json.dump(raw, f, indent=2)
+
+    state_msg = "state+log" if marked_in_log else "state"
+    print(f"OK marked {args.entry_id} captured for {args.deal_id} ({state_msg})")
 
 
 def cmd_append_log_entry(args):
