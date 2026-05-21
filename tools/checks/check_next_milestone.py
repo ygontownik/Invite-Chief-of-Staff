@@ -39,7 +39,7 @@ def run() -> dict[str, Any]:
     if not DEAL_SYSTEM.exists():
         return {
             "name": "next_milestone: future-date discipline",
-            "rule_ref": "dash_corrections.md :: 2026-05-04 next_milestone rule",
+            "rule_ref": "dash_corrections.md :: NM1 :: 2026-05-04 next_milestone rule",
             "status": "warn",
             "summary": "data file not present, skipped",
             "details": [f"missing: {DEAL_SYSTEM}"],
@@ -50,7 +50,7 @@ def run() -> dict[str, Any]:
     except Exception as exc:
         return {
             "name": "next_milestone: future-date discipline",
-            "rule_ref": "dash_corrections.md :: 2026-05-04 next_milestone rule",
+            "rule_ref": "dash_corrections.md :: NM1 :: 2026-05-04 next_milestone rule",
             "status": "fail",
             "summary": f"unreadable: {exc}",
             "details": [str(exc)],
@@ -81,7 +81,7 @@ def run() -> dict[str, Any]:
     if past:
         return {
             "name": "next_milestone: future-date discipline",
-            "rule_ref": "dash_corrections.md :: 2026-05-04 next_milestone rule",
+            "rule_ref": "dash_corrections.md :: NM1 :: 2026-05-04 next_milestone rule",
             "status": "fail",
             "summary": (
                 f"{len(past)} active deal(s) have past next_milestone_due "
@@ -92,7 +92,7 @@ def run() -> dict[str, Any]:
     if empty:
         return {
             "name": "next_milestone: future-date discipline",
-            "rule_ref": "dash_corrections.md :: 2026-05-04 next_milestone rule",
+            "rule_ref": "dash_corrections.md :: NM1 :: 2026-05-04 next_milestone rule",
             "status": "warn",
             "summary": f"{len(empty)} active deal(s) with empty next_milestone_due",
             "details": empty,
@@ -100,7 +100,7 @@ def run() -> dict[str, Any]:
 
     return {
         "name": "next_milestone: future-date discipline",
-        "rule_ref": "dash_corrections.md :: 2026-05-04 next_milestone rule",
+        "rule_ref": "dash_corrections.md :: NM1 :: 2026-05-04 next_milestone rule",
         "status": "pass",
         "summary": f"all {active} active deal(s) carry future next_milestone_due",
         "details": [],

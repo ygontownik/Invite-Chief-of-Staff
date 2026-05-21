@@ -37,7 +37,7 @@ def run() -> dict[str, Any]:
     if not DEAL_SYSTEM.exists():
         return {
             "name": "past-due deal actions",
-            "rule_ref": "dash_corrections.md :: 2026-05-04 past-due deal action sweep",
+            "rule_ref": "dash_corrections.md :: PA1 :: 2026-05-04 past-due deal action sweep",
             "status": "warn",
             "summary": "data file not present, skipped",
             "details": [f"missing: {DEAL_SYSTEM}"],
@@ -48,7 +48,7 @@ def run() -> dict[str, Any]:
     except Exception as exc:
         return {
             "name": "past-due deal actions",
-            "rule_ref": "dash_corrections.md :: 2026-05-04 past-due deal action sweep",
+            "rule_ref": "dash_corrections.md :: PA1 :: 2026-05-04 past-due deal action sweep",
             "status": "fail",
             "summary": f"unreadable: {exc}",
             "details": [str(exc)],
@@ -81,7 +81,7 @@ def run() -> dict[str, Any]:
     if past_due:
         return {
             "name": "past-due deal actions",
-            "rule_ref": "dash_corrections.md :: 2026-05-04 past-due deal action sweep",
+            "rule_ref": "dash_corrections.md :: PA1 :: 2026-05-04 past-due deal action sweep",
             "status": "fail",
             "summary": (
                 f"{len(past_due)} past-due open action(s) "
@@ -92,7 +92,7 @@ def run() -> dict[str, Any]:
     if no_date:
         return {
             "name": "past-due deal actions",
-            "rule_ref": "dash_corrections.md :: 2026-05-04 past-due deal action sweep",
+            "rule_ref": "dash_corrections.md :: PA1 :: 2026-05-04 past-due deal action sweep",
             "status": "warn",
             "summary": f"{len(no_date)} open action(s) with no due date",
             "details": no_date[:20],
@@ -100,7 +100,7 @@ def run() -> dict[str, Any]:
 
     return {
         "name": "past-due deal actions",
-        "rule_ref": "dash_corrections.md :: 2026-05-04 past-due deal action sweep",
+        "rule_ref": "dash_corrections.md :: PA1 :: 2026-05-04 past-due deal action sweep",
         "status": "pass",
         "summary": f"all {total_open} open action(s) have future due dates",
         "details": [],

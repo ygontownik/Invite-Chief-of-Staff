@@ -153,7 +153,7 @@ def run() -> dict[str, Any]:
 
         return {
             "name": "captureSummary freshness",
-            "rule_ref": "dash_corrections.md :: 2026-05-04 captureSummary freshness",
+            "rule_ref": "dash_corrections.md :: CF1 :: 2026-05-04 captureSummary freshness",
             "status": status,
             "summary": (
                 f"pipelines: "
@@ -171,7 +171,7 @@ def run() -> dict[str, Any]:
     if not legacy:
         return {
             "name": "captureSummary freshness",
-            "rule_ref": "dash_corrections.md :: 2026-05-04 captureSummary freshness",
+            "rule_ref": "dash_corrections.md :: CF1 :: 2026-05-04 captureSummary freshness",
             "status": "warn",
             "summary": "no pipeline logs and no dashboard freshness fields present",
             "details": [
@@ -195,7 +195,7 @@ def run() -> dict[str, Any]:
     if best_date is None:
         return {
             "name": "captureSummary freshness",
-            "rule_ref": "dash_corrections.md :: 2026-05-04 captureSummary freshness",
+            "rule_ref": "dash_corrections.md :: CF1 :: 2026-05-04 captureSummary freshness",
             "status": "warn",
             "summary": "legacy freshness fields present but unparseable",
             "details": [f"raw: {legacy}"],
@@ -211,7 +211,7 @@ def run() -> dict[str, Any]:
 
     return {
         "name": "captureSummary freshness",
-        "rule_ref": "dash_corrections.md :: 2026-05-04 captureSummary freshness",
+        "rule_ref": "dash_corrections.md :: CF1 :: 2026-05-04 captureSummary freshness",
         "status": status,
         "summary": (
             f"{best_field}={best_date.isoformat()} "

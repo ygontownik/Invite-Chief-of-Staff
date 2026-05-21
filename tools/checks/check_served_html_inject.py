@@ -62,7 +62,7 @@ def run() -> dict[str, Any]:
     except (urllib.error.URLError, ConnectionError, TimeoutError) as exc:
         return {
             'name': 'served HTML script injection',
-            'rule_ref': 'cos-dashboard-server.py :: _deletions_script() inject guard',
+            'rule_ref': 'HI1 :: cos-dashboard-server.py :: _deletions_script() inject guard',
             'status': 'warn',
             'summary': f'server unreachable at {DASHBOARD_URL}: {exc}',
             'details': [
@@ -74,7 +74,7 @@ def run() -> dict[str, Any]:
     except Exception as exc:
         return {
             'name': 'served HTML script injection',
-            'rule_ref': 'cos-dashboard-server.py :: _deletions_script() inject guard',
+            'rule_ref': 'HI1 :: cos-dashboard-server.py :: _deletions_script() inject guard',
             'status': 'warn',
             'summary': f'unexpected error fetching dashboard: {exc}',
             'details': [str(exc)],
@@ -84,7 +84,7 @@ def run() -> dict[str, Any]:
     if not missing:
         return {
             'name': 'served HTML script injection',
-            'rule_ref': 'cos-dashboard-server.py :: _deletions_script() inject guard',
+            'rule_ref': 'HI1 :: cos-dashboard-server.py :: _deletions_script() inject guard',
             'status': 'pass',
             'summary': (
                 f'{len(REQUIRED_SETTERS)} required setters all present in '
@@ -95,7 +95,7 @@ def run() -> dict[str, Any]:
 
     return {
         'name': 'served HTML script injection',
-        'rule_ref': 'cos-dashboard-server.py :: _deletions_script() inject guard',
+        'rule_ref': 'HI1 :: cos-dashboard-server.py :: _deletions_script() inject guard',
         'status': 'fail',
         'summary': (
             f'{len(missing)} of {len(REQUIRED_SETTERS)} required window-global '

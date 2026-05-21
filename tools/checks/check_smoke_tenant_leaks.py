@@ -32,7 +32,7 @@ def run() -> dict:
     if not script.exists():
         return {
             "name": "smoke: tenant-leak regression",
-            "rule_ref": "tools/smoke_test_tenant.py",
+            "rule_ref": "TL2 :: tools/smoke_test_tenant.py",
             "status": "warn",
             "summary": "smoke_test_tenant.py not present",
             "details": [],
@@ -74,7 +74,7 @@ def run() -> dict:
 
     return {
         "name": "smoke: tenant-leak regression",
-        "rule_ref": "tools/smoke_test_tenant.py",
+        "rule_ref": "TL2 :: tools/smoke_test_tenant.py",
         "status": status,
         "summary": f"{leak_count} tenant leak(s) across smoke probes",
         "details": details,
