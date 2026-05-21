@@ -242,7 +242,25 @@ PYEOF
 
 ---
 
-## STEP 6 — Final summary
+## STEP 6 — Tab cleanup (leave Chrome clean)
+
+Before printing the final summary, blank out the work page so Yoni doesn't see stale claude.ai project content next time he opens Chrome. The shared Chrome at port 9222 is also his daily browser.
+
+```
+mcp__plugin_chrome-devtools-mcp_chrome-devtools__navigate_page({ type: "url", url: "about:blank", pageIdx })
+```
+
+If this run opened its OWN page (Step 3's `new_page` branch fired), close it instead so we don't leave a stray blank tab:
+```
+mcp__plugin_chrome-devtools-mcp_chrome-devtools__list_pages
+# If page count > 1, close the work page:
+mcp__plugin_chrome-devtools-mcp_chrome-devtools__close_page({ pageIdx })
+```
+Only close when more than one tab remains — Chrome may exit if you close the last tab.
+
+---
+
+## STEP 7 — Final summary
 
 ```
 ARTIFACT-PULL COMPLETE

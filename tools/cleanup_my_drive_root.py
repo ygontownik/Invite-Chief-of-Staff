@@ -89,9 +89,12 @@ def _load_tenant_constants(registry: dict):
 
 
 def get_service():
+    # NOTE: Do NOT pass SCOPES to from_authorized_user_file — the shared
+    # ~/credentials/token.json carries the UNION of scopes across all pipelines.
+    # Passing narrow SCOPES makes refresh() write narrowed scopes back.
     creds = None
     if os.path.exists(TOKEN_PATH):
-        creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
+        creds = Credentials.from_authorized_user_file(TOKEN_PATH)
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())

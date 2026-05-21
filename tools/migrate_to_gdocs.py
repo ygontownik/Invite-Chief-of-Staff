@@ -77,9 +77,13 @@ TEXT_MIMES = {"text/plain", "text/markdown"}
 
 
 def get_services():
+    # NOTE: Do NOT pass SCOPES to from_authorized_user_file — the shared
+    # ~/credentials/token.json carries the UNION of scopes across all pipelines
+    # (drive + documents + mail.google.com). Passing a narrow SCOPES list
+    # makes refresh() write narrowed scopes back, breaking later jobs.
     creds = None
     if os.path.exists(TOKEN_PATH):
-        creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
+        creds = Credentials.from_authorized_user_file(TOKEN_PATH)
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())

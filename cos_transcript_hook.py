@@ -800,14 +800,12 @@ def main():
     # accidentally moving the legacy aggregated "Call Transcripts & Memos" doc
     # or any other doc not placed there by call_recorder.py).
     try:
-        parents_resp = requests.get(
-            f"https://www.googleapis.com/drive/v3/files/{args.doc_id}",
-            params={"fields": "parents"},
+        parents_req = urllib.request.Request(
+            f"https://www.googleapis.com/drive/v3/files/{args.doc_id}?fields=parents",
             headers={"Authorization": f"Bearer {token}"},
-            timeout=15,
         )
-        parents_resp.raise_for_status()
-        file_parents = parents_resp.json().get("parents", [])
+        with urllib.request.urlopen(parents_req, timeout=15) as r:
+            file_parents = json.loads(r.read()).get("parents", [])
         if TRANSCRIPTS_FOLDER not in file_parents:
             print(
                 f"[hook] info  Doc {args.doc_id} not in Transcripts inbox "

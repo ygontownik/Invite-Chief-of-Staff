@@ -50,6 +50,18 @@ try:
 except ImportError:
     _COORD_AVAILABLE = False
 
+# Envelope writer: pushes items into dashboard-data.json dealIntel[] so
+# SMS surfaces on the dashboard's "Recent intel" tile + the /dash/mobile
+# view, not just the per-deal activity log.
+_ENVELOPE_PARENT = Path(__file__).resolve().parents[1]
+if str(_ENVELOPE_PARENT) not in sys.path:
+    sys.path.insert(0, str(_ENVELOPE_PARENT))
+try:
+    from _envelope_writer import append_items as envelope_append_items
+    _ENVELOPE_AVAILABLE = True
+except ImportError:
+    _ENVELOPE_AVAILABLE = False
+
 try:
     import yaml
 except ImportError:
@@ -63,6 +75,8 @@ LOG_PATH = HOME / "dashboards" / "logs" / "imessages_capture.log"
 DRIVE_DOCS_YAML = HOME / "dashboards" / "config" / "drive-docs.yaml"
 DEALS_DATA_DIR = HOME / "dashboards" / "data" / "deals"
 CONTACTS_ALIAS_PATH = HOME / "cos-pipeline-config-tomac" / "known-aliases.yaml"
+DEAL_SYSTEM_DATA = HOME / "dashboards" / "data" / "compiled" / "deal-system-data.json"
+DASHBOARD_DATA = HOME / "dashboards" / "data" / "compiled" / "dashboard-data.json"
 # Scoped reader binary (Swift, ad-hoc signed). Owns the Full Disk Access
 # grant so python3 never needs it. Build with:
 #   swiftc -O -o imessages_reader imessages_reader.swift && codesign -s - imessages_reader
@@ -126,22 +140,21 @@ def load_deals() -> dict:
         return {}
     raw = yaml.safe_load(DRIVE_DOCS_YAML.read_text()) or {}
     deal_docs = raw.get("deal_docs") or {}
-
-    # Optional contact directory: maps person -> {phones, emails, firms}
-    contacts = {}
-    if CONTACTS_ALIAS_PATH.exists():
-        try:
-            contacts = yaml.safe_load(CONTACTS_ALIAS_PATH.read_text()) or {}
-        except Exception as e:
-            log.debug(f"Could not parse contacts file: {e}")
+    contacts = _load_contacts()
 
     deals = {}
     for deal_id, cfg in deal_docs.items():
         aliases = cfg.get("organizer_aliases") or []
         keywords = cfg.get("keywords") or []
         counterparties = cfg.get("counterparties") or []
+        # Skip ≤3-character tokens for SMS matching: they generate false
+        # positives in casual text (e.g. "fit" → "right fit", "aps" → "perhaps",
+        # "utl" → "shuttle"). The file router uses its own regex and is
+        # unaffected. Multi-word phrases containing short tokens (e.g.
+        # "Fit Ventures") still match because they're stored as one term.
         terms = sorted(
-            {t.strip() for t in (aliases + keywords + counterparties) if t and t.strip()},
+            {t.strip() for t in (aliases + keywords + counterparties)
+             if t and t.strip() and len(t.strip()) > 3},
             key=len,
             reverse=True,
         )
@@ -164,6 +177,48 @@ def load_deals() -> dict:
             "counterparties": counterparties,
         }
     return deals
+
+
+def _load_contacts() -> dict:
+    """Return the contacts directory dict, or {} if unavailable."""
+    if not CONTACTS_ALIAS_PATH.exists():
+        return {}
+    try:
+        return yaml.safe_load(CONTACTS_ALIAS_PATH.read_text()) or {}
+    except Exception as e:
+        log.debug(f"Could not parse contacts file: {e}")
+        return {}
+
+
+def _build_handle_index(contacts: dict) -> dict:
+    """
+    Walk known-aliases.yaml and return:
+      { normalized_handle: {"name": <Display Name>, "firm": <firm or "">, "self": <bool>} }
+    Used to resolve handle → human-readable identity at log-write time.
+    UNLABELED__ keys are skipped (still placeholders).
+    """
+    index = {}
+    if not isinstance(contacts, dict):
+        return index
+    people = contacts.get("people") or contacts
+    if not isinstance(people, dict):
+        return index
+    for raw_name, entry in people.items():
+        if not isinstance(entry, dict):
+            continue
+        if str(raw_name).startswith("UNLABELED__"):
+            continue  # placeholder, no real name yet
+        name = str(raw_name).strip()
+        firm = (entry.get("firm") or "").strip()
+        is_self = bool(entry.get("self"))
+        for ph in (entry.get("phones") or []):
+            n = _normalize_phone(ph)
+            if n:
+                index[n] = {"name": name, "firm": firm, "self": is_self}
+        for em in (entry.get("emails") or []):
+            if em:
+                index[em.strip().lower()] = {"name": name, "firm": firm, "self": is_self}
+    return index
 
 
 def _handles_for_counterparties(counterparties: list, contacts: dict) -> set:
@@ -235,6 +290,149 @@ def _normalize_handle(h: str) -> str:
     return _normalize_phone(h)
 
 
+# ── Person → deals index (built from compiled dashboard data) ────────────────
+_NAME_OK_RE = re.compile(r"^[A-Z][A-Za-z'\.\-]*(?:\s+[A-Z][A-Za-z'\.\-]*){0,4}$")
+_REJECT_TOKENS = {"tbd", "n/a", "na", "unknown", "team", "internal"}
+
+
+def _is_person_name(s: str) -> bool:
+    """Reject 'TBD', 'CBRE' (all-caps), long descriptive multi-firm strings,
+    parenthetical role tags, and slash-separated lists. Accept 'Mark Saxe',
+    'Mark Mitchell', 'O'Brien', 'St. John', 'Jean-Pierre'."""
+    if not s:
+        return False
+    s = s.strip()
+    if len(s) < 4 or len(s) > 50:
+        return False
+    if s.lower() in _REJECT_TOKENS:
+        return False
+    if any(ch in s for ch in (",", "/", "(", ")", "|", "—", "–", ":", ";")):
+        return False
+    if s.isupper():
+        return False  # acronym like CBRE, NORPAC
+    return bool(_NAME_OK_RE.match(s))
+
+
+def _norm_name(s: str) -> str:
+    """Normalize for cross-source matching: lowercase, collapse whitespace,
+    strip leading/trailing punctuation."""
+    return re.sub(r"\s+", " ", s.strip().strip(".,;:").lower())
+
+
+def load_person_deal_index() -> tuple[dict, set]:
+    """Walk deal-system-data.json + dashboard-data.json and return:
+
+      (counterparty_index, team_set)
+
+    counterparty_index: { normalized_name: set([deal_id, ...]) }
+      — people who are external counterparties on a specific deal.
+      A text from one of them auto-routes to those deal(s).
+
+    team_set: { normalized_name }
+      — TCIP-side teammates (you, Mark Saxe, Nik). Listed as `contacts`
+      on every deal. Their identity alone is NOT a deal signal — texts
+      from them still need keyword/body match to route.
+    """
+    cp_idx: dict = {}
+    contact_deal_count: dict = {}  # name → number of deals where they appear in contacts[]
+
+    if DEAL_SYSTEM_DATA.exists():
+        try:
+            ds = json.loads(DEAL_SYSTEM_DATA.read_text())
+        except Exception as e:
+            log.warning(f"deal-system-data.json unreadable: {e}")
+            ds = {}
+        for d in ds.get("deals", []):
+            deal_id = (d.get("id") or "").strip()
+            if not deal_id:
+                continue
+            # `contacts[]` mixes TCIP team and deal-lead counterparties; we
+            # disambiguate by deal-count below. For now, count appearances
+            # and ALSO map each name to its deal — if it's a real team
+            # member with 3+ deals it gets pruned at the end.
+            for c in d.get("contacts", []) or []:
+                name = c.get("name") if isinstance(c, dict) else c
+                if _is_person_name(name or ""):
+                    n = _norm_name(name)
+                    contact_deal_count[n] = contact_deal_count.get(n, 0) + 1
+                    cp_idx.setdefault(n, set()).add(deal_id)
+            # Counterparties
+            for c in d.get("counterparties", []) or []:
+                name = c.get("name") if isinstance(c, dict) else c
+                if _is_person_name(name or ""):
+                    n = _norm_name(name)
+                    cp_idx.setdefault(n, set()).add(deal_id)
+
+    # TCIP team = names that appear in `contacts[]` of 3+ deals OR that
+    # carry an explicit `team: true` / `self: true` flag in known-aliases.yaml.
+    # The data heuristic catches Mark Saxe / Yoni (on every deal); the yaml
+    # flag is the surgical override for edge cases (e.g. Nik on only 2 deals).
+    team: set = {n for n, count in contact_deal_count.items() if count >= 3}
+    contacts_yaml = _load_contacts()
+    people_yaml = (contacts_yaml.get("people") if isinstance(contacts_yaml, dict)
+                   else {}) or {}
+    for raw_name, entry in people_yaml.items():
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("team") or entry.get("self"):
+            if not str(raw_name).startswith("UNLABELED__"):
+                team.add(_norm_name(str(raw_name)))
+
+    # Enrich from dashboard-data.json: awaitingExternal + followUps + dealIntel
+    # carry counterparty/who fields tagged to a deal via dashboard_path.
+    if DASHBOARD_DATA.exists():
+        try:
+            dd = json.loads(DASHBOARD_DATA.read_text())
+        except Exception as e:
+            log.warning(f"dashboard-data.json unreadable: {e}")
+            dd = {}
+
+        def _deal_from_path(path: str) -> str | None:
+            """dashboard_path is like 'Deal Pipeline › <Deal Name> › ...' — pull <Deal Name>."""
+            parts = [p.strip() for p in (path or "").split("›")]
+            if len(parts) >= 2:
+                return parts[1] or None
+            return None
+
+        # Build a slug→deal_id map (for path-derived names like "Cholla" → "cholla")
+        slug_by_name: dict = {}
+        for d in (ds.get("deals", []) if 'ds' in locals() else []):
+            n = (d.get("name") or "").strip().lower()
+            i = (d.get("id") or "").strip()
+            if n and i:
+                slug_by_name[n] = i
+
+        def _deal_id_for(deal_name: str) -> str | None:
+            if not deal_name:
+                return None
+            return slug_by_name.get(deal_name.lower())
+
+        for src_key in ("awaitingExternal", "dealIntel", "originationInbox"):
+            for item in dd.get(src_key) or []:
+                cp = item.get("counterparty") or ""
+                if not _is_person_name(cp):
+                    continue
+                deal = _deal_id_for(_deal_from_path(item.get("dashboard_path", "")) or "")
+                if deal:
+                    cp_idx.setdefault(_norm_name(cp), set()).add(deal)
+
+        for fu in dd.get("followUps") or []:
+            who = (fu.get("who") or "").strip()
+            deal_name = (fu.get("deal") or "").strip()
+            if _is_person_name(who) and deal_name:
+                deal = _deal_id_for(deal_name)
+                if deal:
+                    cp_idx.setdefault(_norm_name(who), set()).add(deal)
+
+        # emailQueue.from is a person; no deal mapping → skip for routing
+        # but useful for the entity graph (not handled here).
+
+    # Remove people who are clearly TCIP team — they should not auto-route
+    cp_idx = {n: deals for n, deals in cp_idx.items() if n not in team}
+
+    return cp_idx, team
+
+
 # ── chat.db query (delegated to scoped Swift binary) ──────────────────────────
 def fetch_messages(since_rowid: int, since_dt: datetime | None = None,
                    limit: int = 5000) -> list[dict]:
@@ -287,6 +485,10 @@ def fetch_messages(since_rowid: int, since_dt: datetime | None = None,
             "service": row.get("service") or "",
             "handle_id": handle_id,
             "handle_norm": _normalize_handle(handle_id),
+            # Auto-resolved from macOS AddressBook by the Swift reader.
+            # Empty string when no Contact matched.
+            "sender_name": row.get("sender_name") or "",
+            "sender_org":  row.get("sender_org") or "",
         })
     return out
 
@@ -309,18 +511,40 @@ def _cocoa_to_iso(cocoa_date: int) -> str:
 
 
 # ── Matching ──────────────────────────────────────────────────────────────────
-def match_message(msg: dict, deals: dict) -> list[str]:
-    """Return list of deal_ids this message matches."""
-    matches = set()
+def match_message(msg: dict, deals: dict,
+                  person_deal_index: dict | None = None) -> tuple[list[str], list[str]]:
+    """Return (deal_ids, why) where why lists the matching pathway per deal.
+
+    Three pathways:
+      1. handle    — sender's normalized phone/email is in a deal's handles set
+      2. body      — keyword regex matches text content
+      3. sender    — sender's resolved name maps to a deal via person index
+    """
+    matches: set = set()
+    reasons: dict = {}
     handle = msg.get("handle_norm", "")
     text = msg.get("text", "") or ""
+
     for deal_id, cfg in deals.items():
         if handle and handle in cfg["handles"]:
-            matches.add(deal_id)
+            matches.add(deal_id); reasons[deal_id] = "handle"
             continue
         if cfg["keyword_re"].search(text):
-            matches.add(deal_id)
-    return sorted(matches)
+            matches.add(deal_id); reasons[deal_id] = "body"
+
+    # Sender-identity routing (only when the sender resolved to a name)
+    if person_deal_index:
+        for nm_field in ("sender_name",):
+            nm = (msg.get(nm_field) or "").strip()
+            if not nm:
+                continue
+            for deal_id in person_deal_index.get(_norm_name(nm), set()):
+                if deal_id not in matches:
+                    matches.add(deal_id)
+                    reasons[deal_id] = "sender"
+                # If already matched by body/handle, leave that stronger reason
+
+    return sorted(matches), [reasons[d] for d in sorted(matches)]
 
 
 # ── log.json append ───────────────────────────────────────────────────────────
@@ -353,21 +577,87 @@ def append_log_entry(deal_id: str, entry: dict) -> None:
         _write()
 
 
-def build_entry(msg: dict, deal_id: str) -> dict:
-    """Build a log.json entry consistent with the existing schema."""
+def build_envelope_item(msg: dict, deal_id: str, deal_name: str,
+                        handle_index: dict | None = None,
+                        is_counterparty: bool = False) -> dict:
+    """Build an envelope-shaped `deal_takeaway` item for dashboard-data.json.
+    Validated by _envelope_writer._validate before append. Owner=external
+    only when the sender is a known counterparty (else routing rejects)."""
+    text = (msg.get("text") or "").strip()
+    handle_norm = msg.get("handle_norm", "")
+    override = (handle_index or {}).get(handle_norm) or {}
+    auto_name = (msg.get("sender_name") or "").strip()
+    auto_org = (msg.get("sender_org") or "").strip()
+    who = override.get("name") or auto_name or msg.get("handle_id", "")
+    firm = override.get("firm") or auto_org
+
+    item = {
+        "content_type": "deal_takeaway",
+        "owner": "Yoni",
+        "counterparty": f"{firm} — {who}" if (firm and who and firm != who) else who,
+        "parent_id": deal_name,
+        "context": f"iMessage from {who}" + (f" ({firm})" if firm else ""),
+        "dashboard_path": f"Deal Pipeline › {deal_name}",
+        "content": text,
+        "source_ref": {
+            "source": "imessage",
+            "date": msg.get("date_iso"),
+            "rowid": msg.get("rowid"),
+            "handle": msg.get("handle_id"),
+        },
+        "addedDate": msg.get("date_iso") or datetime.now(timezone.utc).date().isoformat(),
+    }
+    return item
+
+
+def build_entry(msg: dict, deal_id: str, handle_index: dict | None = None) -> dict:
+    """Build a log.json entry consistent with the existing schema.
+
+    Sender resolution priority (highest wins):
+      1. known-aliases.yaml override   (handle_index) — your curated truth
+      2. macOS AddressBook auto-match  (msg.sender_name from Swift reader)
+      3. Raw handle (phone/email)      — fallback when neither resolves
+    """
     handle = msg.get("handle_id", "")
+    handle_norm = msg.get("handle_norm", "")
     text = (msg.get("text") or "").strip()
     snippet = text if len(text) <= 200 else text[:200] + "…"
-    return {
+
+    override = (handle_index or {}).get(handle_norm) or {}
+    auto_name = (msg.get("sender_name") or "").strip()
+    auto_org  = (msg.get("sender_org") or "").strip()
+
+    if override.get("name"):
+        who = override["name"]
+        firm = override.get("firm") or auto_org
+        source_layer = "alias_override"
+    elif auto_name:
+        who = auto_name
+        firm = auto_org
+        source_layer = "contacts_auto"
+    else:
+        who = handle
+        firm = ""
+        source_layer = "raw_handle"
+
+    who_label = f"{who} ({firm})" if firm else who
+
+    entry = {
         "id": uuid.uuid4().hex[:8],
         "date": msg["date_iso"],
         "source": "sms",
         "source_type": "imessage" if msg.get("service") == "iMessage" else "sms",
-        "who": handle,
+        "who": who,
         "what": text,
-        "title": f"{msg.get('service','SMS')} from {handle}: {snippet[:80]}",
+        "title": f"{msg.get('service','SMS')} from {who_label}: {snippet[:80]}",
         "match": deal_id,
     }
+    if source_layer != "raw_handle":
+        entry["from_handle"] = handle
+        if firm:
+            entry["from_firm"] = firm
+        entry["resolved_by"] = source_layer
+    return entry
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -377,6 +667,17 @@ def run(dry_run: bool = False, since_days: int | None = None) -> int:
         log.error("No deals loaded from drive-docs.yaml; aborting")
         return 1
     log.info(f"Loaded {len(deals)} deals: {', '.join(sorted(deals.keys()))}")
+
+    contacts = _load_contacts()
+    handle_index = _build_handle_index(contacts)
+    self_handles = {h for h, info in handle_index.items() if info.get("self")}
+    labeled_count = sum(1 for v in handle_index.values() if not v.get("self"))
+    log.info(f"Contact directory: {labeled_count} labeled handles, "
+             f"{len(self_handles)} self-handles (skipped)")
+
+    person_deal_index, team_set = load_person_deal_index()
+    log.info(f"Person→deals index: {len(person_deal_index)} counterparties "
+             f"mapped, {len(team_set)} TCIP-team names (excluded from sender routing)")
 
     state = load_state()
     since_rowid = 0 if since_days else int(state.get("last_rowid") or 0)
@@ -404,24 +705,50 @@ def run(dry_run: bool = False, since_days: int | None = None) -> int:
     routed = 0
     per_deal_counts: dict = {}
 
+    self_skipped = 0
     for msg in msgs:
-        deal_matches = match_message(msg, deals)
+        # Don't route messages YOU sent to yourself from a second device —
+        # they are your own notes, not inbound counterparty signal. They
+        # still feed into the entity graph + log file but here we skip.
+        if msg.get("handle_norm") in self_handles:
+            self_skipped += 1
+            continue
+        deal_matches, reasons = match_message(msg, deals, person_deal_index)
         if not deal_matches:
             continue
         matched += 1
-        for deal_id in deal_matches:
-            entry = build_entry(msg, deal_id)
+        envelope_batch: list = []
+        for deal_id, why in zip(deal_matches, reasons):
+            entry = build_entry(msg, deal_id, handle_index)
+            entry["match_reason"] = why  # handle | body | sender
             per_deal_counts[deal_id] = per_deal_counts.get(deal_id, 0) + 1
             if dry_run:
-                log.info(f"[dry-run] {deal_id} ← {entry['title']}")
+                log.info(f"[dry-run] {deal_id} via {why} ← {entry['title']}")
             else:
                 append_log_entry(deal_id, entry)
                 routed += 1
-                log.info(f"[{deal_id}] appended log entry from {msg['handle_id']} "
-                         f"(rowid={msg['rowid']})")
+                log.info(f"[{deal_id}] via {why} ← {entry['who']} (rowid={msg['rowid']})")
+                # Also emit as envelope item so the dashboard's dealIntel
+                # tile + /dash/mobile picks it up (per-deal log.json alone
+                # only feeds the deal-detail activity_log).
+                deal_name = deals[deal_id]["name"]
+                envelope_batch.append(build_envelope_item(
+                    msg, deal_id, deal_name, handle_index,
+                    is_counterparty=(why in ("handle", "sender")),
+                ))
 
-    log.info(f"Scan summary — {len(msgs)} fetched | {matched} matched | "
-             f"{routed} log entries written{' (dry-run)' if dry_run else ''}")
+        if envelope_batch and not dry_run and _ENVELOPE_AVAILABLE:
+            try:
+                summary = envelope_append_items(envelope_batch)
+                if summary.get("exceptions"):
+                    log.warning(f"envelope rejected {summary['exceptions']} item(s); "
+                                f"see dashboard-data.routingExceptions")
+            except Exception as e:
+                log.error(f"envelope_append_items failed: {e}", exc_info=True)
+
+    log.info(f"Scan summary — {len(msgs)} fetched | {self_skipped} self-skipped | "
+             f"{matched} matched | {routed} log entries written"
+             f"{' (dry-run)' if dry_run else ''}")
     if per_deal_counts:
         log.info(f"Per-deal counts: {per_deal_counts}")
 

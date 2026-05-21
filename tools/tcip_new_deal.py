@@ -1007,35 +1007,62 @@ def update_deal_system_data(deal_id, deal_name, lead, support,
     else:
         data = json.loads(DEAL_SYSTEM_DATA.read_text())
 
-    # Check if already exists
-    if any(d.get("deal_id") == deal_id for d in data.get("deals", [])):
-        print(f"   ⚠️  {deal_id} already in deal-system-data.json — skipping")
-        return
-
     if organizer_aliases is None:
         organizer_aliases = _default_aliases(deal_id, deal_name)
+
+    # 2026-05-21 (L0049/DR1 fix): If a same-deal_id entry already exists, it's
+    # almost certainly a stub from a prior failed /new-deal run whose Drive
+    # folder is now orphaned. Overwriting it with the IDs from THIS run is
+    # the correct behavior — the alternative (silently skipping) leaves the
+    # registry pointed at orphan Drive folders while THIS run creates a new
+    # set of folders that never get registered. We preserve any user-set
+    # fields the stub may have (organizer_aliases, project_url) — write-once,
+    # not regen-from-scratch.
+    existing_idx = None
+    existing = None
+    for i, d in enumerate(data.get("deals", [])):
+        if d.get("deal_id") == deal_id:
+            existing_idx = i
+            existing = d
+            break
 
     new_deal = {
         "deal_id": deal_id,
         "name": deal_name,
-        "stage": "early",
+        "stage": (existing or {}).get("stage", "early"),
         "lead": lead,
         "support": support,
-        "organizer_aliases": organizer_aliases,
+        "organizer_aliases": (existing or {}).get("organizer_aliases", organizer_aliases),
         "drive_folder_id": drive_folder_id,
         "transcripts_folder_id": transcripts_folder_id,
         "status_file_id": status_file_id,
         "brief_file_id": brief_file_id,
         "outputs_folder_id": outputs_folder_id,
         "session_log_file_id": session_log_file_id,
-        "project_url": None,
-        "created": TODAY,
+        "project_url": (existing or {}).get("project_url"),
+        "created": (existing or {}).get("created", TODAY),
         "last_session": TODAY,
     }
 
-    data.setdefault("deals", []).append(new_deal)
+    if existing_idx is not None:
+        # Capture orphan IDs in a sibling field so cleanup can find them.
+        orphan_ids = {
+            k: existing.get(k) for k in (
+                "drive_folder_id", "status_file_id", "brief_file_id",
+                "outputs_folder_id", "session_log_file_id", "transcripts_folder_id"
+            ) if existing.get(k) and existing.get(k) != locals().get(k)
+        }
+        if orphan_ids:
+            new_deal["_orphan_ids_pending_cleanup"] = orphan_ids
+            print(f"   ⚠️  {deal_id} stub existed — overwriting with new IDs. "
+                  f"Orphan IDs flagged for cleanup: {list(orphan_ids.keys())}")
+        data["deals"][existing_idx] = new_deal
+        print(f"   ✓ Overwrote {deal_id} in deal-system-data.json")
+    else:
+        data.setdefault("deals", []).append(new_deal)
+        print(f"   ✓ Added {deal_id} to deal-system-data.json")
+
     DEAL_SYSTEM_DATA.write_text(json.dumps(data, indent=2))
-    print(f"   ✓ Added {deal_id} to deal-system-data.json")
 
 
 def update_sync_state(deal_id, deal_name):
