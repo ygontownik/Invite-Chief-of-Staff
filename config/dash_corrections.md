@@ -2237,6 +2237,32 @@ durable edit path is `.template.html` → run `python3 app/cos-dashboard-refresh
 `grep` the target string in `.rendered.html` — not in `.template.html` or
 `.html`. Only the rendered file is what the browser actually receives.
 
+### 2026-05-21 — The template is the symlink TARGET, not the symlink
+
+`~/dashboards/app/templates/cos-dashboard.template.html` is a symlink to
+`~/cos-pipeline/templates/cos-dashboard.template.html` (the canonical
+source). Editing through the symlink works too — but if you reflexively
+edit `~/dashboards/app/templates/cos-dashboard.html` because it's the
+biggest file in that directory, **you are editing a dev-reference copy
+that gets overwritten on every refresh**. The Edit tool will succeed
+silently and your change vanishes on next warmup.
+
+**Before any template edit**: confirm the path you're editing matches
+`readlink ~/dashboards/app/templates/cos-dashboard.template.html`
+(should resolve to `~/cos-pipeline/templates/cos-dashboard.template.html`).
+If the path you're about to Edit is `cos-dashboard.html` (no `.template.`
+infix), STOP — wrong file.
+
+### 2026-05-21 — `/warmup` + `/refresh` regenerate the rendered HTML in-place
+
+After editing the template, the two-step regenerate is:
+`curl -s -X POST http://localhost:7777/warmup` (returns 202 immediately,
+builds cache in background) followed within ~1s by `curl -s -X POST
+http://localhost:7777/refresh` (returns 200 with `log` field confirming
+`.rendered.html` rewritten). Both are localhost-only. Skip the manual
+`cos-dashboard-refresh.py` invocation — `/warmup` does the same work and
+also bumps the data cache.
+
 ---
 
 ## TOPIC — AWAITING COUNTERPARTIES DEDUP

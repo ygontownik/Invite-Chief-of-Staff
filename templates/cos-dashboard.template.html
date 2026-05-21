@@ -1932,6 +1932,12 @@ function buildAwaitingExternal(filter, compact) {
   } else if (filter === 'job-tc') {
     visible = visible.filter(i => { const ws = _itemWorkstream(i); return ws === 'tomac' || ws === 'job'; }); // noqa: tenant-leak (backward-compat workstream key)
   }
+  // Sort reverse chronological by addedDate (most recent first) BEFORE
+  // clustering. Two effects: (1) the dedup sig/jaccard loop keeps the
+  // most-recent item per signature (was arbitrary insertion order),
+  // (2) c.items[0] inside each cluster is the newest item, so the
+  // lead-pick fallback (after overdue/due) shows the most recent.
+  visible.sort((a, b) => (b.addedDate || '0000-00-00').localeCompare(a.addedDate || '0000-00-00'));
   const today = DATA.today;
 
   const aeid = 'awaiting-external';
@@ -4473,20 +4479,21 @@ function setCadence(c) {
   render();
 }
 
-function _showDismissToast() {
+function _showDismissToast(msg) {
   let el = document.getElementById('_dismiss-toast');
   if (!el) {
     el = document.createElement('div');
     el.id = '_dismiss-toast';
     el.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#0f1e38;color:#e2e8f0;' +
       'font-size:12px;padding:8px 16px;border-radius:6px;z-index:9999;opacity:0;' +
-      'transition:opacity 0.2s;pointer-events:none;font-family:inherit;box-shadow:0 2px 8px rgba(0,0,0,0.25)';
+      'transition:opacity 0.2s;pointer-events:none;font-family:inherit;box-shadow:0 2px 8px rgba(0,0,0,0.25);' +
+      'max-width:340px;line-height:1.45';
     document.body.appendChild(el);
   }
-  el.textContent = '✓ Dismissed — permanently removed after next sync';
+  el.textContent = msg || '✓ Dismissed — permanently removed after next sync';
   el.style.opacity = '1';
   clearTimeout(el._timer);
-  el._timer = setTimeout(function(){ el.style.opacity = '0'; }, 2500);
+  el._timer = setTimeout(function(){ el.style.opacity = '0'; }, 3200);
 }
 
 // Awaiting-counterparty dismiss — stores the raw item id directly so the
@@ -4505,7 +4512,11 @@ function dismissAwaitingItem(rawId, cpLabel) {
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({id: rawId, source: 'awaitingExternal', context: String(cpLabel || rawId).slice(0, 200)})
   }).catch(function(){});
-  _showDismissToast();
+  // Explicit tombstone-language toast — confirms the dismiss is permanent
+  // (writes to data/user-state/deletions.json, survives the next compile).
+  const who = String(cpLabel || '').trim();
+  const whoFrag = who && who !== '—' ? ` — ${who}` : '';
+  _showDismissToast(`✓ Permanently tombstoned${whoFrag}. Item will not return after the next sync.`);
   render();
 }
 
