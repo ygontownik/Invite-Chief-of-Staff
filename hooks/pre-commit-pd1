@@ -1,0 +1,58 @@
+#!/bin/bash
+# pre-commit-pd1 — Enforce rule PD1 (public-first / no tenant leaks).
+#
+# Block any commit that introduces a hard tenant-slug leak in public-repo
+# code or docs. Soft hits (allow-listed) do NOT block — they've already
+# been reviewed.
+#
+# Catches the pattern that bit us 2026-05-21 when "tomac" + 7 deal slugs
+# were written into cos-pipeline/config/dash_corrections.md and pushed
+# before the /wrap STEP 9.pre gate could catch them. /wrap's gate fires
+# on the wrap-level commit; direct commits to the public repo need their
+# own gate.
+#
+# Bypass with: git commit --no-verify (rare — document the override).
+
+set -e
+
+cd "$(git rev-parse --show-toplevel)"
+
+# Skip if no files staged
+staged=$(git diff --cached --name-only --diff-filter=AM)
+if [ -z "$staged" ]; then
+  exit 0
+fi
+
+# Run the canonical PD1 check
+result=$(python3 -c "
+import sys, json
+sys.path.insert(0, 'tools/checks')
+from check_pd1 import run
+r = run()
+print(r.get('status', 'fail'))
+print(json.dumps(r.get('details', {}).get('hard_hits', [])))
+")
+
+status=$(echo "$result" | head -1)
+hard_hits=$(echo "$result" | tail -1)
+
+if [ "$status" = "fail" ]; then
+    echo ""
+    echo "✗ PD1 pre-commit gate — hard tenant-slug leak detected:"
+    echo "$hard_hits" | python3 -c "
+import sys, json
+hits = json.loads(sys.stdin.read())
+for h in hits[:10]:
+    print(f\"  {h.get('file','?')}:{h.get('line','?')}  {h.get('text','')[:90]}\")
+if len(hits) > 10:
+    print(f\"  ... and {len(hits)-10} more\")
+"
+    echo ""
+    echo "Fix the leak (sanitize tenant slugs to placeholders, or move the"
+    echo "content to a private cos-pipeline-config-* repo), then re-commit."
+    echo ""
+    echo "Override (rare, document why): git commit --no-verify"
+    exit 1
+fi
+
+exit 0

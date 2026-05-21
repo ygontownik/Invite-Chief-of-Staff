@@ -1,0 +1,6 @@
+#!/bin/bash
+# Chain runner: invokes each hook in sequence; fails fast on first non-zero.
+set -e
+DIR="$(dirname "$(readlink -f "$0")")"
+"$DIR/pre-commit-edit-in-place"
+"$DIR/pre-commit-pd1"
