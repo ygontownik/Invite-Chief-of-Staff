@@ -478,6 +478,47 @@ Flag any newly-down LaunchAgents or stale syncs in the handoff §4b.
 
 ## STEP 9 — Commit + push (narrow git add per repo)
 
+### 9.pre — Public/private (PD1) hard gate
+
+Before any push, re-run the PD1 check against `~/cos-pipeline/` (the public
+repo). PD1 enforces "tenant slug leaks never ship to public" — hardcoded
+`tomac`, `yoni`, account numbers, private deal aliases, etc. If the check
+returns FAIL on any *hard* hit (not allow-listed soft hit), STOP the push,
+do NOT commit, and present the violations to Yoni for fix-and-recommit.
+
+```bash
+python3 -c "
+import json, sys
+sys.path.insert(0, '/Users/ygontownik/cos-pipeline/tools/checks')
+from check_pd1 import run
+r = run()
+status = r.get('status', 'fail')
+print(f'PD1 gate: {status} · {r.get(\"summary\", \"\")}')
+if status == 'fail':
+    print()
+    print('  ▼ Hard hits (must fix before push):')
+    for v in r.get('details', {}).get('violations', []):
+        print(f'    {v.get(\"file\",\"?\")}:{v.get(\"line\",\"?\")}  {v.get(\"snippet\",\"\")[:80]}')
+    print()
+    print('PUSH HALTED. Fix the leaks, commit, then re-run /wrap.')
+    print('Override (rare, document in §4b): /wrap --skip-pd1-gate')
+    sys.exit(2)
+" || exit 2
+```
+
+The gate is hard-coded to FAIL only. WARN (allow-listed soft hits) does
+not block — those have already been reviewed and accepted into the
+allow-list. PASS is normal happy path.
+
+**Override:** `/wrap --skip-pd1-gate` skips the gate but logs the override
+in SESSION-HANDOFF §4b as an explicit outstanding item: "PD1 gate
+overridden — N hard hits shipped to public, must be cleaned up next
+session." Reserve this for genuine emergencies (e.g., a tenant-slug
+match that's actually a false positive that the allow-list hasn't
+caught yet — fix the allow-list, then re-run cleanly).
+
+### 9a. Commits + pushes
+
 For each of the 3 repos:
 
 ```bash
@@ -629,61 +670,114 @@ Then PRINT (don't write to file — emit to terminal) a **session summary**
 followed by the next-chat paste-block. The summary lets Yoni eyeball what
 happened in a single screen without opening the handoff doc.
 
-### 11a. Session summary (terminal-only, scannable)
+### 11a. Session summary (terminal-only, colloquial narrative + structured detail)
+
+Print a **plain-English recap** of what shipped this session, followed
+by a **detail block** for drilling in. The narrative should read like
+you're telling Yoni what happened over the shoulder — not like a CI
+report. Active voice, concrete numbers, three short paragraphs.
 
 Compose from data already collected in earlier steps. Print exactly this
-shape — keep alignment, keep the box rules, never wrap a row mid-line:
+shape:
 
 ```
 ═══════════════════════════════════════════════════════════════
-/wrap summary — <ISO timestamp>
+/wrap — session recap · <ISO timestamp>
 ═══════════════════════════════════════════════════════════════
 
-✦ Health       <p> pass · <w> warn · <f> fail   (Δ vs start: <±fails> fail · <±warns> warn)
-               <2-3 one-liners on notable check transitions or persistent fails>
+<Paragraph 1 — What you actually did.
+ Lead with the headline outcome in plain English. Name the deals or
+ systems touched. Use numbers (files moved, lines changed, time saved)
+ not jargon. Example: "Cleaned up the local file backlog and made the
+ daily cleanup permanent. The organizer moved 331 files out of the
+ top of ~/Downloads and ~/Desktop into deal folders + month-bucketed
+ _Unsorted; a follow-up pass after tightening the atime logic caught
+ 43 more stragglers. From here on the LaunchAgent fires every morning
+ at 6:15 — no manual cleanup needed.">
 
-✦ Drive        Edited in place (I11)              <N> docs
+<Paragraph 2 — Drive + git side.
+ What happened to shared state. Which Drive docs got edited-in-place,
+ whether anything new got created (should usually be 0), what shipped
+ to GitHub. Example: "On the Drive side, five system docs got
+ edited-in-place via Deal Sync Writer — no new docs, no orphan IDs,
+ all 147 registered fileIDs still resolve. Three commits across two
+ repos pushed cleanly: the LF3 refinement in cos-pipeline, the Office
+ lock-file pattern in cos-pipeline-config-tomac, and the new /wrap
+ summary in cos-pipeline.">
+
+<Paragraph 3 — Health delta + what's next.
+ System health before vs after, and the 1-3 most important outstanding
+ items. Example: "Health went from 3 fails to 1 — loose_local_files
+ flipped to PASS, the only remaining fail is past-due deal actions
+ which is operational, not a system issue. The biggest open item is
+ the align_infra alias regex bug — \b doesn't match at underscore
+ boundaries, so align_infra_*.md files are going to _Unsorted instead
+ of _Routed/align_infra/. ~5 min to fix.">
+
+──── Detail ────────────────────────────────────────────────────
+
+Health         <p> pass · <w> warn · <f> fail   (Δ since last wrap: <±fails> fail · <±warns> warn)
+               <one-liners on notable transitions: "loose_local_files: FAIL → PASS",
+                "past-due deal actions: 34 (unchanged)", etc.>
+
+Drive          Edited in place (I11)              <N> docs
                    • <doc name>   <fileId tail>
                    • <doc name>   <fileId tail>
-                   • ...
+                   ...
                Created                              <N> docs   <✓ EP1 clean if 0 / ⚠ review if >0>
                Orphans trashed                      <N> IDs
                Registered IDs resolving           <hit>/<total>  <✓ or ⚠>
 
-✦ Local files moved (file_organizer + router)
-               Downloads top: <before> → <after>   (<n> routed)
+Local files    Downloads top: <before> → <after>   (<n> routed)
                Desktop top:   <before> → <after>   (<n> routed)
                Documents:     <before> → <after>
 
-✦ Commits      <repo-name padded>  <sha>  <subject>
+Public/private (PD1) check
+               <PASS / WARN / FAIL>  <summary line from check_pd1.py>
+               <If FAIL: list the file:line hits — these were caught and force-fixed
+                BEFORE push by the STEP 9 gate, OR if --skip-pd1-gate was passed,
+                they shipped and are flagged in §4b outstanding>
+
+Commits        <repo-name padded>  <sha>  <subject>
                <repo-name padded>  <sha>  <subject>
                <repo-name padded>  <sha>  <subject>
 
-✦ Pushed       <all 3 repos ✓ / partial: list which / none>
+Pushed         <all 3 repos ✓ / partial: list which / none / blocked by PD1 gate>
 
-✦ Learnings    captured <N> new (<L00XX rule_code: title>, ...)
+Learnings      captured <N> new
+                   • <L00XX (CODE): title>
+                   • <L00YY (CODE): title>
 
-✦ Outstanding  <N> items rolled into SESSION-HANDOFF-<today>.md §4b:
+Outstanding    <N> items rolled into SESSION-HANDOFF-<today>.md §4b:
                1. <item>
                2. <item>
-               ...
+               ...   (truncate at 5; "+ N more in §4b" if longer)
 
-✦ Failures     <none / list each: step, what failed, where logged>
+Failures       <none / list each: step, what failed, where logged>
 
 ═══════════════════════════════════════════════════════════════
 Next-chat paste-block ↓↓↓
 ═══════════════════════════════════════════════════════════════
 ```
 
-**Data sources for each line:**
+**Narrative writing rules:**
+- Three short paragraphs maximum. If the session was tiny, one paragraph is fine.
+- Lead with the *outcome*, not the *activity*. ("Downloads top went from 280 to 5" beats "Ran the organizer apply.")
+- Name deals, systems, files concretely — never "we did some stuff with deals."
+- Active voice. Past tense. ("Fixed X" not "X was fixed" or "fixing X.")
+- No jargon the user didn't already say. If the rule is L0023, write "the raw-anthropic-import check," not "L0023 enforcement."
+- If something didn't happen that should have, say it in the third paragraph: "Skipped the DRIVE-ARCHITECTURE.md §7 extension because it's still pending design input."
+
+**Data sources for the detail block:**
 - Health: STEP 8 snapshot + the pre-/wrap baseline captured at STEP 1
 - Drive edited-in-place: list every fileId touched by sync_system_docs.py + sync_learnings.py + sync_setup_to_drive.py (these all use Deal Sync Writer setContent)
 - Drive created: should be 0 in normal /wrap. If >0, it means /new-deal ran and registered new IDs — show them
 - Orphans trashed: STEP 7b output (orphan_drive_cleanup.py result)
 - Registered IDs resolving: STEP 7 Drive integrity audit
 - Local files moved: tail of `~/dashboards/logs/local-organizer.log` since last wrap + `~/dashboards/logs/local-file-router.log` since last wrap
+- PD1 check: STEP 9's pre-push PD1 gate result (see STEP 9 — PD1 must PASS or WARN to allow push; FAIL halts unless --skip-pd1-gate was passed)
 - Commits: `git -C <repo> log <last-wrap-sha>..HEAD --oneline` for each of the 3 repos
-- Pushed: STEP 10 result
+- Pushed: STEP 9 result
 - Learnings: STEP 5d output (count + ids of approved candidates)
 - Outstanding: SESSION-HANDOFF §4b numbered list (truncate at 5 items, link to §4b for the rest)
 - Failures: SYNC_FAILURES from STEP 6 + CADENCE_STALENESS from STEP 8 + any STEP-level errors logged to wrap.log
