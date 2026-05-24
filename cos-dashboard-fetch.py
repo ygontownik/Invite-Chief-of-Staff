@@ -2908,6 +2908,34 @@ def main(dry_run: bool = False):
         for k in ("prose", "worthNoticing", "clusters", "tier2GeneratedAt"):
             if k in _prev_synth:
                 _synth[k] = _prev_synth[k]
+
+        # --- Tier 1.5: gap detection (Phase I) ----------------------------
+        # Cross-references per-deal entity_mentions.json (Phase J output) +
+        # actions.md + log.json + calendar against curated Follow-ups doc +
+        # dashboard surfaces. Entities present in source but absent in
+        # curated → gaps[]. No LLM. Defensive — any failure leaves gaps[]
+        # empty rather than breaking the cache refresh.
+        try:
+            from lib.gap_detector import run as _detect_gaps
+            import yaml as _yaml
+            _weights_path = _ROOT / "config" / "synthesis-weights.yaml"
+            _weights = (_yaml.safe_load(_weights_path.read_text())
+                        if _weights_path.exists() else {}) or {}
+            _followups_text = live_data.get("followUpsRaw", "") or ""
+            _calendar = live_data.get("upcomingCalls", []) or []
+            _deal_config = (_deal_sys.get("deals") or [])
+            _gaps = _detect_gaps(
+                dashboard_data=live_data,
+                followups_text=_followups_text,
+                calendar_events=_calendar,
+                deal_config=_deal_config,
+                weights=_weights,
+            )
+            _synth["gaps"] = _gaps
+        except Exception as _ge:
+            print(f"gap_detector warning: {_ge}", file=sys.stderr)
+            _synth["gaps"] = _synth.get("gaps", [])
+
         live_data["prioritySynthesis"] = _synth
     except Exception as e:
         print(f"prioritize warning: {e}", file=sys.stderr)
