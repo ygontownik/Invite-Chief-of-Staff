@@ -2908,8 +2908,17 @@ def main(dry_run: bool = False):
         _deal_sys = json.loads(_deal_sys_path.read_text()) if _deal_sys_path.exists() else {}
         _synth = synthesize_tier1(live_data, _deal_sys)
         # Preserve any Tier 2 prose already in state (only Tier 1 refreshes here).
+        # Must include both legacy aliases (prose/worthNoticing/clusters) AND the
+        # surface-specific keys added in Phase H split (prose_hq/prose_personal/etc.)
+        # — omitting the new keys was causing dashboard-fetch to wipe them on warmup.
         _prev_synth = (state.get("prioritySynthesis") or {})
-        for k in ("prose", "worthNoticing", "clusters", "tier2GeneratedAt"):
+        _TIER2_PRESERVE = (
+            "prose", "worthNoticing", "clusters", "tier2GeneratedAt",
+            "prose_hq", "worthNoticing_hq", "clusters_hq",
+            "prose_personal", "worthNoticing_personal", "clusters_personal",
+            "ruleApplications",
+        )
+        for k in _TIER2_PRESERVE:
             if k in _prev_synth:
                 _synth[k] = _prev_synth[k]
 
