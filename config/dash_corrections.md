@@ -2786,6 +2786,48 @@ rendered output of refresh.py. Editing it has no persistence effect;
 next refresh overwrites from `.template.html`. See related TOPIC in this
 file: "TEMPLATE FILE PRECEDENCE."
 
+## TOPIC — ARTIFACT INGESTION (PHASE J)
+
+### 2026-05-24 — Ingestion is additive, never destructive
+
+`cos_artifact_ingest.py` writes to three surfaces: per-deal `log.json`
+(via `intel_capture.py` routing), `data/staging/proposed-followups.jsonl`,
+and `data/deals/<slug>/entity_mentions.json`. **It must never overwrite
+or delete from these surfaces.** Every write is append-or-merge:
+
+- `log.json` is the historical ledger — append-only by `intel_capture`.
+- `proposed-followups.jsonl` is staged for review — applier consumes
+  rows and rewrites the file with the unconsumed remainder; ingestion
+  itself only appends.
+- `entity_mentions.json` merges by entity name — bumps `last_seen`,
+  increments `total_mentions`, appends to `sources[]` only if the
+  artifact_id is new.
+
+The dedup discipline lives in `artifacts.json` (per-deal, keyed by
+`{filename}:{sha256[:16]}`). Re-running ingestion is a no-op for
+already-processed artifacts. The applier separately checks the Drive
+Follow-ups doc for an existing row matching `who + what[:40]` before
+writing — double-belt idempotency.
+
+### 2026-05-24 — Auto-apply threshold starts conservative (0.95), drops with telemetry
+
+`cos_followup_applier.py` ships with `_DEFAULT_THRESHOLD = 0.95`. Almost
+every staged proposal sits in `proposed-followups.jsonl` waiting for
+human review (or Phase I gap-section confirmation when shipped). Drop
+to 0.85 after one week of telemetry showing high-confidence rows
+correct. Never auto-apply below 0.70.
+
+### 2026-05-24 — Extraction failure never blocks downstream
+
+Each artifact extraction is one Claude Max call. Quota / parse / network
+failure → log + continue + leave artifact unmarked in `artifacts.json`
+(next LaunchAgent fire retries). Downstream readers
+(`entity_mentions.json`, `proposed-followups.jsonl`) handle missing/
+malformed files defensively. A Phase J outage must never propagate to
+a black dashboard.
+
+---
+
 ## TOPIC — TIER 2 SYNTHESIS DEPENDS ON TIER 1 CALIBRATION
 
 ### 2026-05-21 — Don't tune the LLM prompt before tuning the scorer

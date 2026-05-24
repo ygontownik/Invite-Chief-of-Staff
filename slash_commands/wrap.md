@@ -398,6 +398,25 @@ chat_capture 4h, artifact_pull 4h, skill_telemetry 30min). /wrap doesn't
 re-trigger those — instead surfaces "X has not run in N hours" warnings
 if any have stalled (see Step 8 LaunchAgent + cadence check).
 
+### 6d.5. Ingest claude.ai project artifacts (Phase J, Claude Max, free)
+
+Before refreshing the synthesis prose, ingest any new claude.ai project
+artifacts that landed in `~/Downloads/_Routed/<slug>/` since the last
+/wrap. Ensures both Tier 2 prose (6e) and recap Paragraph 3 read
+against just-extracted intel.
+
+```bash
+python3 ~/cos-pipeline/cos_artifact_ingest.py 2>&1 | \
+    tee -a ~/dashboards/logs/artifact-ingest.log | tail -10
+python3 ~/cos-pipeline/cos_followup_applier.py 2>&1 | \
+    tee -a ~/dashboards/logs/artifact-ingest.log | tail -10
+```
+
+Claude Sonnet 4.6 via `_claude_dispatch` (Claude Max per CC1). Per-
+artifact dedup via `{filename}:{sha256[:16]}` in
+`data/deals/<slug>/artifacts.json`. Design:
+`~/dashboards/docs/DESIGN-phase-J-artifact-ingest.md`.
+
 ### 6e. Refresh Priority Synthesis Tier 2 prose (Claude Max, free)
 
 The dashboard Priority Synthesis pane has a Tier 2 prose layer that
