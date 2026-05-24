@@ -220,3 +220,27 @@ Routing details: ~/dashboards/logs/intel_capture_errors.log
   `~/dashboards/logs/intel_capture_errors.log`. Continue.
 - Per-chat scrape times out → mark chat NOT captured (will retry
   next run). Continue to next.
+
+---
+
+## POST-HOOK — Phase J artifact ingestion (Claude Max, free)
+
+After the chat scrape completes, run Phase J ingestion so any
+artifacts that `artifact-pull` downloaded as part of the chat capture
+get extracted into structured DEAL-INTEL + proposed-followups +
+entity_mentions BEFORE the next /wrap or synthesis tick reads them.
+
+```bash
+# 1. Walk ~/Downloads/_Routed/<slug>/*.md, dedup-aware per artifact.
+python3 ~/cos-pipeline/cos_artifact_ingest.py
+
+# 2. Auto-apply ≥0.95-confidence staged followups to Drive Follow-ups.
+python3 ~/cos-pipeline/cos_followup_applier.py
+```
+
+100% Claude Max via `_claude_dispatch` per CC1. Per-artifact dedup
+via `data/deals/<slug>/artifacts.json`. Graceful fallback: any
+failure exits 0; the 30-min LaunchAgent
+(`com.cospipeline.tomac.artifact-ingest`) catches up next tick.
+
+Design: `~/dashboards/docs/DESIGN-phase-J-artifact-ingest.md`.

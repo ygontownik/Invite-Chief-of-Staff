@@ -402,20 +402,35 @@ if any have stalled (see Step 8 LaunchAgent + cadence check).
 
 Before refreshing the synthesis prose, ingest any new claude.ai project
 artifacts that landed in `~/Downloads/_Routed/<slug>/` since the last
-/wrap. Ensures both Tier 2 prose (6e) and recap Paragraph 3 read
-against just-extracted intel.
+/wrap. This ensures both the Tier 2 prose (STEP 6e) and the recap's
+Paragraph 3 read against just-extracted intel — not stale 12h+ artifact
+files invisible to every other pipeline.
 
 ```bash
+# Walk _Routed/<slug>/*.md, extract via _claude_dispatch (Claude Max),
+# route intel via intel_capture.py, stage followups, write entity_mentions.
 python3 ~/cos-pipeline/cos_artifact_ingest.py 2>&1 | \
     tee -a ~/dashboards/logs/artifact-ingest.log | tail -10
+
+# Apply high-confidence (≥0.95) staged followups to Drive Follow-ups doc.
+# Idempotent: skips dups against existing rows. Lower-confidence items
+# stay in proposed-followups.jsonl for Phase I gap-section review.
 python3 ~/cos-pipeline/cos_followup_applier.py 2>&1 | \
     tee -a ~/dashboards/logs/artifact-ingest.log | tail -10
 ```
 
-Claude Sonnet 4.6 via `_claude_dispatch` (Claude Max per CC1). Per-
-artifact dedup via `{filename}:{sha256[:16]}` in
-`data/deals/<slug>/artifacts.json`. Design:
-`~/dashboards/docs/DESIGN-phase-J-artifact-ingest.md`.
+One Claude Sonnet 4.6 call per new artifact via `_claude_dispatch`
+(Claude Max — never raw Anthropic SDK per CC1). Typical /wrap fires
+with 0–2 new artifacts so this adds ~0–16s. Each artifact dedup'd by
+`{filename}:{sha256[:16]}` in `data/deals/<slug>/artifacts.json` so
+re-running is a no-op.
+
+Graceful fallback: quota or dispatch errors are caught in the script
+and exit 0; the LaunchAgent's next 30-min fire retries. Add a §4b
+entry ONLY if the script crashed or staged a follow-up that surfaced
+wrong against `proposed-followups.jsonl`.
+
+Design: `~/dashboards/docs/DESIGN-phase-J-artifact-ingest.md`.
 
 ### 6e. Refresh Priority Synthesis Tier 2 prose (Claude Max, free)
 
