@@ -394,7 +394,7 @@ def build_system_prompt(ctx: dict) -> str:
     return "\n".join(parts)
 
 
-# ── Anthropic call via cached_client ─────────────────────────────────────────
+# ── Anthropic call via _claude_dispatch (CC1 / L0023) ────────────────────────
 
 def _extract_json(text: str) -> str:
     text = text.strip()
@@ -410,52 +410,39 @@ def _extract_json(text: str) -> str:
 
 
 def call_claude(system_prompt: str, user_payload: str, ctx: dict = None) -> dict:
-    """Single Sonnet call — returns parsed JSON output."""
-    if ctx and ctx.get("auth_mode") == "subscription":
-        import _model_router as mr  # noqa: PLC0415
-        slug = (
+    """Single Sonnet call — returns parsed JSON output.
+
+    Routes through `_claude_dispatch` per Rule CC1 / L0023. The dispatcher
+    reads `auth_mode` from firm_context.yaml (subscription by default) and
+    falls back to the raw Anthropic SDK only when api mode is explicitly
+    configured AND a key is available. A missing or empty `ctx` no longer
+    silently uses the raw API path — that was the regression that caused
+    the morning capture runs to hit api.anthropic.com and die on quota
+    (HTTP 400, "usage limits exceeded", 2026-05-18 through 2026-06-01).
+
+    `ctx` is retained for backwards compatibility (some callers may pass
+    it) but `_claude_dispatch.call()` handles tenant resolution itself.
+    """
+    import _claude_dispatch  # noqa: PLC0415
+
+    tenant_slug = None
+    if ctx:
+        tenant_slug = (
             ctx.get("tenant_slug")
             or (ctx.get("firm", {}) or {}).get("short_name", "").lower().replace(" ", "-")
-            or os.environ.get("COS_TENANT_SLUG", "default")
+            or None
         )
-        result = mr.call_claude(
-            task_type="cos-capture-pipeline",
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_payload}],
-            mode="subscription",
-            tenant=slug,
-            extract_json=True,
-        )
-        return json.loads(_extract_json(result["text"]))
 
-    if not ANTHROPIC_API_KEY:
-        raise RuntimeError("ANTHROPIC_API_KEY not set")
-    sys.path.insert(0, str(_HERE / "_subscription"))
-    from cached_client import complete  # noqa: PLC0415
-    result = complete(
-        user_query="",
-        source_content=user_payload,
-        tenant_bundle="",
-        routine_prompt=system_prompt,   # third cache breakpoint: stable ruleset+schema
+    text = _claude_dispatch.call(
+        task_type="cos-capture-pipeline",
         model="claude-sonnet-4-6",
         max_tokens=MAX_TOKENS,
+        system=system_prompt,
+        messages=[{"role": "user", "content": user_payload}],
+        tenant=tenant_slug,
+        api_timeout=120,
     )
-    usage = result["usage"]
-    log_usage("cos_capture_pipeline", "claude-sonnet-4-6", {
-        "usage": {
-            "input_tokens":                getattr(usage, "input_tokens", 0),
-            "output_tokens":               getattr(usage, "output_tokens", 0),
-            "cache_read_input_tokens":     getattr(usage, "cache_read_input_tokens", 0),
-            "cache_creation_input_tokens": getattr(usage, "cache_creation_input_tokens", 0),
-        }
-    })
-    text = result["text"].strip()
-    # Strip optional code-fence
-    if text.startswith("```"):
-        text = text.split("\n", 1)[1] if "\n" in text else text
-        if text.endswith("```"):
-            text = text.rsplit("```", 1)[0]
-    return json.loads(text)
+    return json.loads(_extract_json(text))
 
 
 # ── Drive / Calendar fetch helpers ────────────────────────────────────────────

@@ -164,23 +164,22 @@ def render_prompt(template: str, ctx: dict, source_block: str) -> str:
 
 
 def call_claude(prompt: str) -> str:
+    """Routes through _claude_dispatch (L0023 / CC1) — honors subscription mode
+    so this spike runs free under Claude Max instead of consuming raw API budget."""
+    import sys as _sys
+    _sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
     try:
-        from anthropic import Anthropic
-    except ImportError:
-        print("ERROR: anthropic SDK not installed. pip install anthropic", file=sys.stderr)
+        from _claude_dispatch import call as _claude_call
+    except ImportError as e:
+        print(f"ERROR: _claude_dispatch not importable: {e}", file=sys.stderr)
         sys.exit(2)
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        print("ERROR: ANTHROPIC_API_KEY not set in env", file=sys.stderr)
-        sys.exit(2)
-    client = Anthropic(api_key=api_key)
-    msg = client.messages.create(
+    return _claude_call(
+        task_type="briefing-morning-spike",
         model=MODEL,
         max_tokens=MAX_TOKENS,
         messages=[{"role": "user", "content": prompt}],
-    )
-    parts = [b.text for b in msg.content if getattr(b, "type", "") == "text"]
-    return "\n".join(parts).strip()
+        api_timeout=180,
+    ).strip()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
