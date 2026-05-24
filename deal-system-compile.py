@@ -993,9 +993,14 @@ def _compute_deal_logs() -> int:
             if backfilled:
                 print(f'  V1 deal-log: backfilled source_url on {backfilled} existing entries for {did}', flush=True)
 
-        # Surface recent log on the deal record (top 5 by date desc)
+        # Surface recent log on the deal record (top 5 by date desc).
+        # HISTORICAL guard: entries flagged historical:true (older than 7-day
+        # cutoff at extraction time) are excluded from the deal pipeline's
+        # recent_log surface — they remain in log.json for archival but
+        # don't render as live activity on the dashboard.
+        _live_entries = [e for e in entries if not e.get('historical')]
         d['recent_log'] = sorted(
-            entries, key=lambda e: e.get('date',''), reverse=True
+            _live_entries, key=lambda e: e.get('date',''), reverse=True
         )[:5]
 
     deal_doc['deals'] = [d for d in (deal_doc.get('deals') or []) if isinstance(d, dict)]

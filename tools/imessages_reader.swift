@@ -185,17 +185,23 @@ if rc != SQLITE_OK {
 defer { sqlite3_close(db) }
 
 // ── prepare query ────────────────────────────────────────────────────────────
+// Drop the is_from_me=0 filter so we emit BOTH inbound (counterparty intel)
+// and outbound (your replies — used by Python for thread-anchor inference and
+// regex-based my_action extraction). Each row carries is_from_me so callers
+// can choose how to treat each direction.
 let sql = """
     SELECT
       m.ROWID    AS rowid,
       m.date     AS cocoa_date,
       m.text     AS text,
       m.service  AS service,
-      h.id       AS handle_id
+      h.id       AS handle_id,
+      cmj.chat_id AS chat_id,
+      m.is_from_me AS is_from_me
     FROM message m
     LEFT JOIN handle h ON m.handle_id = h.ROWID
-    WHERE m.is_from_me = 0
-      AND m.ROWID > ?
+    LEFT JOIN chat_message_join cmj ON cmj.message_id = m.ROWID
+    WHERE m.ROWID > ?
       AND m.text IS NOT NULL
       AND length(m.text) > 0
     ORDER BY m.ROWID ASC
@@ -231,12 +237,17 @@ while sqlite3_step(stmt) == SQLITE_ROW {
     let handleCStr = sqlite3_column_text(stmt, 4)
     let handle = handleCStr.map { String(cString: $0) } ?? ""
 
+    let chatId = sqlite3_column_int64(stmt, 5)
+    let isFromMe = sqlite3_column_int(stmt, 6)
+
     var obj: [String: Any] = [
         "rowid": rowid,
         "cocoa_date": cocoaDate,
         "text": text,
         "service": service,
         "handle_id": handle,
+        "chat_id": chatId,
+        "is_from_me": Int(isFromMe),
     ]
     let key = normalizeHandle(handle)
     if !key.isEmpty, let identity = identityMap[key] {

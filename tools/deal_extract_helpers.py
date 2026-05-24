@@ -417,6 +417,9 @@ def cmd_list_deals(args):
     for deal_id, entry in deal_docs.items():
         if filt and deal_id not in filt:
             continue
+        # Skip non-deal entries (e.g. project_instructions) that lack required deal fields
+        if "drive_folder_id" not in entry or "status" not in entry or "master_brief" not in entry:
+            continue
         out.append({
             "deal_id": deal_id,
             "drive_folder_id": entry["drive_folder_id"],

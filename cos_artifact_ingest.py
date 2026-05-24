@@ -174,9 +174,77 @@ def _strip_json_fences(text: str) -> str:
     return t.strip()
 
 
+def _truncation_close(text: str) -> dict | None:
+    """Close unclosed strings/brackets/braces caused by LLM output truncation."""
+    stack: list[str] = []
+    in_str = False
+    escape_next = False
+    for ch in text:
+        if escape_next:
+            escape_next = False
+            continue
+        if ch == "\\" and in_str:
+            escape_next = True
+            continue
+        if ch == '"':
+            in_str = not in_str
+            continue
+        if in_str:
+            continue
+        if ch == "{":
+            stack.append("}")
+        elif ch == "[":
+            stack.append("]")
+        elif ch in "}]" and stack and stack[-1] == ch:
+            stack.pop()
+    tail = ('"' if in_str else "") + "".join(reversed(stack))
+    repaired = re.sub(r",\s*$", "", text.rstrip()) + tail
+    repaired = re.sub(r",\s*(?=[\}\]])", "", repaired)
+    try:
+        return json.loads(repaired, strict=False)
+    except json.JSONDecodeError:
+        return None
+
+
+def _repair_json(text: str) -> dict | None:
+    """Multi-stage local JSON repair for malformed LLM output. Returns dict or None."""
+    # Stage 1: trailing commas before } or ]
+    c1 = re.sub(r",\s*(?=[\}\]])", "", text)
+    try:
+        return json.loads(c1, strict=False)
+    except json.JSONDecodeError:
+        pass
+
+    # Stage 2: Python literal tokens → JSON equivalents
+    c2 = c1.replace(": None", ": null").replace(": True", ": true").replace(": False", ": false")
+    try:
+        return json.loads(c2, strict=False)
+    except json.JSONDecodeError:
+        pass
+
+    # Stage 3: extract outermost { … } block (strips stray prose)
+    s = text.find("{")
+    e = text.rfind("}")
+    if s != -1 and e > s:
+        snippet = re.sub(r",\s*(?=[\}\]])", "", text[s : e + 1])
+        try:
+            return json.loads(snippet, strict=False)
+        except json.JSONDecodeError:
+            pass
+
+    # Stage 4: truncation repair — close all unclosed nesting
+    return _truncation_close(text)
+
+
 def _call_claude(system_prompt: str, artifact_text: str) -> dict:
-    """Single Sonnet call via _claude_dispatch. Returns parsed JSON."""
+    """Single Sonnet call via _claude_dispatch. Returns parsed JSON.
+
+    Falls back through four local repair stages then a single LLM retry before
+    raising JSONDecodeError. Proven failure mode: 40KB+ artifacts where Sonnet
+    emits unescaped quotes or trailing commas inside multiline DEAL-INTEL strings.
+    """
     import _claude_dispatch  # noqa: PLC0415
+
     raw = _claude_dispatch.call(
         task_type="cos_artifact_ingest",
         model=_MODEL,
@@ -186,7 +254,53 @@ def _call_claude(system_prompt: str, artifact_text: str) -> dict:
         api_timeout=180,
     )
     cleaned = _strip_json_fences(raw)
-    return json.loads(cleaned, strict=False)
+
+    # Fast path — clean output (most artifacts)
+    try:
+        return json.loads(cleaned, strict=False)
+    except json.JSONDecodeError:
+        pass
+
+    # Local repair stages — no extra LLM cost
+    repaired = _repair_json(cleaned)
+    if repaired is not None:
+        print("  [artifact_ingest] JSON repaired locally (trailing commas / truncation)",
+              file=sys.stderr)
+        return repaired
+
+    # LLM retry — pass malformed response back, ask for clean re-emit
+    print("  [artifact_ingest] JSON parse failed — retrying with explicit JSON prompt",
+          file=sys.stderr)
+    raw2 = _claude_dispatch.call(
+        task_type="cos_artifact_ingest",
+        model=_MODEL,
+        max_tokens=_MAX_TOKENS,
+        system=system_prompt,
+        messages=[
+            {"role": "user", "content": artifact_text},
+            {"role": "assistant", "content": raw},
+            {
+                "role": "user",
+                "content": (
+                    "Your previous response was not valid JSON. "
+                    "Reemit ONLY the JSON object — no prose, no code fences. "
+                    "Escape any literal double-quote characters inside string values as \\\"."
+                ),
+            },
+        ],
+        api_timeout=180,
+    )
+    cleaned2 = _strip_json_fences(raw2)
+    try:
+        return json.loads(cleaned2, strict=False)
+    except json.JSONDecodeError:
+        pass
+    repaired2 = _repair_json(cleaned2)
+    if repaired2 is not None:
+        print("  [artifact_ingest] JSON repaired after LLM retry", file=sys.stderr)
+        return repaired2
+
+    raise json.JSONDecodeError("Extraction failed after repair + retry", cleaned, 0)
 
 
 def _route_intel_blocks(blocks: list[str]) -> tuple[int, int]:

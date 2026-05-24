@@ -478,7 +478,11 @@ def extract_all(transcript_text, title, category, attendees=None):
         api_timeout=90,
     )
     raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw.strip(), flags=re.MULTILINE).strip()
-    return json.loads(raw)
+    # Strip non-whitespace C0 controls; strict=False tolerates unescaped
+    # \t \n \r inside string values (Claude occasionally emits multi-line
+    # context strings without escaping — without this, the whole hook aborts).
+    raw = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", raw)
+    return json.loads(raw, strict=False)
 
 
 # ── Warmup ────────────────────────────────────────────────────────────────────
