@@ -338,7 +338,8 @@ def _s(v, default=""):
 
 def block_to_log_entry(block_data, surface_label):
     """Convert a parsed DEAL-INTEL block into a log.json entry."""
-    deal_id = _s(block_data.get("deal")).lower()
+    # Accept both 'deal:' (canonical) and 'deal_id:' (artifact-ingest schema alias).
+    deal_id = (_s(block_data.get("deal")) or _s(block_data.get("deal_id"))).lower()
     title = _s(block_data.get("title"), "deal-intel block")
     date = _s(block_data.get("date"), datetime.now().strftime("%Y-%m-%d"))
     summary = _s(block_data.get("summary"))
@@ -346,16 +347,27 @@ def block_to_log_entry(block_data, surface_label):
     counterparties = block_data.get("counterparties", []) or []
     actions = block_data.get("actions", []) or []
 
-    # what — the human-readable rollup of the block content
+    # what — the human-readable rollup of the block content.
+    # Phase J artifact blocks use 'what:' and 'who:' directly (compact schema);
+    # classic DEAL-INTEL blocks use summary/facts/counterparties/actions.
+    artifact_what = _s(block_data.get("what"))
+    artifact_who  = _s(block_data.get("who"))
     what_lines = []
-    if summary:
-        what_lines.append(summary)
-    if facts:
-        what_lines.append("Facts: " + "; ".join(str(f) for f in facts))
-    if counterparties:
-        what_lines.append("Counterparties: " + "; ".join(str(c) for c in counterparties))
-    if actions:
-        what_lines.append("Actions: " + "; ".join(str(a) for a in actions))
+    if artifact_what:
+        # Compact artifact schema: 'who: Firm — Person | what: one-sentence fact'
+        if artifact_who:
+            what_lines.append(f"{artifact_who} | {artifact_what}")
+        else:
+            what_lines.append(artifact_what)
+    else:
+        if summary:
+            what_lines.append(summary)
+        if facts:
+            what_lines.append("Facts: " + "; ".join(str(f) for f in facts))
+        if counterparties:
+            what_lines.append("Counterparties: " + "; ".join(str(c) for c in counterparties))
+        if actions:
+            what_lines.append("Actions: " + "; ".join(str(a) for a in actions))
     what = " | ".join(what_lines) or title
 
     # Stable id from content hash so re-scanning is idempotent.

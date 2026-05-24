@@ -2815,6 +2815,10 @@ def main(dry_run: bool = False):
         # rewritten to absolute YYYY-MM-DD against the row's addedDate.
         # Same coverage as awaitingExternal — same audit catches both.
         'followUps':        _materialize_next_week(followups),
+        # Raw text of Drive Follow-ups doc — used by gap_detector (Phase I) to
+        # cross-reference which entities are already covered. Empty string if
+        # doc fetch failed; gap_detector degrades gracefully on empty input.
+        'followUpsRaw':     followups_text or "",
         'deals':            deals,
         # Back-compat duplicate (read-only mirror) — remove next release.
         'tomac':            deals,  # noqa: tenant-leak — backward-compat key, remove next release

@@ -728,6 +728,23 @@ def main() -> int:
         trigger_warmup()
 
     log.info(f"Summary: {result.get('log_summary', '(no summary)')}")
+
+    # FU1/FU2/FU3 staleness sweep — runs after every capture pass.
+    # Marks stale one-time actions, deal-stage-superseded rows, and
+    # same-action duplicates as [RESOLVED] in the Drive Follow-ups doc.
+    # Non-fatal: any failure logs a warning and continues.
+    if not args.dry_run:
+        try:
+            import importlib.util as _ilu
+            _sweep_path = Path(__file__).parent / "cos_followup_sweep.py"
+            _spec = _ilu.spec_from_file_location("cos_followup_sweep", _sweep_path)
+            _sweep_mod = _ilu.module_from_spec(_spec)
+            _spec.loader.exec_module(_sweep_mod)
+            _sweep_stats = _sweep_mod.run_sweep(dry_run=False, verbose=False)
+            log.info(f"  followup_sweep: {_sweep_stats}")
+        except Exception as _sw_err:
+            log.warning(f"  followup_sweep non-fatal error: {_sw_err}")
+
     log.info("═══ cos_capture_pipeline complete ═══")
     return 0
 
