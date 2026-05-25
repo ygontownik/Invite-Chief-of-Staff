@@ -724,18 +724,52 @@ def _compute_deal_logs() -> int:
         pass
 
     def _deal_tokens(d: dict) -> list:
-        """Return all lowercase token substrings to match an item to this deal."""
+        """Return all lowercase token substrings to match an item to this deal.
+
+        Canonical matching uses exact-key logic — a deal only inherits a
+        canonical's needles if the deal's id OR name exactly matches the
+        canonical key (with hyphen/space normalization). Substring needle
+        matching against the deal's name is intentionally rejected: it caused
+        a cross-contamination bug where Deal A's canonical needle list
+        contained Deal B's name, so Deal B inherited Deal A's full needle set,
+        and Deal A's tagged log entries were precision-matched into Deal B's
+        log.json. Fix committed 2026-05-25 (Bucket C audit).
+        """
         tokens = []
         for f in ('name', 'ticker', 'id'):
             v = (d.get(f) or '').lower()
             if v: tokens.append(v)
-        # Find canonical match → use all needles
+        base_count = len(tokens)
+        # Find canonical match → use all needles.
+        # EXACT match only: the canonical key must equal the deal's id or
+        # (normalized) name. A needle that happens to substring-match the
+        # deal name is NOT sufficient — that's the old bug.
         n = (d.get('name') or '').lower()
         nid = (d.get('id') or '').lower()
+        # Normalize: treat hyphens and underscores as spaces for comparison
+        # (e.g. 'pacific-fleet' == 'pacific fleet').
+        def _norm(s: str) -> str:
+            return s.replace('-', ' ').replace('_', ' ').strip()
+        n_norm = _norm(n)
+        nid_norm = _norm(nid)
+        canonical_matched = False
         for canon_low, needles in canonical_to_needles.items():
-            if canon_low in n or canon_low == nid or any(nd and nd in n for nd in needles):
+            canon_norm = _norm(canon_low)
+            # Accept: canon key equals deal id (exact or normalized),
+            # OR canon key equals deal name (exact or normalized).
+            if (canon_low == nid or canon_norm == nid_norm
+                    or canon_low == n or canon_norm == n_norm):
                 tokens.extend(needles)
+                canonical_matched = True
                 break
+        # Diagnostics: one line per deal showing token composition.
+        did_label = (d.get('id') or d.get('name') or '?')
+        needle_count = len(tokens) - base_count if canonical_matched else 0
+        print(
+            f'  _deal_tokens [{did_label}]: {base_count} base + {needle_count} alias needles'
+            f' (canonical_match={canonical_matched})',
+            flush=True,
+        )
         # Filter out tokens that are too short or too generic
         return [t for t in set(tokens) if t and len(t) >= 3]
 
