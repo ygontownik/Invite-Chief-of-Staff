@@ -1577,6 +1577,131 @@ function buildSynthesisPane(isPersonal) {
     } catch (e) {}
   }
 
+  // ── Jane's strategic reads pane (HQ only) ────────────────────────────────
+  let janeStrategicHTML = '';
+  if (!isPersonal) {
+    const strategicActions = (ps.janeStrategicActions || []);
+    const crossDealPatterns = (ps.janeCrossDealPatterns || []);
+    const strategicAt = ps.janeStrategicGeneratedAt;
+    const staleBriefs = ps.janeStrategicStaleBriefs || [];
+
+    const actionable = strategicActions.filter(s => s.verdict === 'elevate');
+    const noSignalCount = strategicActions.filter(s => s.verdict === 'no_signal').length;
+
+    const cardsHTML = actionable.map(s => `
+      <div class="jane-strategic-card" data-strategic-id="${esc(s.id)}" style="border-left:3px solid #7c3aed;padding:12px;margin-bottom:10px;background:#faf7ff;border-radius:4px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#7c3aed">${esc(s.deal_or_path)}</span>
+          <span style="font-size:10px;color:#6b7280">${esc(s.north_star_weighting_applied || '')}</span>
+        </div>
+        <div style="margin-top:6px;font-size:12px;color:#6b7280">
+          <strong>Curated:</strong> ${esc(s.current_curated_action || '—')}
+        </div>
+        <div style="margin-top:4px;font-size:13px;color:#1f2937">
+          <strong>Jane:</strong> ${esc(s.jane_strategic_action)}
+        </div>
+        <div style="margin-top:6px;font-size:11px;color:#6b7280;font-style:italic">${esc(s.rationale)}</div>
+        <div style="margin-top:4px;font-size:10px;color:#94a3b8">cites: ${(s.evidence || []).map(esc).join(' · ')}</div>
+        <div style="margin-top:8px;display:flex;gap:8px">
+          <button class="jane-strategic-promote" data-id="${esc(s.id)}" style="padding:4px 10px;font-size:11px;border:1px solid #7c3aed;color:#7c3aed;background:white;border-radius:3px;cursor:pointer">↑ promote to curated</button>
+          <button class="jane-strategic-dismiss" data-id="${esc(s.id)}" style="padding:4px 10px;font-size:11px;border:1px solid #6b7280;color:#6b7280;background:white;border-radius:3px;cursor:pointer">✗ dismiss</button>
+        </div>
+      </div>
+    `).join('');
+
+    const matchedCount = strategicActions.filter(s => s.verdict === 'matches_curated').length;
+    const matchedLine = matchedCount ? `<div style="margin-top:8px;font-size:10px;color:#94a3b8">${matchedCount} curated action${matchedCount === 1 ? '' : 's'} matched Jane's read — no change needed.</div>` : '';
+    const noSignalLine = noSignalCount ? `<div style="margin-top:4px;font-size:10px;color:#94a3b8">Filtered ${noSignalCount} as no_signal.</div>` : '';
+    const staleLine = staleBriefs.length ? `<div style="margin-top:6px;font-size:10px;color:#d97706">⚠ ${staleBriefs.length} deal brief(s) were stale — Jane fallback-synthesized: ${staleBriefs.map(esc).join(', ')}</div>` : '';
+
+    const patternsHTML = crossDealPatterns.length ? `
+      <div style="margin-top:12px;padding:10px;background:#f5f3ff;border-radius:4px;border-left:3px solid #a78bfa">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:#7c3aed;margin-bottom:4px">Cross-deal patterns</div>
+        ${crossDealPatterns.map(p => `
+          <div style="margin-top:6px;font-size:12px;color:#1f2937">
+            • <strong>${(p.actors || []).map(esc).join(', ')}</strong> (${(p.deals || []).map(esc).join(' + ')}): ${esc(p.implication)}
+          </div>
+        `).join('')}
+      </div>
+    ` : '';
+
+    let strTs = '';
+    if (strategicAt) {
+      try {
+        const ts = new Date(strategicAt);
+        const mins = Math.round((Date.now() - ts.getTime()) / 60000);
+        const ago = mins < 60 ? `${mins}m ago` : `${Math.round(mins/60)}h ago`;
+        strTs = `<span style="font-size:10px;color:#94a3b8">updated ${ago}</span>`;
+      } catch(e) {}
+    }
+
+    if (actionable.length || crossDealPatterns.length) {
+      janeStrategicHTML = `
+        <div class="jane-strategic-block" style="margin-top:16px;padding-top:12px;border-top:2px solid #7c3aed">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#7c3aed">Jane's strategic reads — ${actionable.length} elevation${actionable.length === 1 ? '' : 's'}</span>
+            ${strTs}
+          </div>
+          ${cardsHTML}
+          ${patternsHTML}
+          ${matchedLine}
+          ${noSignalLine}
+          ${staleLine}
+        </div>
+      `;
+    }
+  }
+
+  // ── Jane suggests pane (HQ only — hygiene cleanups) ───────────────────────
+  let janeSuggestsHTML = '';
+  if (!isPersonal) {
+    const janeSuggestions = (ps.janeSuggestions || []);
+    const janeCritiqueAt = ps.janeCritiqueGeneratedAt;
+
+    if (janeSuggestions.length) {
+      const cards = janeSuggestions.map(s => {
+        const kindLabel = (s.kind || '').replace(/_/g, ' ');
+        const sevColor = s.severity >= 70 ? '#dc2626'
+                       : s.severity >= 50 ? '#d97706'
+                       : '#64748b';
+        return `
+          <div class="jane-card" data-jane-id="${esc(s.id)}" style="border-left:3px solid ${sevColor};padding:10px 12px;margin-bottom:8px;background:#fafafa;border-radius:4px">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:${sevColor}">${esc(kindLabel)} · ${esc(s.deal || '')}</span>
+              <span style="font-size:10px;color:#94a3b8">sev ${s.severity}</span>
+            </div>
+            <div style="margin-top:6px;font-size:13px;color:#1f2937">${esc(s.rationale || '')}</div>
+            <div style="margin-top:4px;font-size:11px;color:#6b7280;font-style:italic">${esc(s.evidence || '')}</div>
+            <div style="margin-top:8px;display:flex;gap:8px">
+              <button class="jane-accept" data-id="${esc(s.id)}" style="padding:4px 10px;font-size:11px;border:1px solid #16a34a;color:#16a34a;background:white;border-radius:3px;cursor:pointer">✓ accept</button>
+              <button class="jane-reject" data-id="${esc(s.id)}" style="padding:4px 10px;font-size:11px;border:1px solid #6b7280;color:#6b7280;background:white;border-radius:3px;cursor:pointer">✗ reject</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      let sugTs = '';
+      if (janeCritiqueAt) {
+        try {
+          const ts = new Date(janeCritiqueAt);
+          const mins = Math.round((Date.now() - ts.getTime()) / 60000);
+          const ago = mins < 60 ? `${mins}m ago` : `${Math.round(mins/60)}h ago`;
+          sugTs = `<span style="font-size:10px;color:#94a3b8">updated ${ago}</span>`;
+        } catch(e) {}
+      }
+
+      janeSuggestsHTML = `
+        <div class="jane-suggests-block" style="margin-top:16px;padding-top:12px;border-top:1px solid #e5e7eb">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#64748b">Jane suggests — ${janeSuggestions.length} cleanup${janeSuggestions.length === 1 ? '' : 's'}</span>
+            ${sugTs}
+          </div>
+          ${cards}
+        </div>
+      `;
+    }
+  }
+
   const subtitle = isPersonal ? 'Personal · what to move first' : 'HQ · what to move first';
   return `
     <section class="synth-pane" data-surface="${surface}">
@@ -1588,6 +1713,8 @@ function buildSynthesisPane(isPersonal) {
       ${worthHTML}
       ${rankedHTML}
       ${railsHTML}
+      ${janeStrategicHTML}
+      ${janeSuggestsHTML}
     </section>
   `;
 }
@@ -5324,8 +5451,48 @@ function downloadState() {
 // ══════════════════════════════════════════════════════
 // INIT
 // ══════════════════════════════════════════════════════
+// ── Jane click handlers ────────────────────────────────────────────────────
+async function _janePostAndHide(id, url, label) {
+  const r = await fetch(url, {method: 'POST'});
+  if (r.ok) {
+    const card = document.querySelector(`[data-strategic-id="${id}"], [data-jane-id="${id}"]`);
+    if (card) card.style.display = 'none';
+  } else {
+    const msg = await r.text().catch(() => r.status);
+    alert(`${label} failed (${r.status}): ${msg}`);
+  }
+}
+
+function _bindJaneHandlers() {
+  document.querySelectorAll('.jane-accept').forEach(btn => {
+    if (btn._janeWired) return;
+    btn._janeWired = true;
+    btn.addEventListener('click', () =>
+      _janePostAndHide(btn.dataset.id, `/jane/suggestion/${btn.dataset.id}/accept`, 'accept'));
+  });
+  document.querySelectorAll('.jane-reject').forEach(btn => {
+    if (btn._janeWired) return;
+    btn._janeWired = true;
+    btn.addEventListener('click', () =>
+      _janePostAndHide(btn.dataset.id, `/jane/suggestion/${btn.dataset.id}/reject`, 'reject'));
+  });
+  document.querySelectorAll('.jane-strategic-promote').forEach(btn => {
+    if (btn._janeWired) return;
+    btn._janeWired = true;
+    btn.addEventListener('click', () =>
+      _janePostAndHide(btn.dataset.id, `/jane/strategic/${btn.dataset.id}/promote`, 'promote'));
+  });
+  document.querySelectorAll('.jane-strategic-dismiss').forEach(btn => {
+    if (btn._janeWired) return;
+    btn._janeWired = true;
+    btn.addEventListener('click', () =>
+      _janePostAndHide(btn.dataset.id, `/jane/strategic/${btn.dataset.id}/dismiss`, 'dismiss'));
+  });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   render();
+  _bindJaneHandlers();
 
   // ── Keyboard shortcuts ──────────────────────────────
   document.addEventListener('keydown', e => {
