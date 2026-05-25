@@ -4802,6 +4802,8 @@ Runs async — returns immediately, hook completes in ~30-60 sec on background.<
             self._handle_refresh_deals()
         elif self.path == '/compile-deals':
             self._handle_compile_deals()
+        elif self.path == '/origination/promote':
+            self._handle_origination_promote()
         elif self.path == '/refresh-all':
             self._handle_refresh_all()
         elif self.path == '/queue-correction':
@@ -6490,6 +6492,99 @@ echo "[$(date)] Join and record launched." >> "$LOG"
         else:
             threading.Thread(target=_run_compile, daemon=True, name='compile-deals-manual').start()
             self.send_json(202, {'ok': True, 'status': 'started'})
+
+    def _handle_origination_promote(self):
+        """POST /origination/promote — promote an origination idea to a live deal.
+
+        Body: {name: str, context: str}
+
+        Actions:
+        1. Create data/deals/<slug>/deal.md + actions.md stubs.
+        2. Tombstone the origination row by id so the inbox doesn't re-show it.
+        3. Trigger a compile so the deal appears in the pipeline immediately.
+
+        Returns {ok, slug, deal_dir} on success or {error} on failure.
+        2026-05-25 (build-backlog item 8).
+        """
+        import re as _re
+        try:
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length).decode('utf-8', errors='replace') if length else '{}'
+            payload = json.loads(body or '{}')
+        except Exception as e:
+            self.send_json(400, {'error': f'bad JSON: {e}'})
+            return
+
+        name = (payload.get('name') or '').strip()
+        context = (payload.get('context') or '').strip()
+        if not name:
+            self.send_json(400, {'error': 'name is required'})
+            return
+
+        # Derive a filesystem slug from the name
+        slug = _re.sub(r'[^a-z0-9]+', '_', name.lower()).strip('_')[:32]
+        deals_dir = _ROOT / 'data' / 'deals' / slug
+        try:
+            deals_dir.mkdir(parents=True, exist_ok=True)
+
+            today = __import__('datetime').date.today().isoformat()
+            deal_md = deals_dir / 'deal.md'
+            if not deal_md.exists():
+                deal_md.write_text(
+                    f"# {name}\n\n"
+                    f"**Stage:** Sourcing\n"
+                    f"**Added:** {today}\n"
+                    f"**Source:** Originated from IC idea inbox\n\n"
+                    f"## Context\n{context or '(no context provided)'}\n\n"
+                    f"## Thesis\n_TBD_\n\n"
+                    f"## Next Milestone\n_TBD_\n"
+                )
+            actions_md = deals_dir / 'actions.md'
+            if not actions_md.exists():
+                try:
+                    import _firm_context as _fc_promote
+                    _ctx_promote = _fc_promote.load_firm_context() or {}
+                    owner_name = (_ctx_promote.get('principal', {}).get('name') or 'Yoni').split()[0]
+                except Exception:
+                    owner_name = 'Yoni'
+                actions_md.write_text(
+                    f"# {name} — Open Actions\n\n"
+                    f"| # | Action | Owner | Due | Priority | Status | Opened |\n"
+                    f"|---|---|---|---|---|---|---|\n"
+                    f"| 1 | Scope deal thesis and determine right-to-win angle | {owner_name} | {today} | high | open | {today} |\n\n"
+                    f"## Closed items\n\n"
+                    f"| # | Action | Owner | Closed | Result |\n"
+                    f"|---|---|---|---|---|\n"
+                )
+        except Exception as e:
+            self.send_json(500, {'error': f'failed to create deal directory: {e}'})
+            return
+
+        # Tombstone the origination row in dashboard-data.json
+        try:
+            data = _load_deletions()
+            deletions = data.get('deletions') or []
+            # Compute hash matching the origination item (name-based)
+            import hashlib
+            item_id = hashlib.md5(f'origination|{name}'.encode()).hexdigest()[:8]
+            if not any(d.get('id') == item_id for d in deletions):
+                deletions.append({
+                    'id': item_id,
+                    'source': 'originationInbox',
+                    'context': name,
+                    'deleted_at': __import__('datetime').datetime.utcnow().isoformat() + 'Z',
+                })
+                data['deletions'] = deletions
+                _save_deletions(data)
+        except Exception as e:
+            print(f'[promote] tombstone failed (non-fatal): {e}', flush=True)
+
+        # Trigger background compile to surface the new deal
+        if not _compile_lock.locked():
+            threading.Thread(target=_run_compile, daemon=True, name='origination-promote').start()
+
+        print(f'[origination/promote] created deal slug={slug} from "{name}"', flush=True)
+        self.send_json(200, {'ok': True, 'slug': slug, 'deal_dir': str(deals_dir)})
 
     def _handle_refresh_deals(self):
         """Recompile deal-system-data.json from local files (no API), then inject into HTML.
