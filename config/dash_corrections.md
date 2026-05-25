@@ -2872,3 +2872,46 @@ path was never aware they existed.
 in `dashboard-data.json` even though `tier2GeneratedAt` is current and
 `prose` (legacy alias) is present. If legacy `prose` is set but
 `prose_hq` is absent, the preserve list is stale.
+
+## DATA INTEGRITY —
+
+### 2026-05-25 — deletions.json can corrupt to a list of key names
+
+`deletions.json` was found as `["deletions", "tombstones"]` — a JSON list
+containing just the expected key names as strings, not a dict. The compile
+script then fails with `'list' object has no attribute 'get'`.
+
+**Root cause unclear** — likely a prior script serialized `list(d.keys())`
+instead of `d` itself. May be reproducible if any script does
+`json.dumps(list(data.keys()))` instead of `json.dumps(data)`.
+
+**Fix:** Reconstruct from `deletions.bak-*.json`, add empty `tombstones: []`.
+Keep the backup files; they're the only recovery path.
+
+**Detection:** `python3 -c "import json; d=json.load(open(...)); print(type(d))"` —
+should be `<class 'dict'>`, not `<class 'list'>`.
+
+### 2026-05-25 — my_action envelope items seeded `who` from `owner`, not `counterparty`
+
+In `cos-dashboard-fetch.py`, the my_action envelope re-merge block used
+`who = owner or who` — so every principal-owned action (Yoni) set `who="Yoni"`.
+This produced L0049 violations at scale (19 rows).
+
+**Fix:** Use `counterparty → parent_id → existing-who (only if non-principal)`.
+Derive the principal token set from `firm_context.owner_whitelist` — never
+hardcode principal names (Rule PD1).
+
+**Detection:** Run `check_l0049.py` or check
+`sum(1 for f in dashboard-data.json["followUps"] if f.get("who","").lower() == principal_first_name)`.
+
+## BUILD BACKLOG —
+
+### 2026-05-25 — build-backlog.json needs a `status` field to be useful
+
+Items without a `status` field all appear as "open" in the Personal panel.
+After 4 of 9 items were built (Dashboard App, IC Memo, Dial-in, Permissions),
+the panel still showed all 9 — making the build backlog feel perpetually stale.
+
+**Fix:** Add `status: "done" | "open" | "partial"` + `completedAt` + `statusNote`
+to each item. UI mapper now filters `status=done` items so the Personal panel
+only shows actively-open work. Truth-up should happen every /dash audit.
