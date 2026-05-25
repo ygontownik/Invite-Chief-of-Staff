@@ -384,9 +384,122 @@ def block_to_log_entry(block_data, surface_label):
     }
 
 
+def route_cross_deal_link_block(block_data, surface_label):
+    """Route a cross_deal_link DEAL-INTEL block to ALL listed deals' log.json files.
+
+    Block shape (JSON body):
+      {"type": "cross_deal_link",
+       "deals": ["<deal_a>", "<deal_b>"],
+       "frame": "<one-sentence strategic insight connecting the two deals>",
+       "rationale": "1 sentence — why this connection matters",
+       "evidence": "1-2 lines of supporting context"}
+
+    For each slug in `deals`, appends a log.json entry with:
+      - source: "intel"
+      - who: "cross-deal-link"
+      - what: <frame>
+      - cross_deal_link_partner: [<other slugs>]
+      - rationale: <rationale>
+      - id: djb2-stable-hash
+
+    Returns list of (deal_id, entry_id, status) tuples — one per slug.
+    Unknown slugs produce ("skip", None, "warn") entries without blocking others.
+    """
+    registered = load_registered_deal_ids()
+    raw_deals = block_data.get("deals") or []
+    if isinstance(raw_deals, str):
+        # tolerate "pngts, unitil" as a string
+        raw_deals = [s.strip() for s in raw_deals.split(",")]
+    slugs = [str(s).strip().lower() for s in raw_deals if s]
+
+    if len(slugs) < 2:
+        log_error(surface_label, "<cross_deal_link>",
+                  f"cross_deal_link block needs ≥2 deals; got {slugs!r}")
+        return [("<cross_deal_link>", None, "error")]
+
+    frame = _s(block_data.get("frame"), "(no frame)")
+    rationale = _s(block_data.get("rationale"))
+    evidence = _s(block_data.get("evidence"))
+    date = _s(block_data.get("date"), datetime.now().strftime("%Y-%m-%d"))
+
+    results = []
+    for slug in slugs:
+        if slug not in registered:
+            log_error(surface_label, slug,
+                      f"cross_deal_link: slug '{slug}' not in registry — skipping")
+            results.append((slug, None, "warn"))
+            continue
+
+        partners = [s for s in slugs if s != slug]
+        what_parts = [frame]
+        if rationale:
+            what_parts.append(f"Rationale: {rationale}")
+        if evidence:
+            what_parts.append(f"Evidence: {evidence}")
+        what = " | ".join(what_parts)
+
+        # Stable id: hash of frame + all deals (sorted) + slug so each deal
+        # gets a distinct id but re-routing the same block produces the same id.
+        content_for_id = f"cross_deal_link|{'|'.join(sorted(slugs))}|{slug}|{frame}"
+        entry = {
+            "id": djb2(content_for_id),
+            "date": date,
+            "source": "intel",
+            "source_type": surface_label,
+            "who": "cross-deal-link",
+            "what": what,
+            "title": f"Cross-deal link: {' + '.join(sorted(slugs))}",
+            "match": slug,
+            "cross_deal_link_partner": partners,
+            "cross_deal_link_frame": frame,
+        }
+        if rationale:
+            entry["rationale"] = rationale
+
+        try:
+            result = subprocess.run(
+                ["/opt/homebrew/bin/python3", str(HELPER_BIN), "append-log-entry", slug],
+                input=json.dumps(entry),
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode != 0:
+                log_error(surface_label, entry["id"],
+                          f"cross_deal_link helper exit {result.returncode}: {result.stderr}")
+                results.append((slug, entry["id"], "error"))
+            else:
+                print(f"  cross_deal_link ok: {slug} <- {entry['id'][:8]} "
+                      f"(partners: {', '.join(partners)})", flush=True)
+                results.append((slug, entry["id"], "ok"))
+        except Exception as e:
+            log_error(surface_label, entry["id"], f"cross_deal_link routing: {e}")
+            results.append((slug, entry["id"], "error"))
+
+    ok_count = sum(1 for _, _, s in results if s == "ok")
+    total_known = sum(1 for _, _, s in results if s != "warn")
+    print(f"  cross_deal_link: {ok_count}/{total_known} slugs routed "
+          f"({', '.join(slugs)})", flush=True)
+    return results
+
+
 def route_block(block_data, surface_label):
     """Validate + route one parsed block to the correct deal's log.json.
-    Returns (deal_id, entry_id, status) where status is 'ok' or 'error'."""
+    Returns (deal_id, entry_id, status) where status is 'ok' or 'error'.
+
+    For cross_deal_link blocks, routes to ALL listed deals and returns the
+    result for the first successfully-routed deal (or 'error' if none succeed).
+    """
+    # Detect cross_deal_link blocks before single-deal routing
+    block_type = _s(block_data.get("type")).lower()
+    if block_type == "cross_deal_link":
+        results = route_cross_deal_link_block(block_data, surface_label)
+        # Synthesise a single (deal_id, entry_id, status) for callers that
+        # expect one tuple.  "ok" if at least one slug was routed successfully.
+        ok_results = [(d, e, s) for d, e, s in results if s == "ok"]
+        if ok_results:
+            return ok_results[0][0], ok_results[0][1], "ok"
+        # All errored/skipped — report the first error
+        return results[0][0], results[0][1], "error"
+
     registered = load_registered_deal_ids()
     deal_id, entry = block_to_log_entry(block_data, surface_label)
     if not deal_id:
