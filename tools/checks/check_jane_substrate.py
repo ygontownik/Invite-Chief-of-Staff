@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
-"""check_decision_state.py — Decision State + north_star + jane_brief staleness check.
+"""check_jane_substrate.py — north_star + jane_brief staleness check.
 
-Per PLAN-jane-critic-v1.md Task 6:
-- decision_state_jane.md (per active deal): missing → fail, >30d unchanged → warn
+Architectural note (2026-05-25): renamed from check_decision_state.py.
+_check_decision_state() has been removed — the per-deal decision_state_jane
+Drive Docs are retired. master_brief.md per deal (auto-maintained by /deal-sync)
+is now the authoritative per-deal strategic context for Jane critics.
+Only north_star.md (persona-level) and jane_brief.md (per-deal, written by
+/deal-sync) are checked here.
+
+Checks:
 - north_star.md: missing → warn, >60d unchanged → warn
 - jane_brief.md (per active deal): missing → warn, >4h unchanged → warn
   (mtime-based: /deal-sync is the writer, so mtime is the right signal)
@@ -33,7 +39,6 @@ ACTIVE_STAGE_SUBSTRINGS = {
     "Bridge Sizing",
 }
 
-DECISION_STATE_STALE_DAYS = 30
 NORTH_STAR_STALE_DAYS = 60
 JANE_BRIEF_STALE_HOURS = 4
 
@@ -83,81 +88,6 @@ def _parse_last_updated(text: str) -> date | None:
         return datetime.fromisoformat(raw).date()
     except ValueError:
         return None
-
-
-def _check_decision_state(today: date) -> dict[str, Any]:
-    """Per-deal Decision State (decision_state_jane.md) freshness check."""
-    active = _active_slugs()
-    if not active:
-        if not DEAL_SYSTEM_DATA.exists():
-            return {
-                "status": "warn",
-                "summary": "deal-system-data.json missing — can't check Decision State",
-                "missing": [],
-                "stale": [],
-                "fresh_count": 0,
-            }
-        return {
-            "status": "pass",
-            "summary": "No active deals to check",
-            "missing": [],
-            "stale": [],
-            "fresh_count": 0,
-        }
-
-    missing: list[str] = []
-    stale: list[dict] = []
-    fresh: list[str] = []
-
-    for slug in sorted(active):
-        ds_file = DEALS_DIR / slug / "decision_state_jane.md"
-        if not ds_file.exists():
-            missing.append(slug)
-            continue
-        try:
-            text = ds_file.read_text(encoding="utf-8")
-        except OSError as exc:
-            stale.append({"deal": slug, "issue": f"unreadable: {exc}"})
-            continue
-        ts = _parse_last_updated(text)
-        if ts is None:
-            stale.append({
-                "deal": slug,
-                "issue": "Last updated missing or placeholder — Decision State unfilled",
-            })
-            continue
-        age = (today - ts).days
-        if age > DECISION_STATE_STALE_DAYS:
-            stale.append({
-                "deal": slug,
-                "last_updated": str(ts),
-                "age_days": age,
-                "issue": f"unchanged {age} days (threshold {DECISION_STATE_STALE_DAYS})",
-            })
-        else:
-            fresh.append(slug)
-
-    if missing:
-        status = "fail"
-    elif stale:
-        status = "warn"
-    else:
-        status = "pass"
-
-    parts = []
-    if missing:
-        parts.append(f"{len(missing)} missing: {', '.join(missing)}")
-    if stale:
-        parts.append(f"{len(stale)} stale/unfilled")
-    summary = "; ".join(parts) if parts else f"{len(fresh)} active deal(s) fresh"
-
-    return {
-        "status": status,
-        "summary": summary,
-        "missing": missing,
-        "stale": stale,
-        "fresh_count": len(fresh),
-    }
 
 
 def _check_north_star(today: date) -> dict[str, Any]:
@@ -256,12 +186,11 @@ def run() -> dict[str, Any]:
     today = date.today()
     now_ts = datetime.now().timestamp()
 
-    ds = _check_decision_state(today)
     ns = _check_north_star(today)
     briefs = _check_jane_briefs(now_ts)
 
     # Roll-up: worst-of-all wins (fail > warn > pass)
-    all_statuses = [ds["status"], ns["status"], briefs["status"]]
+    all_statuses = [ns["status"], briefs["status"]]
     if "fail" in all_statuses:
         overall = "fail"
     elif "warn" in all_statuses:
@@ -271,8 +200,6 @@ def run() -> dict[str, Any]:
 
     # Compose human-readable summary
     issue_parts: list[str] = []
-    if ds["status"] != "pass":
-        issue_parts.append(f"Decision State: {ds['summary']}")
     if ns["status"] != "pass":
         issue_parts.append(f"north_star: {ns['summary']}")
     if briefs["status"] != "pass":
@@ -281,22 +208,14 @@ def run() -> dict[str, Any]:
     if issue_parts:
         summary = "; ".join(issue_parts)
     else:
-        fresh_n = ds.get("fresh_count", 0)
-        summary = (
-            f"All {fresh_n} active deals fresh Decision State; "
-            f"north_star fresh; briefs fresh"
-        )
+        n_active = len(_active_slugs())
+        summary = f"north_star fresh; all {n_active} active deal(s) have fresh jane_brief.md"
 
     return {
-        "name": "check_decision_state: Decision State + north_star + jane_brief staleness",
+        "name": "check_jane_substrate: north_star + jane_brief staleness",
         "status": overall,
         "summary": summary,
         "details": {
-            "decision_state": {
-                "missing": ds["missing"],
-                "stale": ds["stale"],
-                "fresh_count": ds["fresh_count"],
-            },
             "north_star": {
                 "status": ns["status"],
                 "summary": ns["summary"],

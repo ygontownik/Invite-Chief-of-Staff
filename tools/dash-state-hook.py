@@ -1461,7 +1461,7 @@ def _save_jane_sync_state(state):
 
 
 def _sync_jane_drive_docs(drive_svc=None, update_lock=True):
-    """Pull 1 north_star + 9 decision_state_jane + 9 jane_brief Drive Docs → local mirrors.
+    """Pull 1 north_star + 9 jane_brief Drive Docs → local mirrors (10 docs total).
 
     Called from the existing reference-docs sync block (same 2h cadence) AND
     directly via --sync-jane-only for on-demand pulls by critics' _ensure_fresh_mirrors().
@@ -1479,8 +1479,13 @@ def _sync_jane_drive_docs(drive_svc=None, update_lock=True):
 
     Writes mirrors to:
       - ~/dashboards/data/jane/north_star.md
-      - ~/dashboards/data/deals/<slug>/decision_state_jane.md
       - ~/dashboards/data/deals/<slug>/jane_brief.md
+
+    Architectural note (2026-05-25): decision_state_jane.md is retired. The 9
+    decision_state_jane Drive Docs still exist on Drive but are no longer pulled.
+    Local mirrors at ~/dashboards/data/deals/<slug>/decision_state_jane.md are
+    now orphaned and can be ignored. master_brief.md per deal (written locally by
+    /deal-sync) is the authoritative strategic context for Jane critics.
 
     Only pulls docs whose Drive modifiedTime is newer than the last recorded pull
     (mirrors run_reference_docs_sync() pattern). State persisted in jane-sync-state.json.
@@ -1564,8 +1569,10 @@ def _sync_jane_drive_docs(drive_svc=None, update_lock=True):
             continue
         deal_local = deals_dir / slug
         for fname, id_key in [
-            ("decision_state_jane.md", "decision_state_jane_file_id"),
-            ("jane_brief.md",          "jane_brief_file_id"),
+            # decision_state_jane.md is retired (2026-05-25); local mirrors
+            # at ~/dashboards/data/deals/<slug>/decision_state_jane.md are
+            # now orphaned. dash-state-hook no longer syncs them.
+            ("jane_brief.md", "jane_brief_file_id"),
         ]:
             fid = d.get(id_key)
             if not fid:
