@@ -404,6 +404,21 @@ def load_person_deal_index() -> tuple[dict, set]:
 
     # Enrich from dashboard-data.json: awaitingExternal + followUps + dealIntel
     # carry counterparty/who fields tagged to a deal via dashboard_path.
+    #
+    # CORROBORATION GATE (Fix 3, 2026-05-25 — Bucket C upstream fix):
+    # Previously, any dealIntel item tagged to a deal would seed cp_idx,
+    # creating a self-reinforcing loop: mis-tagged item → cp_idx seed →
+    # all future messages from that sender route to the wrong deal →
+    # more mis-tagged items → stronger cp_idx signal. Proven by the
+    # Filbey/gridfree incident (45 messages mis-routed).
+    #
+    # Fix: before adding person→deal to cp_idx from dashboard-data sources,
+    # require corroboration from at least one authoritative source:
+    #   A) Person appears in deal-system-data.json deals[].counterparties[]
+    #      for that deal, OR
+    #   B) Person has an explicit deals: [...] list in known-aliases.yaml
+    #      that includes that deal.
+    # Items that only exist in dealIntel (no corroboration) are skipped.
     if DASHBOARD_DATA.exists():
         try:
             dd = json.loads(DASHBOARD_DATA.read_text())
@@ -431,14 +446,61 @@ def load_person_deal_index() -> tuple[dict, set]:
                 return None
             return slug_by_name.get(deal_name.lower())
 
+        # Build authoritative corroboration sets:
+        # A) deal-system-data counterparties — {deal_id: {normalized_name, ...}}
+        auth_counterparties: dict = {}  # deal_id → set of normalized names
+        for d in (ds.get("deals", []) if 'ds' in locals() else []):
+            did = (d.get("id") or "").strip()
+            if not did:
+                continue
+            cp_set: set = set()
+            for c in d.get("counterparties", []) or []:
+                name = c.get("name") if isinstance(c, dict) else c
+                if name:
+                    cp_set.add(_norm_name(str(name)))
+            if cp_set:
+                auth_counterparties[did] = cp_set
+
+        # B) known-aliases explicit deals lists — {normalized_name: set(deal_slugs)}
+        auth_aliases: dict = {}  # normalized_name → set of deal_slugs from yaml
+        for raw_name, entry in people_yaml.items():
+            if not isinstance(entry, dict):
+                continue
+            if str(raw_name).startswith("UNLABELED__"):
+                continue
+            manual = entry.get("deals")
+            if isinstance(manual, list):
+                # Empty list [] means "no deal" — still authoritative (blocks seeding)
+                n_key = _norm_name(str(raw_name))
+                auth_aliases[n_key] = set(manual)
+
+        def _is_corroborated(person_norm: str, deal_id: str) -> bool:
+            """True iff person→deal mapping is corroborated by an authoritative source."""
+            # Path A: person in counterparties for this deal
+            if person_norm in auth_counterparties.get(deal_id, set()):
+                return True
+            # Path B: person has explicit deals list in known-aliases; deal in list
+            if person_norm in auth_aliases:
+                return deal_id in auth_aliases[person_norm]
+            # Neither authoritative source corroborates → reject
+            return False
+
         for src_key in ("awaitingExternal", "dealIntel", "originationInbox"):
             for item in dd.get(src_key) or []:
                 cp = item.get("counterparty") or ""
                 if not _is_person_name(cp):
                     continue
                 deal = _deal_id_for(_deal_from_path(item.get("dashboard_path", "")) or "")
-                if deal:
-                    cp_idx.setdefault(_norm_name(cp), set()).add(deal)
+                if not deal:
+                    continue
+                person_norm = _norm_name(cp)
+                if _is_corroborated(person_norm, deal):
+                    cp_idx.setdefault(person_norm, set()).add(deal)
+                else:
+                    log.warning(
+                        f"cp_idx gate: rejected {src_key} mapping "
+                        f"'{cp}' → '{deal}' (no counterparty/alias corroboration)"
+                    )
 
         for fu in dd.get("followUps") or []:
             who = (fu.get("who") or "").strip()
@@ -446,7 +508,14 @@ def load_person_deal_index() -> tuple[dict, set]:
             if _is_person_name(who) and deal_name:
                 deal = _deal_id_for(deal_name)
                 if deal:
-                    cp_idx.setdefault(_norm_name(who), set()).add(deal)
+                    person_norm = _norm_name(who)
+                    if _is_corroborated(person_norm, deal):
+                        cp_idx.setdefault(person_norm, set()).add(deal)
+                    else:
+                        log.warning(
+                            f"cp_idx gate: rejected followUps mapping "
+                            f"'{who}' → '{deal}' (no counterparty/alias corroboration)"
+                        )
 
         # emailQueue.from is a person; no deal mapping → skip for routing
         # but useful for the entity graph (not handled here).
