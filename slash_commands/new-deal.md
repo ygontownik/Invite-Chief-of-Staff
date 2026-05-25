@@ -470,6 +470,34 @@ This creates `~/dashboards/data/deals/{deal_id}/deal.md` with real sector/geogra
 
 ---
 
+## PHASE 6d — Bootstrap Jane Drive Docs for the new deal
+
+After the new deal's Drive folder is created and the deal entry is added
+to deal-system-data.json (completed in Phase 2 / Phase 6), invoke the
+Jane bootstrap scoped to just this deal:
+
+```bash
+python3 ~/dashboards/scripts/bootstrap_jane_drive.py --deal {deal_id}
+```
+
+The bootstrap script is idempotent (per Task 5a). It will detect that this
+deal has no `decision_state_jane_file_id` or `jane_brief_file_id`, create
+both Drive Docs in the deal's Drive folder, register their IDs in
+deal-system-data.json, and pull initial local mirrors. After this step the
+new deal is Jane-ready automatically — no manual scaffold needed.
+
+**Verify after running:**
+- `~/dashboards/data/deals/{deal_id}/decision_state_jane.md` exists locally
+- `~/dashboards/data/deals/{deal_id}/jane_brief.md` exists locally
+- deal-system-data.json entry for this deal has both `decision_state_jane_file_id`
+  and `jane_brief_file_id` populated
+
+If the script returns `ERROR: deal '{deal_id}' not found`, the deal entry in
+deal-system-data.json is missing a `drive_folder_id` — complete Phase 2 and
+Phase 6 first so the Drive folder is created and registered, then retry.
+
+---
+
 ## PHASE 7 — Confirm and report
 
 Output a clean summary:

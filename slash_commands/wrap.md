@@ -490,6 +490,21 @@ Capture the output. Diff against `last-wrap.json` health counts to surface
 "warns went from X → Y" or "new fail: <name>" deltas.
 
 ```bash
+# 8a.5 Jane substrate freshness check
+python3 ~/cos-pipeline/tools/checks/check_decision_state.py 2>&1 | tail -20
+```
+
+If check_decision_state.py returns `status: warn` or `status: fail`, include
+in the wrap output banner and SESSION-HANDOFF §4b:
+
+> "Jane substrate needs refresh: <summary from check>. Consider editing
+> the flagged decision_state_jane Drive Docs or the north_star Drive Doc
+> before the next Jane critic fires."
+
+Specifically call out which deals have stale or unfilled Decision State and
+whether north_star.md is stale (>60d). Non-fatal — /wrap continues regardless.
+
+```bash
 # 8b. LaunchAgent state check — any newly down?
 launchctl list | grep -iE "tomac|yoni|claude" | awk '$2 != "0" && $2 != "-" {print}'
 

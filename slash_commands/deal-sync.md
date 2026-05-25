@@ -285,6 +285,136 @@ Format:
 
 ---
 
+### 4b-iv. Output 3 — jane_brief.md (Jane portfolio-layer substrate) + master_brief.md Jane Header
+
+**Part A — master_brief.md Jane Header**
+
+Every master_brief.md you write or update MUST START with a structured Jane Header
+(before all other content). Sonnet extracts these fields from log.json entries,
+deal.md counterparties, and recent transcripts. No manual authoring required —
+extract from existing inputs.
+
+```markdown
+**[Jane Header — auto-generated <YYYY-MM-DD>]**
+- **Frame:** <1 sentence — strategic shape of this deal right now. Be specific. Examples:
+  "FIT shows breadth of deal flow to Brian Becker, not single-deal-gated";
+  "PNGTS bid positioning depends on BlackRock/MSIP committee outcome (Doug-leaving context)."
+  If insufficient signal: "(insufficient signal — flag for Yoni)">
+- **Relationship holders:** <named TCIP person who owns each major counterparty relationship.
+  Examples: "Mark Saxe owns Brian Becker, Mark Mitchell, Garden Investments; Yoni owns Gideon
+  Powell, Sasha (GridFree)". Extract from log.json who field + deal.md contacts.
+  If insufficient signal: "(insufficient signal — flag for Yoni)">
+- **Deal-killers:** <conditions that would end engagement. Extract from log entries mentioning
+  blockers, non-negotiables, walk-away conditions. Examples: "Baazov non-negotiables on FIT
+  GP-stake economics permanently rejected"; "BlackRock committee blocks PNGTS reserve price".
+  If insufficient signal: "(insufficient signal — flag for Yoni)">
+- **Cross-deal links:** <if this deal connects to another deal via shared actor or structure,
+  name them. Examples: "FIT and BBEH share Brian Becker counterparty"; "PNGTS GSGT carve-out
+  creates regulatory dependency". If no cross-deal links identified: "None identified.">
+
+---
+
+(existing master_brief content follows)
+```
+
+**Jane Header extraction rules:**
+- Extract from: log.json entries (who, what, source fields) + deal.md counterparties
+  array + any decision_state_jane.md content if still present locally.
+- If a field cannot be extracted with confidence, write `(insufficient signal — flag for Yoni)`
+  rather than invent or fabricate.
+- Absolute dates only (YYYY-MM-DD) per Rule AB1 — no relative references.
+- Update the date in `[Jane Header — auto-generated <YYYY-MM-DD>]` to today's date on every write.
+- The header must be the FIRST content in the file, before any other sections.
+
+---
+
+**Part B — jane_brief.md**
+
+For each deal you process this run, ALSO generate Jane Brief content and
+write it to `~/dashboards/data/deals/<slug>/jane_brief.md` AND its
+registered Drive Doc via `write-jane-brief`.
+
+**Skip this deal's jane_brief if:** zero new log entries since last brief AND
+the existing jane_brief.md already exists and is not a placeholder. Leave it
+untouched.
+
+**Content structure** (Jane's portfolio critic parses these fields by heading —
+follow EXACTLY, heading names are machine-parsed):
+
+```markdown
+# Jane Brief — <Deal Name>
+_Generated <YYYY-MM-DD> by /deal-sync. Reflects log through entry <date>._
+
+## Strategic frame
+<1-2 sentences. What this deal IS strategically RIGHT NOW. Derived from
+master_brief.md Jane Header (Frame field) + recent log entries.
+master_brief.md is the authoritative per-deal context maintained by /deal-sync —
+contains current state, relationship holders, sequencing, open items, deal-killers.
+Apply it as the lens. If a DEAL-INTEL block with type=strategic_frame_override
+exists in recent log, that overrides — quote it verbatim and cite the entry.>
+
+## Proposed next action
+<1 sentence. The single most important next strategic move for this deal.
+NOT merely the curated action from actions.md — your synthesized read of
+what Yoni should actually be working on right now.
+If the curated action matches your read: "Curated action matches: <curated>".
+Otherwise propose the strategic reframe.>
+
+## Why (citations only — no vibes)
+<2-4 bullets. Each MUST cite a specific log entry (date + snippet) or a
+line from master_brief.md. NO narrative prose. NO "I notice that".
+Every claim traces to a deterministic source. If you can't cite it, drop it.>
+- log.json:<slug> entry <YYYY-MM-DD>: "<verbatim snippet ≤120 chars>"
+- master_brief.md: "<exact line from the master brief>"
+
+## Open threads (last 14d, max 5)
+<Distinct counterparty-or-topic threads with movement in last 14 days.>
+- <thread label> — first <YYYY-MM-DD>, last <YYYY-MM-DD>, <N> entries
+
+## Blockers (max 3)
+<Items waiting on external action, with age.>
+- <what> — awaiting <whom> — since <YYYY-MM-DD> (<N>d)
+
+## Last material signal
+<YYYY-MM-DD> — <one-line summary of the most consequential recent log entry>
+
+## Upcoming calls (next 7d)
+<Calendar events involving this deal's counterparties OR with the deal name
+in the title, dated within the next 7 days (relative to today, the date you
+are running). Drives Jane's "prepare before this meeting" suggestions.
+If no upcoming calls are known, write: "No upcoming calls identified.">
+- YYYY-MM-DD HH:MM — <event title>, attendees: <list or "unknown">
+```
+
+**Constraints:**
+- Target 1-2KB per brief. Tight. Jane reads 9 of these per run; don't bloat.
+- Citations are MANDATORY in the Why section. No citation, no claim.
+- Absolute dates only (YYYY-MM-DD) — no "last week", "yesterday", etc. (Rule AB1)
+
+**Workflow for each deal:**
+
+```bash
+# 1. Write content to temp file
+cat > /tmp/jane_brief_<deal_id>.md << 'EOF'
+<generated content>
+EOF
+
+# 2. Invoke the helper (EP1 — setContent on registered ID, never recreate)
+python3 ~/cos-pipeline/tools/deal_extract_helpers.py write-jane-brief \
+  --deal-id <deal_id> --content-file /tmp/jane_brief_<deal_id>.md
+```
+
+If `--dry-run` is set, pass `--dry-run` before the sub-command:
+```bash
+python3 ~/cos-pipeline/tools/deal_extract_helpers.py --dry-run write-jane-brief \
+  --deal-id <deal_id> --content-file /tmp/jane_brief_<deal_id>.md
+```
+
+If the helper prints a `WARNING:` line about missing `jane_brief_file_id`,
+log it in your summary and continue with other deals — do not abort.
+
+---
+
 ### 4c. Write back to Drive
 
 **CRITICAL:** Use ONLY `write-deal-doc` to write status and brief files. Never use the Google Drive MCP tools (`mcp__*__create_file`, `mcp__*__copy_file`, etc.) to write these docs — those tools create new files with new IDs, leaving the registered doc untouched and producing duplicate files that corrupt the folder. `write-deal-doc` always overwrites the registered doc_id in-place via `files().update()`.

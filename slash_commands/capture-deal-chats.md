@@ -195,6 +195,53 @@ Routing details: ~/dashboards/logs/intel_capture_errors.log
 
 ---
 
+## DEAL-INTEL block types
+
+The standard DEAL-INTEL block routes intel to a single deal:
+
+```
+---DEAL-INTEL---
+deal: pngts
+date: 2026-05-25
+title: Pipeline tariff update
+summary: FERC approved new tariff structure for PNGTS Phase 2.
+facts:
+  - Tariff effective 2026-07-01
+counterparties:
+  - Mark Mitchell (TC Energy) — supportive of Phase 2
+---END-DEAL-INTEL---
+```
+
+### Block type: cross_deal_link
+
+When a strategic insight connects two or more deals, emit a JSON-body block:
+
+```
+---DEAL-INTEL---
+{"type": "cross_deal_link",
+ "deals": ["pngts", "unitil"],
+ "frame": "PNGTS could acquire Unitil for synergistic EBITDA",
+ "rationale": "1 sentence — why this connection matters strategically",
+ "evidence": "1-2 lines of supporting context from this chat"}
+---END-DEAL-INTEL---
+```
+
+Routes the same intel entry to EACH deal's log.json (with source="intel"
+and a `cross_deal_link_partner` field set to the other deal slug(s)).
+Jane's per-deal jane_brief.md will pick it up from log.json under both
+deals and synthesize the connection at the portfolio layer.
+
+Rules for cross_deal_link blocks:
+- `deals` must list ≥2 registered deal slugs (from deal-system-data.json)
+- `frame` is the one-sentence strategic insight
+- `rationale` explains why the connection matters (one sentence)
+- `evidence` provides supporting context from this chat (1-2 lines)
+- Routing is bidirectional: each deal gets an entry with `cross_deal_link_partner`
+  set to the other slug(s)
+- Unknown slugs are skipped with a warning; known slugs still receive entries
+
+---
+
 ## RULES (non-negotiable)
 
 - **Block-only.** Never store or upload full chat text. Only the

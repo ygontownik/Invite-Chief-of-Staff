@@ -32,6 +32,29 @@ If the action references a specific deal, run:
 /load-context deal_general <deal_id>
 ```
 
+### Jane substrate context
+
+Also load the following Jane substrate files for the relevant deal:
+
+- `~/dashboards/data/jane/north_star.md` — persona orienting context:
+  career arcs (Tomac Cove / DRW / Align Infra), activating events per path,
+  and personal-engagement weights per deal (HIGH / MEDIUM / LOW). Use this
+  to assess whether the action you're testing advances or conflicts with a
+  North Star activating event.
+
+- `~/dashboards/data/deals/<slug>/decision_state_jane.md` — per-deal
+  strategic frame: current frame, deal-killers, sequencing dependencies,
+  "what would change my view." Cross-reference: does the proposed action
+  contradict the deal-killers or sequencing dependencies stated here?
+
+- `~/dashboards/data/deals/<slug>/jane_brief.md` — per-deal Jane synthesis:
+  Proposed next action, Open threads, Blockers. Cross-reference: does the
+  action you're testing conflict with Jane's read of the most important next
+  move for this deal?
+
+If any of these files are missing (not yet populated), note it in the
+pressure-test output and proceed without them.
+
 ## STEP 2 — Query entity knowledge graph
 
 ```bash

@@ -86,6 +86,14 @@ For each path in `must_read`:
 
 For per-deal docs (if applicable): load each one.
 
+**Jane substrate** — if the context block has a `jane_substrate` list AND a `deal_id` is provided:
+- Load `~/dashboards/data/jane/north_star.md` (always)
+- Load `~/dashboards/data/deals/{deal_id}/decision_state_jane.md` if it exists
+- Load `~/dashboards/data/deals/{deal_id}/jane_brief.md` if it exists
+- Display: "Loaded Jane substrate for {deal_id}: north_star + decision_state_jane + jane_brief"
+
+If no `deal_id` but context has `jane_substrate`, load only `north_star.md`.
+
 Do NOT load `recommended` automatically — surface them as "additionally available" but only load if the task warrants it.
 
 ---
