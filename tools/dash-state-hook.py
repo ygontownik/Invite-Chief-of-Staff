@@ -1426,6 +1426,108 @@ def get_drive_service_for_refsync():
     return build("drive", "v3", credentials=creds)
 
 
+# ── Jane Drive Doc sync (Task 5a — every 2h cadence) ─────────────────────────
+
+JANE_SYNC_LOCK = Path("/tmp/dash-state-hook-jane.last")
+JANE_SYNC_INTERVAL = 7200  # 2 hours — same cadence as ref_doc_sync
+
+
+def seconds_since_jane_sync():
+    if not JANE_SYNC_LOCK.exists():
+        return float("inf")
+    try:
+        return datetime.now().timestamp() - float(JANE_SYNC_LOCK.read_text().strip())
+    except Exception:
+        return float("inf")
+
+
+def _sync_jane_drive_docs(drive_svc=None):
+    """Pull 1 north_star + 9 decision_state_jane + 9 jane_brief Drive Docs → local mirrors.
+
+    Called from the existing reference-docs sync block (same 2h cadence) AND
+    directly via --sync-jane-only for on-demand pulls by critics' _ensure_fresh_mirrors().
+    Failures are non-fatal — logs to stderr, never raises.
+
+    Reads IDs from:
+      - ~/dashboards/config/drive-docs.yaml (north_star)
+      - ~/dashboards/data/compiled/deal-system-data.json (per-deal IDs)
+
+    Writes mirrors to:
+      - ~/dashboards/data/jane/north_star.md
+      - ~/dashboards/data/deals/<slug>/decision_state_jane.md
+      - ~/dashboards/data/deals/<slug>/jane_brief.md
+    """
+    import json as _json
+    import yaml as _yaml
+
+    try:
+        if drive_svc is None:
+            drive_svc = get_drive_service_for_refsync()
+    except Exception as e:
+        print(f"[sync-jane] Drive auth failed — {e}", file=sys.stderr)
+        return
+
+    drive_docs_path = Path(DRIVE_DOCS_YAML).resolve()
+    deal_system_path = (
+        Path(os.path.expanduser("~/dashboards/data/compiled/deal-system-data.json"))
+        .resolve()
+    )
+
+    try:
+        drive_docs = _yaml.safe_load(drive_docs_path.read_text()) or {}
+    except Exception as e:
+        print(f"[sync-jane] cannot read drive-docs.yaml — {e}", file=sys.stderr)
+        drive_docs = {}
+
+    try:
+        deal_system = _json.loads(deal_system_path.read_text())
+    except Exception as e:
+        print(f"[sync-jane] cannot read deal-system-data.json — {e}", file=sys.stderr)
+        deal_system = {}
+
+    def _export(file_id):
+        try:
+            data = drive_svc.files().export(fileId=file_id, mimeType="text/plain").execute()
+        except Exception:
+            data = drive_svc.files().get_media(fileId=file_id).execute()
+        return data.decode("utf-8") if isinstance(data, bytes) else data
+
+    # north_star
+    ns = (drive_docs.get("general_docs") or {}).get("north_star") or {}
+    if ns.get("file_id"):
+        try:
+            content = _export(ns["file_id"])
+            local = Path(os.path.expanduser(ns.get("local_mirror",
+                         "~/dashboards/data/jane/north_star.md")))
+            local.parent.mkdir(parents=True, exist_ok=True)
+            local.write_text(content)
+        except Exception as e:
+            print(f"[sync-jane] north_star pull failed: {e}", file=sys.stderr)
+
+    # per-deal
+    deals_dir = Path(os.path.expanduser("~/dashboards/data/deals"))
+    for d in deal_system.get("deals") or []:
+        slug = d.get("id")
+        if not slug:
+            continue
+        deal_local = deals_dir / slug
+        deal_local.mkdir(parents=True, exist_ok=True)
+        for fname, id_key in [
+            ("decision_state_jane.md", "decision_state_jane_file_id"),
+            ("jane_brief.md",          "jane_brief_file_id"),
+        ]:
+            fid = d.get(id_key)
+            if not fid:
+                continue
+            try:
+                content = _export(fid)
+                (deal_local / fname).write_text(content)
+            except Exception as e:
+                print(f"[sync-jane] {slug}/{fname} pull failed: {e}", file=sys.stderr)
+
+    JANE_SYNC_LOCK.write_text(str(datetime.now().timestamp()))
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
@@ -1436,8 +1538,19 @@ def main():
     )
     _parser.add_argument("--dry-run", action="store_true",
                          help="Print what would run without spawning subprocesses")
+    _parser.add_argument("--sync-jane-only", action="store_true",
+                         help="Pull all 19 Jane Drive Docs to local mirrors and exit. "
+                              "Used by critics' _ensure_fresh_mirrors() for on-demand pull.")
     _args, _ = _parser.parse_known_args()
     _dry_run = _args.dry_run
+
+    # --sync-jane-only: standalone CLI invocation for critics' on-demand pull.
+    # Skips the recursion guard and all other jobs; just pulls Jane Drive Docs.
+    if _args.sync_jane_only:
+        print("[dash-state-hook] --sync-jane-only: pulling Jane Drive Docs...", flush=True)
+        _sync_jane_drive_docs()
+        print("[dash-state-hook] --sync-jane-only: done.", flush=True)
+        return 0
 
     # Recursion guard: this hook fires at the end of every Claude Code turn.
     # When run_deal_extract_sync() spawns a child `claude -p /deal-sync` session,
@@ -1455,6 +1568,7 @@ def main():
         print(f"  deal_entry_sync:     {'WOULD RUN' if seconds_since_deal_entry_sync() >= DEAL_ENTRY_SYNC_INTERVAL else 'skip (too soon)'}")
         print(f"  deal_extract_sync:   {'WOULD RUN' if seconds_since_deal_extract_sync() >= DEAL_EXTRACT_SYNC_INTERVAL else 'skip (too soon)'}")
         print(f"  ref_doc_sync:        {'WOULD RUN' if seconds_since_ref_doc_sync() >= REF_DOC_SYNC_INTERVAL else 'skip (too soon)'}")
+        print(f"  jane_sync:           {'WOULD RUN' if seconds_since_jane_sync() >= JANE_SYNC_INTERVAL else 'skip (too soon)'}")
         print(f"  project_inst_sync:   {'WOULD RUN' if should_run_project_inst_sync() else 'skip'}")
         print(f"  chat_capture:        {'WOULD RUN' if seconds_since_chat_capture() >= CHAT_CAPTURE_INTERVAL else 'skip (too soon)'}")
         print(f"  artifact_pull:       {'WOULD RUN' if seconds_since_artifact_pull() >= ARTIFACT_PULL_INTERVAL else 'skip (too soon)'}")
@@ -1486,6 +1600,13 @@ def main():
     # docs into ~/cos-pipeline-config-tomac/ on Drive modifiedTime change.
     if seconds_since_ref_doc_sync() >= REF_DOC_SYNC_INTERVAL:
         run_reference_docs_sync()
+
+    # Jane Drive Doc sync — pulls north_star + 9 decision_state_jane + 9 jane_brief
+    # Drive Docs → local mirrors. Same 2h cadence as reference-docs sync.
+    # Defense-in-depth: critics also call _sync_jane_drive_docs() directly via
+    # --sync-jane-only for on-demand pull before each critic run.
+    if seconds_since_jane_sync() >= JANE_SYNC_INTERVAL:
+        _sync_jane_drive_docs()
 
     # Project-instructions sync — auto-refreshes claude.ai project Instructions
     # for all 6 deals via Chrome MCP browser automation. Fires at most once per
