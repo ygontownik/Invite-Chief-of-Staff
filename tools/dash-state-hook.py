@@ -1441,12 +1441,37 @@ def seconds_since_jane_sync():
         return float("inf")
 
 
-def _sync_jane_drive_docs(drive_svc=None):
+JANE_SYNC_STATE_PATH = COS_DATA_DIR / "data" / "compiled" / "jane-sync-state.json"
+
+
+def _load_jane_sync_state():
+    import json as _json
+    if not JANE_SYNC_STATE_PATH.exists():
+        return {}
+    try:
+        return _json.loads(JANE_SYNC_STATE_PATH.read_text())
+    except Exception:
+        return {}
+
+
+def _save_jane_sync_state(state):
+    import json as _json
+    JANE_SYNC_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    JANE_SYNC_STATE_PATH.write_text(_json.dumps(state, indent=2))
+
+
+def _sync_jane_drive_docs(drive_svc=None, update_lock=True):
     """Pull 1 north_star + 9 decision_state_jane + 9 jane_brief Drive Docs → local mirrors.
 
     Called from the existing reference-docs sync block (same 2h cadence) AND
     directly via --sync-jane-only for on-demand pulls by critics' _ensure_fresh_mirrors().
     Failures are non-fatal — logs to stderr, never raises.
+
+    update_lock=True  — scheduled-loop path: updates JANE_SYNC_LOCK after successful pull
+                        so the 2h timer resets properly.
+    update_lock=False — on-demand path (--sync-jane-only): does NOT touch JANE_SYNC_LOCK
+                        so the scheduled pull fires independently on its own 2h window.
+                        Critics calling this on-demand should not reset the timer.
 
     Reads IDs from:
       - ~/dashboards/config/drive-docs.yaml (north_star)
@@ -1456,6 +1481,9 @@ def _sync_jane_drive_docs(drive_svc=None):
       - ~/dashboards/data/jane/north_star.md
       - ~/dashboards/data/deals/<slug>/decision_state_jane.md
       - ~/dashboards/data/deals/<slug>/jane_brief.md
+
+    Only pulls docs whose Drive modifiedTime is newer than the last recorded pull
+    (mirrors run_reference_docs_sync() pattern). State persisted in jane-sync-state.json.
     """
     import json as _json
     import yaml as _yaml
@@ -1485,6 +1513,17 @@ def _sync_jane_drive_docs(drive_svc=None):
         print(f"[sync-jane] cannot read deal-system-data.json — {e}", file=sys.stderr)
         deal_system = {}
 
+    state = _load_jane_sync_state()
+    state_changed = False
+
+    def _get_modified_time(file_id):
+        try:
+            meta = drive_svc.files().get(fileId=file_id, fields="id,modifiedTime").execute()
+            return meta.get("modifiedTime")
+        except Exception as e:
+            print(f"[sync-jane] cannot fetch modifiedTime for {file_id}: {e}", file=sys.stderr)
+            return None
+
     def _export(file_id):
         try:
             data = drive_svc.files().export(fileId=file_id, mimeType="text/plain").execute()
@@ -1492,17 +1531,30 @@ def _sync_jane_drive_docs(drive_svc=None):
             data = drive_svc.files().get_media(fileId=file_id).execute()
         return data.decode("utf-8") if isinstance(data, bytes) else data
 
+    def _pull_if_changed(file_id, local_path, label):
+        """Fetch modifiedTime; skip pull if unchanged and local file exists.
+        Returns True if pulled, False if skipped."""
+        nonlocal state_changed
+        modified = _get_modified_time(file_id)
+        if modified and state.get(file_id, {}).get("modifiedTime") == modified and local_path.exists():
+            return False  # unchanged — skip Drive export call
+        try:
+            content = _export(file_id)
+            local_path.parent.mkdir(parents=True, exist_ok=True)
+            local_path.write_text(content)
+            state[file_id] = {"modifiedTime": modified, "label": label}
+            state_changed = True
+            return True
+        except Exception as e:
+            print(f"[sync-jane] {label} pull failed: {e}", file=sys.stderr)
+            return False
+
     # north_star
     ns = (drive_docs.get("general_docs") or {}).get("north_star") or {}
     if ns.get("file_id"):
-        try:
-            content = _export(ns["file_id"])
-            local = Path(os.path.expanduser(ns.get("local_mirror",
-                         "~/dashboards/data/jane/north_star.md")))
-            local.parent.mkdir(parents=True, exist_ok=True)
-            local.write_text(content)
-        except Exception as e:
-            print(f"[sync-jane] north_star pull failed: {e}", file=sys.stderr)
+        local = Path(os.path.expanduser(ns.get("local_mirror",
+                     "~/dashboards/data/jane/north_star.md")))
+        _pull_if_changed(ns["file_id"], local, "north_star")
 
     # per-deal
     deals_dir = Path(os.path.expanduser("~/dashboards/data/deals"))
@@ -1511,7 +1563,6 @@ def _sync_jane_drive_docs(drive_svc=None):
         if not slug:
             continue
         deal_local = deals_dir / slug
-        deal_local.mkdir(parents=True, exist_ok=True)
         for fname, id_key in [
             ("decision_state_jane.md", "decision_state_jane_file_id"),
             ("jane_brief.md",          "jane_brief_file_id"),
@@ -1519,13 +1570,17 @@ def _sync_jane_drive_docs(drive_svc=None):
             fid = d.get(id_key)
             if not fid:
                 continue
-            try:
-                content = _export(fid)
-                (deal_local / fname).write_text(content)
-            except Exception as e:
-                print(f"[sync-jane] {slug}/{fname} pull failed: {e}", file=sys.stderr)
+            _pull_if_changed(fid, deal_local / fname, f"{slug}/{fname}")
 
-    JANE_SYNC_LOCK.write_text(str(datetime.now().timestamp()))
+    if state_changed:
+        _save_jane_sync_state(state)
+
+    # Only update the 2h scheduled-loop lock when called from the scheduled path.
+    # On-demand calls via --sync-jane-only must NOT reset the timer — the scheduled
+    # pull should fire on its own cadence regardless of how many on-demand pulls critics
+    # have triggered in between.
+    if update_lock:
+        JANE_SYNC_LOCK.write_text(str(datetime.now().timestamp()))
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -1546,9 +1601,12 @@ def main():
 
     # --sync-jane-only: standalone CLI invocation for critics' on-demand pull.
     # Skips the recursion guard and all other jobs; just pulls Jane Drive Docs.
+    # update_lock=False so on-demand critic calls don't reset the 2h scheduled timer —
+    # the scheduled loop should fire on its own cadence regardless of how many on-demand
+    # pulls critics have triggered in between.
     if _args.sync_jane_only:
         print("[dash-state-hook] --sync-jane-only: pulling Jane Drive Docs...", flush=True)
-        _sync_jane_drive_docs()
+        _sync_jane_drive_docs(update_lock=False)
         print("[dash-state-hook] --sync-jane-only: done.", flush=True)
         return 0
 
