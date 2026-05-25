@@ -2848,3 +2848,27 @@ overdue outreach." The LLM didn't change; the input did.
 re-run Tier 2, (3) only then iterate on the Tier 2 prompt if the prose
 is still off. Skipping straight to prompt tuning when ranking is the
 problem produces compensating prompts that grow brittle.
+
+---
+
+## TOPIC — TIER 2 PRESERVE LIST MUST COVER SURFACE-SPECIFIC KEYS
+
+### 2026-05-24 — Expand Tier 2 preserve list when adding new surface keys
+
+When `synthesize_prose.py` adds new keys to `prioritySynthesis`
+(e.g. `prose_hq`, `prose_personal`, `clusters_hq` in the Phase H
+surface split), also update the Tier 2 preserve list in
+`cos-dashboard-fetch.py`. The list lives in the "Preserve any Tier 2
+prose already in state" block — expand it to include every new key.
+
+**Why it fails silently:** `synthesize_prose --apply` succeeds and
+reports the chars written. But on the next `/warmup`, `cos-dashboard-
+fetch.py` regenerates Tier 1, copies only the OLD preserve-list keys,
+and writes the new `_synth` dict (which lacks the new surface keys) to
+`dashboard-data.json`. The new keys vanish without error — the write
+path was never aware they existed.
+
+**Detection signal:** `prose_hq` key absent from `prioritySynthesis`
+in `dashboard-data.json` even though `tier2GeneratedAt` is current and
+`prose` (legacy alias) is present. If legacy `prose` is set but
+`prose_hq` is absent, the preserve list is stale.
