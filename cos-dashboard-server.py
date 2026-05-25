@@ -333,6 +333,104 @@ def _deleted_ids():
     return [d.get('id') for d in _load_deletions().get('deletions', []) if d.get('id')]
 
 
+# ── Jane critic helpers (Task E) ─────────────────────────────────────────────
+
+def _find_suggestion(suggestion_id: str):
+    """Find a Jane hygiene suggestion by id in current dashboard-data.json."""
+    try:
+        d = json.loads(STATE_PATH.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
+    for s in (d.get('prioritySynthesis', {}).get('janeSuggestions') or []):
+        if s.get('id') == suggestion_id:
+            return s
+    return None
+
+
+def _find_strategic_action(strategic_id: str):
+    """Find a Jane strategic action by id in current dashboard-data.json."""
+    try:
+        d = json.loads(STATE_PATH.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
+    for s in (d.get('prioritySynthesis', {}).get('janeStrategicActions') or []):
+        if s.get('id') == strategic_id:
+            return s
+    return None
+
+
+def _append_jane_feedback(decision: str, item: dict, reason: str = ''):
+    """Append accept/reject/promote/dismiss decision to jane-feedback.jsonl
+    for future prompt-tuning. Append-only, never rotated in v1."""
+    JANE_FEEDBACK_LOG.parent.mkdir(parents=True, exist_ok=True)
+    entry = {
+        'ts': datetime.utcnow().isoformat(timespec='seconds') + 'Z',
+        'decision': decision,
+        'item': item,
+        'reason': reason,
+    }
+    try:
+        with open(JANE_FEEDBACK_LOG, 'a') as fh:
+            fh.write(json.dumps(entry, ensure_ascii=False) + '\n')
+    except Exception as e:
+        print(f'[jane] feedback log write failed: {e}', flush=True)
+
+
+def _apply_suggestion(suggestion: dict):
+    """Apply an accepted hygiene suggestion. Returns (ok: bool, message: str).
+    Routes by kind — tombstone_candidate writes to deletions.json; others
+    are informational (no auto-mutate in v1)."""
+    kind = suggestion.get('kind')
+    if kind == 'tombstone_candidate':
+        data = _load_deletions()
+        dels = data.setdefault('deletions', [])
+        sid = suggestion.get('id', '')
+        if not any(d.get('id') == sid for d in dels):
+            dels.append({
+                'id': sid,
+                'added_at': datetime.utcnow().isoformat(timespec='seconds') + 'Z',
+                'via': 'jane-suggestion',
+                'kind': 'tombstone_candidate',
+            })
+            _save_deletions(data)
+        return True, 'tombstoned'
+    elif kind == 'decision_state_stale':
+        return True, 'acknowledged — edit the decision_state_jane.md for this deal'
+    elif kind == 'stage_promote_candidate':
+        return True, 'flagged — manually update stage in deal-system-data.json'
+    elif kind == 'add_to_followups':
+        return True, 'see /dash skill to add to follow-ups doc'
+    else:
+        return False, f'unknown kind: {kind}'
+
+
+def _apply_strategic_promote(s: dict):
+    """Write Jane's strategic action to prioritySynthesis.janePromoted in
+    dashboard-data.json. Atomic write. Does NOT mutate deal-system-data.json.
+    Returns (ok: bool, message: str)."""
+    if not STATE_PATH.exists():
+        return False, 'dashboard-data.json not found'
+    try:
+        d = json.loads(STATE_PATH.read_text())
+    except (json.JSONDecodeError, OSError) as e:
+        return False, f'read failed: {e}'
+    deal_key = s.get('deal_or_path') or s.get('deal') or s.get('id', 'unknown')
+    promoted = d.setdefault('prioritySynthesis', {}).setdefault('janePromoted', {})
+    promoted[deal_key] = {
+        'jane_strategic_action': s.get('jane_strategic_action') or s.get('rationale', ''),
+        'rationale': s.get('rationale', ''),
+        'evidence': s.get('evidence') or [],
+        'promoted_at': datetime.utcnow().isoformat(timespec='seconds') + 'Z',
+    }
+    tmp = STATE_PATH.with_suffix('.tmp')
+    try:
+        tmp.write_text(json.dumps(d, indent=2, ensure_ascii=False))
+        tmp.replace(STATE_PATH)
+    except Exception as e:
+        return False, f'write failed: {e}'
+    return True, f'promoted as current_strategic_frame for {deal_key}'
+
+
 _topics_cache = {'mtime': 0, 'data': {'content': '', 'updated_at': ''}}
 _topics_lock  = threading.Lock()
 
@@ -1062,6 +1160,7 @@ def _firm_context_public(ctx: dict) -> dict:
 REFRESH_SCRIPT      = str(_HERE / 'cos-dashboard-refresh.py')
 FETCH_SCRIPT        = str(_HERE / 'cos-dashboard-fetch.py')
 STATE_PATH          = _ROOT / 'data' / 'compiled' / 'dashboard-data.json'
+JANE_FEEDBACK_LOG   = _ROOT / 'data' / 'compiled' / 'jane-feedback.jsonl'
 COS_DASHBOARD_RENDERED   = _HERE / 'templates' / 'cos-dashboard.rendered.html'
 COS_DASHBOARD_TEMPLATE   = _HERE / 'templates' / 'cos-dashboard.template.html'
 DEALS_DASHBOARD_RENDERED = _HERE / 'templates' / 'deal-dashboard.rendered.html'
@@ -4798,6 +4897,8 @@ Runs async — returns immediately, hook completes in ~30-60 sec on background.<
             self._handle_project_sync_update()
         elif self.path == '/tcip/onboard':
             self._handle_tcip_onboard()
+        elif self.path.startswith('/jane/'):
+            self._handle_jane_route()
         else:
             self.send_json(404, {'ok': False, 'error': 'not found'})
 
@@ -7253,6 +7354,109 @@ Last session: {sm.get('last_session_date')}
                 'deletes': sum(1 for c in changes if c['action']=='DELETE'),
             }
         })
+
+    # ── Jane critic endpoints (Task E) ───────────────────────────────────────
+    # Four POST endpoints for the Jane accept/reject/promote/dismiss pane.
+    # Auth is handled upstream in do_POST (localhost or owner-authenticated).
+    # All four append to jane-feedback.jsonl for future prompt-tuning.
+    #
+    # Route shape: /jane/suggestion/<id>/accept|reject
+    #              /jane/strategic/<id>/promote|dismiss
+    # Dispatched via _handle_jane_route() which parses the path segments.
+
+    def _handle_jane_route(self):
+        """Parse /jane/<scope>/<id>/<action> and dispatch to the correct handler."""
+        # self.path has already been stripped of query string in do_POST
+        segs = [s for s in self.path.split('/') if s]
+        # Expected: ['jane', scope, id, action]  → len == 4
+        if len(segs) != 4 or segs[0] != 'jane':
+            self.send_json(404, {'ok': False, 'error': 'not found'}); return
+        _, scope, item_id, action = segs
+        if scope == 'suggestion':
+            if action == 'accept':
+                self._jane_suggestion_accept(item_id)
+            elif action == 'reject':
+                self._jane_suggestion_reject(item_id)
+            else:
+                self.send_json(404, {'ok': False, 'error': 'unknown action'})
+        elif scope == 'strategic':
+            if action == 'promote':
+                self._jane_strategic_promote(item_id)
+            elif action == 'dismiss':
+                self._jane_strategic_dismiss(item_id)
+            else:
+                self.send_json(404, {'ok': False, 'error': 'unknown action'})
+        else:
+            self.send_json(404, {'ok': False, 'error': 'unknown scope'})
+
+    def _jane_suggestion_accept(self, suggestion_id: str):
+        """POST /jane/suggestion/<id>/accept — accept a hygiene suggestion.
+        Routes by kind: tombstone_candidate → deletions.json; others are
+        informational acknowledgements only (no auto-mutate in v1)."""
+        s = _find_suggestion(suggestion_id)
+        if s is None:
+            self._send_text(404, 'not found'); return
+        ok, msg = _apply_suggestion(s)
+        _append_jane_feedback('accept', s, msg)
+        self._send_text(200 if ok else 500, msg)
+
+    def _jane_suggestion_reject(self, suggestion_id: str):
+        """POST /jane/suggestion/<id>/reject — reject a hygiene suggestion.
+        Adds to deletions.json so it won't re-surface next refresh."""
+        s = _find_suggestion(suggestion_id)
+        if s is None:
+            self._send_text(404, 'not found'); return
+        data = _load_deletions()
+        dels = data.setdefault('deletions', [])
+        if not any(d.get('id') == suggestion_id for d in dels):
+            dels.append({
+                'id': suggestion_id,
+                'added_at': datetime.utcnow().isoformat(timespec='seconds') + 'Z',
+                'via': 'jane-suggestion-rejected',
+                'kind': s.get('kind'),
+            })
+            _save_deletions(data)
+        _append_jane_feedback('reject', s, '')
+        self._send_text(200, 'rejected')
+
+    def _jane_strategic_promote(self, strategic_id: str):
+        """POST /jane/strategic/<id>/promote — promote a strategic action.
+        Writes to prioritySynthesis.janePromoted in dashboard-data.json.
+        Does NOT mutate deal-system-data.json curated actions (v1 safety)."""
+        s = _find_strategic_action(strategic_id)
+        if s is None:
+            self._send_text(404, 'not found'); return
+        ok, msg = _apply_strategic_promote(s)
+        _append_jane_feedback('strategic_promote', s, msg)
+        self._send_text(200 if ok else 500, msg)
+
+    def _jane_strategic_dismiss(self, strategic_id: str):
+        """POST /jane/strategic/<id>/dismiss — dismiss a strategic action.
+        Adds to deletions.json so it won't re-surface next refresh."""
+        s = _find_strategic_action(strategic_id)
+        if s is None:
+            self._send_text(404, 'not found'); return
+        data = _load_deletions()
+        dels = data.setdefault('deletions', [])
+        if not any(d.get('id') == strategic_id for d in dels):
+            dels.append({
+                'id': strategic_id,
+                'added_at': datetime.utcnow().isoformat(timespec='seconds') + 'Z',
+                'via': 'jane-strategic-dismissed',
+                'deal_or_path': s.get('deal_or_path') or s.get('deal'),
+            })
+            _save_deletions(data)
+        _append_jane_feedback('strategic_dismiss', s, '')
+        self._send_text(200, 'dismissed')
+
+    def _send_text(self, status: int, body: str):
+        """Send a plain-text HTTP response."""
+        encoded = body.encode('utf-8')
+        self.send_response(status)
+        self.send_header('Content-Type', 'text/plain; charset=utf-8')
+        self.send_header('Content-Length', str(len(encoded)))
+        self.end_headers()
+        self.wfile.write(encoded)
 
 
 if __name__ == '__main__':
