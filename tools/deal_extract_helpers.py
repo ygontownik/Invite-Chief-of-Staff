@@ -918,6 +918,109 @@ def cmd_write_actions_md(args):
         print(f"  note: deal_sync.yaml not found — skipped Drive write (deploy Deal Sync Writer to enable)")
 
 
+DEAL_SYSTEM_DATA_PATH = os.path.expanduser(
+    "~/dashboards/data/compiled/deal-system-data.json"
+)
+
+
+def _load_deal_system_data():
+    """Load deal-system-data.json. Returns the parsed dict."""
+    with open(DEAL_SYSTEM_DATA_PATH) as f:
+        return json.load(f)
+
+
+def cmd_write_jane_brief(args):
+    """Write Jane Brief content to a deal's jane_brief Drive Doc via setContent.
+
+    Mirrors the write-deal-doc / write-file-by-id patterns. EP1: never recreates.
+    Reads content from --content-file (a local path). If jane_brief_file_id is
+    missing from deal-system-data.json, logs a warning and returns 1 so the
+    caller can skip gracefully without aborting the whole batch.
+
+    After Drive write, mirrors to local:
+        ~/dashboards/data/deals/<deal_id>/jane_brief.md
+    using atomic tmp + os.replace to prevent partial writes.
+    """
+    deal_id = args.deal_id
+    content_file = args.content_file
+
+    # Read content from file first (fail early if file missing)
+    if not os.path.exists(content_file):
+        print(f"ERROR: content-file not found: {content_file}", file=sys.stderr)
+        return 1
+
+    with open(content_file, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    if not content.strip():
+        print(f"ERROR: content-file is empty — refusing to wipe jane_brief for {deal_id}",
+              file=sys.stderr)
+        return 1
+
+    # Look up deal in deal-system-data.json
+    try:
+        ds = _load_deal_system_data()
+    except Exception as e:
+        print(f"ERROR: cannot load deal-system-data.json: {e}", file=sys.stderr)
+        return 1
+
+    deal_entry = next(
+        (d for d in ds.get("deals", []) if d.get("id") == deal_id), None
+    )
+    if deal_entry is None:
+        print(
+            f"WARNING: deal {deal_id!r} not found in deal-system-data.json — skipping",
+            file=sys.stderr,
+        )
+        return 1
+
+    file_id = deal_entry.get("jane_brief_file_id")
+    if not file_id:
+        print(
+            f"WARNING: deal {deal_id!r} has no jane_brief_file_id — "
+            f"run bootstrap_jane_drive.py first; skipping",
+            file=sys.stderr,
+        )
+        return 1
+
+    # Dry-run — print intent and exit 0
+    if args.dry_run:
+        local_path = os.path.expanduser(
+            f"~/dashboards/data/deals/{deal_id}/jane_brief.md"
+        )
+        print(
+            f"[dry-run] would setContent on jane_brief Drive Doc {file_id} "
+            f"({len(content)} chars) and mirror to {local_path}"
+        )
+        return 0
+
+    # Drive write — setContent on registered file_id (EP1: never recreate)
+    try:
+        drive_overwrite_text_file(file_id, content)
+    except Exception as e:
+        print(f"ERROR: Drive write failed for {deal_id} ({file_id}): {e}", file=sys.stderr)
+        return 1
+
+    # Local mirror — atomic write (tmp + os.replace)
+    local_path = Path(os.path.expanduser(
+        f"~/dashboards/data/deals/{deal_id}/jane_brief.md"
+    ))
+    local_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = local_path.with_suffix(".tmp")
+    try:
+        tmp_path.write_text(content, encoding="utf-8")
+        os.replace(tmp_path, local_path)
+    except Exception as e:
+        print(f"WARNING: local mirror write failed for {deal_id}: {e}", file=sys.stderr)
+        # Non-fatal: Drive write succeeded; local will be pulled on next sync
+
+    print(
+        f"OK jane_brief for {deal_id}: Drive {file_id} updated "
+        f"({len(content)} chars) + local mirror {local_path}"
+    )
+    return 0
+
+
 def cmd_regenerate_pipeline_section(args):
     cfg = load_drive_docs()
     firm_id = cfg["reference_docs"]["firm_context"]["doc_id"]
@@ -969,6 +1072,14 @@ def build_parser():
     s = sub.add_parser("mark-processed"); s.add_argument("deal_id"); s.add_argument("file_id"); s.add_argument("outcome", choices=["success", "failed"])
     s = sub.add_parser("update-last-run"); s.add_argument("deal_id")
     s = sub.add_parser("regenerate-pipeline-section")
+
+    s = sub.add_parser("write-jane-brief",
+                       help="setContent on a deal's jane_brief Drive Doc (EP1 — never recreate)")
+    s.add_argument("--deal-id", required=True,
+                   help="Deal slug (e.g. the deal id from deal-system-data.json)")
+    s.add_argument("--content-file", required=True,
+                   help="Path to local file containing the jane_brief markdown content")
+
     return p
 
 
@@ -989,6 +1100,7 @@ HANDLERS = {
     "mark-processed": cmd_mark_processed,
     "update-last-run": cmd_update_last_run,
     "regenerate-pipeline-section": cmd_regenerate_pipeline_section,
+    "write-jane-brief": cmd_write_jane_brief,
 }
 
 
