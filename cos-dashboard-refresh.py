@@ -827,6 +827,46 @@ def assemble_data():
         'prioritySynthesis':      state.get('prioritySynthesis', {}),
     }
 
+    # ── Phase I Tier 1.5 — gap_detector (Jane critic substrate) ──────────
+    # Re-runs on every warmup/refresh using cached followUpsRaw + current
+    # deal logs. Non-fatal — a broken gap_detector never crashes the render.
+    # gap_detector.run() is also called in cos-dashboard-fetch.py (the slow
+    # path that calls Drive APIs); this call gives fresh gap detection on
+    # every refresh even between full fetches.
+    # Uses _HERE / _ROOT (already module-level, symlink-aware — do NOT use
+    # Path(__file__).resolve() as that breaks the dashboards/app path layout).
+    try:
+        _gd_app_dir = str(_HERE)  # ~/dashboards/app/ (symlink-aware)
+        if _gd_app_dir not in sys.path:
+            sys.path.insert(0, _gd_app_dir)
+        from lib import gap_detector as _gap_detector
+        import yaml as _yaml
+        _gd_weights_path = _ROOT / 'config' / 'synthesis-weights.yaml'
+        _gd_weights = (_yaml.safe_load(_gd_weights_path.read_text())
+                       if _gd_weights_path.exists() else {}) or {}
+        _gd_followups = state.get('followUpsRaw', '') or ''
+        _gd_calendar = state.get('upcomingCalls', []) or []
+        _gd_deal_sys_path = _ROOT / 'data' / 'compiled' / 'deal-system-data.json'
+        _gd_deal_config = []
+        if _gd_deal_sys_path.exists():
+            try:
+                _gd_deal_config = json.loads(_gd_deal_sys_path.read_text()).get('deals') or []
+            except Exception:
+                pass
+        _gd_gaps = _gap_detector.run(
+            dashboard_data=state,
+            followups_text=_gd_followups,
+            calendar_events=_gd_calendar,
+            deal_config=_gd_deal_config,
+            weights=_gd_weights,
+        )
+        data.setdefault('prioritySynthesis', {})['gaps'] = _gd_gaps
+        if _gd_gaps:
+            print(f'[gap_detector] {len(_gd_gaps)} gaps surfaced', flush=True)
+    except Exception as _gap_err:
+        print(f'[gap_detector] non-fatal: {_gap_err!r}', flush=True)
+        data.setdefault('prioritySynthesis', {}).setdefault('gaps', [])
+
     return data, state
 
 
