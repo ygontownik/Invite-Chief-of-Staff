@@ -901,16 +901,22 @@ def main():
             capture_output=True,
             timeout=60,
         )
-        # Pull janeSuggestions back into data so the HTML render includes them
+        # Pull janeSuggestions + strategic actions back into data so the HTML
+        # render includes all Jane output (hygiene + portfolio critics).
         if STATE_PATH.exists():
             _post_critic = json.loads(STATE_PATH.read_text())
             _post_ps = _post_critic.get("prioritySynthesis") or {}
-            if "janeSuggestions" in _post_ps:
-                data.setdefault("prioritySynthesis", {})["janeSuggestions"] = (
-                    _post_ps["janeSuggestions"])
-            if "janeCritiqueGeneratedAt" in _post_ps:
-                data["prioritySynthesis"]["janeCritiqueGeneratedAt"] = (
-                    _post_ps["janeCritiqueGeneratedAt"])
+            _jane_keys = [
+                "janeSuggestions",
+                "janeCritiqueGeneratedAt",
+                "janeStrategicActions",
+                "janeCrossDealPatterns",
+                "janeStrategicGeneratedAt",
+                "janeStrategicStaleBriefs",
+            ]
+            for _jk in _jane_keys:
+                if _jk in _post_ps:
+                    data.setdefault("prioritySynthesis", {})[_jk] = _post_ps[_jk]
     except Exception as _critic_err:
         print(f"[jane critic] non-fatal: {_critic_err!r}", flush=True)
 

@@ -2537,16 +2537,44 @@ def main(dry_run: bool = False):
     # These are written to dashboard-data.json with content_type="my_action" but NOT to the
     # Follow-ups Google Doc, so parse_followups() above silently drops them on every fetch.
     # Re-merge any that aren't already covered by the doc parse.
+    #
+    # 2026-05-25 (L0049 source fix): `who` semantically means the COUNTERPARTY
+    # being actioned (the firm/person on the other side). It must NEVER fall
+    # back to `owner` — `owner` is always the principal for my_action items,
+    # and seeding `who` from owner caused 19 violations of Rule L0049 (who
+    # collapsed to the principal's first name). Use counterparty, fall back
+    # to parent_id, then empty. clean_follow_ups will drop bare-principal
+    # who's via self_ref_names anyway, but the right answer is not to write
+    # them in the first place (Operating Principle 8: fix the source).
+    _principal_tokens = set()
+    try:
+        _pf = (_fc.principal_first_name(_CTX) or '').lower().strip()
+        if _pf:
+            _principal_tokens.add(_pf)
+        for _o in (_CTX.get('owner_whitelist') or []):
+            _principal_tokens.add(str(_o).lower().strip())
+    except Exception:
+        pass
     envelope_fu_keys = {(f.get('who',''), f.get('what','')[:40]) for f in followups}
     envelope_fus = []
     for fu in state.get('followUps', []):
         if fu.get('content_type') == 'my_action':
             what = (fu.get('content') or fu.get('what') or '')
-            who  = (fu.get('owner') or fu.get('who') or '')
+            # Counterparty first, then parent_id; fall back to existing who only
+            # if it's not the principal. NEVER fall back to owner.
+            cp_or_pid = (fu.get('counterparty') or fu.get('parent_id') or '').strip()
+            cur_who_raw = (fu.get('who') or '').strip()
+            cur_who_l = cur_who_raw.lower()
+            if cp_or_pid:
+                who = cp_or_pid
+            elif cur_who_l and cur_who_l not in _principal_tokens:
+                who = cur_who_raw
+            else:
+                who = ''  # leave blank; clean_follow_ups will dedupe/drop downstream
             key  = (who, what[:40])
             if key not in envelope_fu_keys:
                 normalised = dict(fu)
-                if not normalised.get('who'):
+                if not cur_who_raw or cur_who_l in _principal_tokens:
                     normalised['who'] = who
                 if not normalised.get('what'):
                     normalised['what'] = what
