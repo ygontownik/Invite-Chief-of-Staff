@@ -1501,18 +1501,32 @@ function buildDailyLayout(calls, fus, tomac, showRec) { // noqa: tenant-leak (to
 // ── Priority Synthesis pane ──────────────────────────────────────────────
 // Tier 1 (rule-based scoring) always renders; Tier 2 (Claude Max prose +
 // worthNoticing + clusters) renders only when present. Reads from
-// window.DATA.prioritySynthesis populated by cos-dashboard-fetch.py and
-// synthesize_prose.py respectively.
+// DATA.prioritySynthesis injected into const DATA by cos-dashboard-refresh.py.
+// NOTE: uses DATA (const), NOT window.DATA — `const` at module scope is NOT
+// assigned to window in browsers. Surface-specific prose: prose_hq / prose_personal.
 function buildSynthesisPane(isPersonal) {
-  const ps = (window.DATA && window.DATA.prioritySynthesis) || {};
+  const ps = (typeof DATA !== 'undefined' && DATA.prioritySynthesis) || {};
   const t1 = ps.tier1 || {};
   const surface = isPersonal ? 'personal' : 'hq';
-  const ranked = (t1[surface] || []).filter(it =>
-      typeof __isDeleted === 'function' ? !__isDeleted('synthesis', it.title) : true);
+  // Filter [RESOLVED ...] rows — FU1/FU2/FU3 sweep tags them in Drive but
+  // prioritize.py may still score them before the next fetch cycle.
+  const ranked = (t1[surface] || []).filter(it => {
+    if (it.title && it.title.toLowerCase().startsWith('[resolved')) return false;
+    if (typeof __isDeleted === 'function' && __isDeleted('synthesis', it.title)) return false;
+    return true;
+  });
   const drifting = (t1.drifting && t1.drifting[surface]) || [];
   const blocked  = (t1.blocked  && t1.blocked[surface])  || [];
 
-  if (!ranked.length && !drifting.length && !blocked.length && !ps.prose) {
+  // Surface-specific prose (Phase H split); fall back to legacy unified prose field.
+  const surfaceProse = isPersonal
+      ? (ps.prose_personal || ps.prose || '')
+      : (ps.prose_hq       || ps.prose || '');
+  const surfaceWorth = isPersonal
+      ? (ps.worthNoticing_personal || ps.worthNoticing || '')
+      : (ps.worthNoticing_hq       || ps.worthNoticing || '');
+
+  if (!ranked.length && !drifting.length && !blocked.length && !surfaceProse) {
     return '';
   }
 
@@ -1520,12 +1534,12 @@ function buildSynthesisPane(isPersonal) {
       .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 
   let proseHTML = '';
-  if (ps.prose) {
-    proseHTML = `<div class="synth-prose">${esc(ps.prose)}</div>`;
+  if (surfaceProse) {
+    proseHTML = `<div class="synth-prose">${esc(surfaceProse)}</div>`;
   }
   let worthHTML = '';
-  if (ps.worthNoticing) {
-    worthHTML = `<div class="synth-worth"><strong>Worth noticing:</strong> ${esc(ps.worthNoticing)}</div>`;
+  if (surfaceWorth) {
+    worthHTML = `<div class="synth-worth"><strong>Worth noticing:</strong> ${esc(surfaceWorth)}</div>`;
   }
 
   let rankedHTML = '';

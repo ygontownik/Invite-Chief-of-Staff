@@ -820,6 +820,11 @@ def assemble_data():
         # rules_audit.py --apply`. Soft surface: returns {} when the file is
         # missing or unreadable; the template hides the tile in that case.
         'rulesCompliance':        _load_rules_compliance(),
+        # Priority Synthesis — Tier 1 (rule-based scoring) + Tier 2 (Claude prose).
+        # Written by lib/prioritize.py (Tier 1) + synthesize_prose.py (Tier 2).
+        # Must be included here so buildSynthesisPane() in the template can read
+        # DATA.prioritySynthesis — omitting it leaves the pane permanently empty.
+        'prioritySynthesis':      state.get('prioritySynthesis', {}),
     }
 
     return data, state
