@@ -876,6 +876,44 @@ def main():
     data, state = assemble_data()
     age = cache_age_minutes(state)
 
+    # ── Jane critic pass — Sonnet-ranked gaps with Yoni-voice rationale ──────
+    # critique_gaps.py reads prioritySynthesis.gaps from dashboard-data.json
+    # and writes back prioritySynthesis.janeSuggestions[].
+    # MUST run AFTER assemble_data() so fresh gaps are in STATE_PATH.
+    # We write the updated data (with fresh gaps) to STATE_PATH first so the
+    # critic reads the most recent gap_detector output, not the stale fetch.
+    try:
+        _critic_ps = data.get("prioritySynthesis") or {}
+        _critic_gaps = _critic_ps.get("gaps")
+        if _critic_gaps:
+            # Write fresh gaps back to STATE_PATH so critique_gaps.py sees them
+            _critic_state = json.loads(STATE_PATH.read_text()) if STATE_PATH.exists() else {}
+            _critic_state.setdefault("prioritySynthesis", {})["gaps"] = _critic_gaps
+            _critic_tmp = STATE_PATH.with_suffix(".tmp")
+            _critic_tmp.write_text(
+                json.dumps(_critic_state, indent=2, ensure_ascii=False))
+            import os as _os
+            _os.replace(_critic_tmp, STATE_PATH)
+        _critic_script = Path.home() / "dashboards" / "routines" / "compile" / "critique_gaps.py"
+        subprocess.run(
+            ["python3", str(_critic_script), "--apply"],
+            check=True,
+            capture_output=True,
+            timeout=60,
+        )
+        # Pull janeSuggestions back into data so the HTML render includes them
+        if STATE_PATH.exists():
+            _post_critic = json.loads(STATE_PATH.read_text())
+            _post_ps = _post_critic.get("prioritySynthesis") or {}
+            if "janeSuggestions" in _post_ps:
+                data.setdefault("prioritySynthesis", {})["janeSuggestions"] = (
+                    _post_ps["janeSuggestions"])
+            if "janeCritiqueGeneratedAt" in _post_ps:
+                data["prioritySynthesis"]["janeCritiqueGeneratedAt"] = (
+                    _post_ps["janeCritiqueGeneratedAt"])
+    except Exception as _critic_err:
+        print(f"[jane critic] non-fatal: {_critic_err!r}", flush=True)
+
     # ── Inject into HTML ──
     # Read from clean .template.html (committed, no injected data block).
     # Write to .rendered.html (gitignored, served by dashboard) AND mirror
