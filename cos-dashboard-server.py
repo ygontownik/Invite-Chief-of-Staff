@@ -2705,8 +2705,15 @@ class Handler(BaseHTTPRequestHandler):
         # despite being accessed locally. Cached at process start in
         # _OWN_HOST_IPS — see module-level helper.
         try:
-            return ip in _OWN_HOST_IPS
+            if ip in _OWN_HOST_IPS:
+                return True
         except NameError:
+            pass
+        # Trust Tailscale network (100.64.0.0/10) — Tailscale auth is sufficient.
+        try:
+            import ipaddress as _ip
+            return _ip.ip_address(ip) in _ip.ip_network('100.64.0.0/10')
+        except Exception:
             return False
 
     def send_json(self, status, body: dict):
@@ -2907,6 +2914,22 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 status['deal_sync_stale'] = False
             self.send_json(200, status)
+        elif self.path == '/jane/banner-state':
+            # v1.1 T32 — return suppressed_kinds + budget tier for dashboard banner.
+            import json as _json
+            pack_path = Path.home() / 'dashboards' / 'data' / 'compiled' / 'jane-context-pack.json'
+            if not pack_path.exists():
+                self.send_json(200, {'suppressed_kinds': [], 'budget_status': None})
+                return
+            try:
+                pack = _json.loads(pack_path.read_text())
+            except _json.JSONDecodeError:
+                self.send_json(200, {'suppressed_kinds': [], 'budget_status': None})
+                return
+            self.send_json(200, {
+                'suppressed_kinds': (pack.get('self_awareness') or {}).get('suppressed_kinds') or [],
+                'budget_status':    pack.get('budget_status'),
+            })
         elif self.path == '/sync-preview':
             if user != 'owner':
                 self._send_403(); return
@@ -4790,6 +4813,33 @@ Runs async — returns immediately, hook completes in ~30-60 sec on background.<
             self._handle_refresh()
         elif self.path == '/warmup':
             self._handle_warmup()
+        elif self.path.startswith('/jane/unsuppress/'):
+            # v1.1 T32 — move a kind from auto-suppressed back to active.
+            import json as _json
+            import subprocess as _sp
+            from urllib.parse import unquote as _unq
+            kind = _unq(self.path[len('/jane/unsuppress/'):]).strip('/')
+            if not kind:
+                self.send_json(400, {'error': 'kind required'}); return
+            overrides_path = Path.home() / 'dashboards' / 'data' / 'user-state' / 'jane-watchdog-overrides.json'
+            if overrides_path.exists():
+                try:
+                    cfg = _json.loads(overrides_path.read_text())
+                except _json.JSONDecodeError:
+                    cfg = {'force_active': [], 'force_suppressed': []}
+            else:
+                cfg = {'force_active': [], 'force_suppressed': []}
+            active = set(cfg.get('force_active') or [])
+            active.add(kind)
+            cfg['force_active'] = sorted(active)
+            cfg['force_suppressed'] = [k for k in (cfg.get('force_suppressed') or []) if k != kind]
+            overrides_path.parent.mkdir(parents=True, exist_ok=True)
+            overrides_path.write_text(_json.dumps(cfg, indent=2))
+            try:
+                _sp.Popen(['python3', str(Path.home() / 'dashboards' / 'scripts' / 'jane_watchdog.py')])
+            except Exception:
+                pass
+            self.send_json(200, {'ok': True, 'force_active': cfg['force_active']})
         elif self.path == '/api/run-health-check':
             if not self._is_localhost():
                 user = self._authenticate()
