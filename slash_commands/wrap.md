@@ -76,6 +76,19 @@ Read the last few hundred messages from that file. Extract:
 - ---DEAL-INTEL--- blocks
 - ---SESSION-CLOSE--- blocks
 - DECISIONS made (look for "DECISION:" markers or major architectural choices)
+- **CoS corrections** (Rule CW1 — MANDATORY): scan for any of the following patterns
+  in the user's messages and in assistant responses marked as corrections:
+  - "X not involved" / "X has no involvement" → owner reassignment
+  - "[deal] stage is [X] not [Y]" → stage correction
+  - "that's wrong, it should be [X]" / "correct that to [X]" → factual correction
+  - Stage changes ("moved to", "promoted to", "now in [stage]")
+  - Counterparty ownership changes ("Yoni owns", "Mark owns", "X is Yoni's call")
+  - For EACH correction found: write it to `~/dashboards/data/user-state/cos-overrides.json`
+    (append to the `overrides` array with deal_id, field, value, reason, permanent flag,
+    created_at=today) AND emit a ---DEAL-INTEL--- block for the affected deal so
+    intel_capture.py routes it to the deal's log.json. Then run compile-dashboard.py
+    to activate the override. This step runs even when corrections are implicit
+    (user says "X" and assistant's response corrects a prior dashboard value).
 
 3b. Git status + log across the 3 repos:
 
