@@ -44,7 +44,7 @@ JANE_BRIEF_STALE_HOURS = 4
 
 # Matches "Last updated: YYYY-MM-DD" in various markdown formats
 _LAST_UPDATED_RE = re.compile(
-    r"^\s*-?\s*\*?\*?Last\s+updated:?\*?\*?\s*[:_]?\s*(\d{4}-\d{2}-\d{2})\s*$",
+    r"^\s*-?\s*[*_]{0,2}Last\s+updated:?[*_]{0,2}\s*[:_]?\s*[*_]{0,2}(\d{4}-\d{2}-\d{2})[*_]{0,2}\s*$",
     re.MULTILINE,
 )
 
