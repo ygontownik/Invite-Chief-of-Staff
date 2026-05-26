@@ -2945,6 +2945,10 @@ def main(dry_run: bool = False):
             "prose_hq", "worthNoticing_hq", "clusters_hq",
             "prose_personal", "worthNoticing_personal", "clusters_personal",
             "ruleApplications",
+            # Jane critic outputs — written by critique_strategic.py and critique_gaps.py;
+            # must survive every warmup cycle or they are wiped on the next fetch.
+            "janeStrategicActions", "janeCrossDealPatterns", "janeStrategicGeneratedAt",
+            "janeStrategicStaleBriefs", "janeSuggestions", "janeCritiqueGeneratedAt",
         )
         for k in _TIER2_PRESERVE:
             if k in _prev_synth:
