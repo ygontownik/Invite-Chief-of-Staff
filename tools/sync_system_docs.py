@@ -42,6 +42,32 @@ STATE_PATH = Path.home() / "credentials" / "sync_system_docs_state.json"
 # Which reference_docs entries this script mirrors (others are not Markdown).
 MIRRORED_KEYS = {"readme", "system_reference", "user_manual", "skills_catalog", "my_skills"}
 
+def _strip_backslash_corruption(content: str, label: str) -> str:
+    """Detect and strip backslash corruption.
+
+    Symptom: Markdown files where every `#`, `-`, `*`, `[`, `]` char
+    has been prepended with one or more backslashes (backslash-hash, double-backslash-hash, ...).
+    This happens when content passes through a JSON-escaping step one or
+    more times and the escaped string is written raw to disk rather than
+    being unescaped first.  Compounding on each /wrap doubles the count.
+
+    Detection heuristic: if >8% of non-whitespace chars are backslashes,
+    assume corruption and strip ALL backslashes.  Real Markdown prose has
+    virtually zero backslash chars.
+    """
+    non_ws = [c for c in content if not c.isspace()]
+    if not non_ws:
+        return content
+    bs_ratio = content.count("\\") / len(non_ws)
+    if bs_ratio > 0.08:
+        cleaned = content.replace("\\", "")
+        print(f"  [corruption-guard] {label}: stripped {content.count(chr(92))} "
+              f"backslashes ({bs_ratio:.1%} density) before push")
+        return cleaned
+    return content
+
+
+
 
 def find_drive_docs() -> Path:
     env = os.environ.get("COS_CONFIG_DIR")
@@ -155,7 +181,7 @@ def main(argv: list[str] | None = None) -> int:
             if not args.force and mtime <= last_mtime:
                 print(f"  {label}: skip (unchanged since last push)")
                 continue
-            content = path.read_text()
+            content = _strip_backslash_corruption(path.read_text(), label)
             if dry:
                 print(f"  {label}: WOULD PUSH ({len(content)} bytes)")
             else:

@@ -665,6 +665,11 @@ body { padding: 0 !important; }
   border-color: var(--ink-ghost);
   color: inherit;
 }
+/* Stage-coded left border — visual hierarchy at a glance */
+.tc-mini-card--border-slate { border-left: 3px solid var(--slate); }
+.tc-mini-card--border-navy  { border-left: 3px solid var(--navy); }
+.tc-mini-card--border-gold  { border-left: 3px solid var(--gold); }
+
 .tc-mini-card-head {
   display: flex;
   align-items: baseline;
@@ -4715,7 +4720,7 @@ function buildTCPipelineLayout() {
     const nextSuffix = urgLbl ? ` <span style="color:var(--ink-faint);font-size:10px">· ${esc(urgLbl)}</span>` : '';
     const slug = _norm(d.name);
     return `
-    <div class="tc-mini-card" style="cursor:pointer" onclick="scrollToTCDeal('${slug}')" title="Click to highlight deal details">
+    <div class="tc-mini-card ${stageCls === 'tc-mini-stage--slate' ? 'tc-mini-card--border-slate' : stageCls === 'tc-mini-stage--navy' ? 'tc-mini-card--border-navy' : 'tc-mini-card--border-gold'}" style="cursor:pointer" onclick="scrollToTCDeal('${slug}')" title="Click to highlight deal details">
       <div class="tc-mini-card-head">
         <div>
           <div class="tc-mini-name">${esc(d.name)}</div>
