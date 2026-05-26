@@ -876,6 +876,22 @@ def main():
     data, state = assemble_data()
     age = cache_age_minutes(state)
 
+    # ── Jane v1.1 Context Pack rebuild ───────────────────────────────────────
+    # Regenerates ~/dashboards/data/compiled/jane-context-pack.json before the
+    # critic runs so persona substrate, decisions, market memory, grid signals,
+    # activating events, self-awareness, and budget_status are all fresh.
+    # Fail-open: if the pack build fails, critic falls back to v1 inputs.
+    try:
+        _pack_script = Path.home() / "dashboards" / "routines" / "compile" / "build_jane_context.py"
+        subprocess.run(
+            ["python3", str(_pack_script)],
+            check=True,
+            capture_output=True,
+            timeout=30,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as _pack_err:
+        print(f"[refresh] build_jane_context failed (non-fatal): {_pack_err}", file=sys.stderr)
+
     # ── Jane critic pass — Sonnet-ranked gaps with Yoni-voice rationale ──────
     # critique_gaps.py reads prioritySynthesis.gaps from dashboard-data.json
     # and writes back prioritySynthesis.janeSuggestions[].
