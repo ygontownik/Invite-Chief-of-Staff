@@ -38,6 +38,29 @@ from typing import Any
 HOME = Path.home()
 DASHBOARD_DATA = HOME / "dashboards" / "data" / "compiled" / "dashboard-data.json"
 DEAL_SYSTEM = HOME / "dashboards" / "data" / "compiled" / "deal-system-data.json"
+DEALS_DATA_DIR = HOME / "dashboards" / "data" / "deals"
+
+_INTEL_SOURCES = {"market", "intel", "podcast", "brief", "marketcommentary"}
+
+
+def _has_intel_in_full_log(deal_id: str) -> bool:
+    """Fallback: check full log.json when recent_log only has followup entries.
+    Deals often have intel entries in log.json that are displaced from recent_log
+    by newer followup entries — recent_log only holds top-5 by date.
+    """
+    log_path = DEALS_DATA_DIR / deal_id / "log.json"
+    if not log_path.exists():
+        return False
+    try:
+        raw = json.loads(log_path.read_text(encoding="utf-8"))
+        entries = raw.get("entries", raw) if isinstance(raw, dict) else raw
+        for e in (entries or []):
+            src = (e.get("source") or "").lower()
+            if src in _INTEL_SOURCES or (e.get("match") or "").lower() == "explicit":
+                return True
+    except Exception:
+        pass
+    return False
 
 
 def _market_item_count(dd: dict[str, Any]) -> int:
@@ -87,10 +110,16 @@ def run() -> dict[str, Any]:
         explicit_intel = [
             e
             for e in log
-            if (e.get("source") or "").lower()
-            in {"market", "intel", "podcast", "brief", "marketcommentary"}
+            if (e.get("source") or "").lower() in _INTEL_SOURCES
             or (e.get("match") or "").lower() == "explicit"
         ]
+        # Fallback: recent_log only holds top-5 by date; intel entries may be
+        # displaced by newer followup entries. Check full log.json before warning.
+        if not rts and not explicit_intel:
+            deal_id = d.get("id") or ""
+            if deal_id and _has_intel_in_full_log(deal_id):
+                deals_with_readthroughs += 1
+                continue
         if rts or explicit_intel:
             deals_with_readthroughs += 1
         else:
