@@ -1811,19 +1811,27 @@ function buildTopicsPanel() {
     }
   } catch(e) { /* graceful — no banner on any error */ }
 
+  const topicCount = initial.trim() ? initial.trim().split('\n').filter(l => l.trim()).length : 0;
+  const topicLabel = topicCount ? `${topicCount} topic${topicCount === 1 ? '' : 's'}` : 'empty';
   return `
-  <div class="tc-card" style="margin:0 0 18px;padding:14px 16px">
-    <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px">
-      <div style="font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#64748b;font-family:var(--font-data, monospace)">Topics — Watchlist</div>
+  <div class="tc-card" style="margin:0 0 14px;padding:10px 16px">
+    <div onclick="(function(el){var b=el.closest('.tc-card').querySelector('.topics-body');var c=el.querySelector('.topics-chevron');if(!b)return;var open=b.style.display!=='none';b.style.display=open?'none':'block';c.textContent=open?'▶':'▼';})(this)" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between">
+      <div style="display:flex;align-items:center;gap:6px">
+        <span class="topics-chevron" style="font-size:9px;color:#94a3b8">▶</span>
+        <span style="font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#64748b;font-family:var(--font-data, monospace)">Watchlist config</span>
+        <span style="font-size:10px;color:#94a3b8">${topicLabel}</span>
+      </div>
       <div id="topics-saved" style="font-size:10px;color:#94a3b8;font-family:var(--font-data, monospace)">${updatedLabel}</div>
     </div>
-    ${suggestBanner}
-    <textarea id="topics-input"
-      style="width:100%;min-height:72px;background:#f8fafc;border:1px solid #e2e8f2;border-radius:6px;color:#1e293b;font-size:13px;font-family:inherit;padding:10px 12px;resize:vertical;outline:none"
-      placeholder="Topics, firms, or themes you're watching. One per line.">${esc(initial)}</textarea>
-    <div style="display:flex;justify-content:flex-end;margin-top:8px">
-      <button id="topics-save-btn" onclick="saveTopics(this)" class="btn-edit"
-        style="font-size:11px;padding:5px 14px;cursor:pointer">Save Topics</button>
+    <div class="topics-body" style="display:none;margin-top:10px">
+      ${suggestBanner}
+      <textarea id="topics-input"
+        style="width:100%;min-height:72px;background:#f8fafc;border:1px solid #e2e8f2;border-radius:6px;color:#1e293b;font-size:13px;font-family:inherit;padding:10px 12px;resize:vertical;outline:none"
+        placeholder="Topics, firms, or themes you're watching. One per line.">${esc(initial)}</textarea>
+      <div style="display:flex;justify-content:flex-end;margin-top:8px">
+        <button id="topics-save-btn" onclick="saveTopics(this)" class="btn-edit"
+          style="font-size:11px;padding:5px 14px;cursor:pointer">Save Topics</button>
+      </div>
     </div>
   </div>`;
 }
