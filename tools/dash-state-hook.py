@@ -601,6 +601,7 @@ def run_intel_capture_scan():
         return False
 
 
+
 def seconds_since_chat_capture():
     if not CHAT_CAPTURE_LOCK.exists():
         return float("inf")

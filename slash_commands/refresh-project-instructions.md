@@ -20,9 +20,10 @@ reference docs evolve.
 
 `$ARGUMENTS` should be either:
 - A deal_id (e.g. `cholla`, `pngts`, `unitil`)
-- The literal `all` — process every deal in the registry that has a `project_url`
+- The literal `nda` — refresh the NDA Review project
+- The literal `all` — process every deal in the registry with a `project_url`, plus the NDA project if it has one
 
-If empty, ask Yoni which deal.
+If empty, ask Yoni which deal or project.
 
 ---
 
@@ -30,21 +31,44 @@ If empty, ask Yoni which deal.
 
 ```bash
 python3 - <<'EOF'
-import json, sys
+import json, sys, yaml
+from pathlib import Path
+
 data = json.load(open('/Users/ygontownik/cos-pipeline/tools/deal-system-data.json'))
+drive_docs = yaml.safe_load(
+    (Path.home() / 'cos-pipeline-config-tomac/drive-docs.yaml').read_text()
+)
 DEAL = "$DEAL_ID_OR_ALL"
-if DEAL == "all":
-    targets = [(d["deal_id"], d["project_url"]) for d in data["deals"] if d.get("project_url")]
+
+if DEAL == "nda":
+    nda = drive_docs.get("nda_review", {})
+    url = nda.get("project_instructions", {}).get("project_url", "")
+    inst_id = nda.get("project_instructions", {}).get("doc_id", "")
+    if not url:
+        sys.exit("NDA project_url not set in drive-docs.yaml nda_review.project_instructions.project_url — add it first")
+    targets = [("nda", url, inst_id)]
+elif DEAL == "all":
+    targets = [(d["deal_id"], d["project_url"],
+                drive_docs.get("deal_docs", {}).get(d["deal_id"], {}).get("project_instructions", {}).get("doc_id", ""))
+               for d in data["deals"] if d.get("project_url")]
+    # Also include NDA project if wired
+    nda = drive_docs.get("nda_review", {})
+    nda_url = nda.get("project_instructions", {}).get("project_url", "")
+    nda_id = nda.get("project_instructions", {}).get("doc_id", "")
+    if nda_url:
+        targets.append(("nda", nda_url, nda_id))
 else:
     match = next((d for d in data["deals"] if d["deal_id"] == DEAL), None)
     if not match or not match.get("project_url"):
         sys.exit(f"deal {DEAL} not found or has no project_url")
-    targets = [(DEAL, match["project_url"])]
+    inst_id = drive_docs.get("deal_docs", {}).get(DEAL, {}).get("project_instructions", {}).get("doc_id", "")
+    targets = [(DEAL, match["project_url"], inst_id)]
+
 print(json.dumps(targets))
 EOF
 ```
 
-Parse the result. You now have a list of `(deal_id, project_url)`.
+Parse the result. You now have a list of `(deal_id, project_url, instructions_doc_id)`.
 
 ---
 

@@ -1,58 +1,93 @@
 ---
-description: Scrape claude.ai deal-project chats for ---DEAL-INTEL--- blocks and route them into per-deal log.json. Block-only — never full transcripts.
-argument-hint: "[deal_id | all]"
+description: Scrape claude.ai project chats for ---DEAL-INTEL--- and ---NDA-LESSONS--- blocks and route them to the right handlers. Block-only — never full transcripts.
+argument-hint: "[deal_id | nda | all]"
 ---
 
-# /capture-deal-chats — auto-capture DEAL-INTEL blocks from claude.ai
+# /capture-deal-chats — auto-capture blocks from all claude.ai projects
 
-For each TCIP deal project on claude.ai with a `project_url` in
-`~/cos-pipeline/tools/sync-state.json`, walk the chat list, open any
-chats with new messages since last capture, scrape ONLY the
-`---DEAL-INTEL---` blocks (not the surrounding chat text), pipe them
-through `intel_capture.py parse-stdin` to route into the right deal's
-`~/dashboards/data/deals/<deal>/log.json`.
+For every registered claude.ai project (TCIP deals **and** the NDA Review
+project), walk the chat list, open any chats with new messages since last
+capture, scrape ONLY structured blocks, and route them:
 
-`/deal-sync` then folds them into status + master brief on next cycle.
+- `---DEAL-INTEL---` → `intel_capture.py parse-stdin` → deal `log.json`
+- `---NDA-LESSONS---` → `nda_log_processor.py parse-stdin` → NDA Reviewer doc
+
+`/deal-sync` folds DEAL-INTEL into status + master brief on next cycle.
+`nda_log_processor` merges NDA-LESSONS into §3/§7/§9 of the NDA Reviewer doc.
 
 This is the claude.ai counterpart to the Stop hook's
 `run_intel_capture_scan()` (which handles Claude Code transcripts).
-Two surfaces, one block format, one target log.
+Two surfaces, one block format, one target each.
 
 ---
 
 ## STEP 0 — Parse argument
 
-`$ARGUMENTS` is `<deal_id>` or `all` (default: `all`).
+`$ARGUMENTS` is `<deal_id>`, `nda`, or `all` (default: `all`).
 
 ---
 
 ## STEP 1 — Load registry + capture state
 
+Builds a unified target list from ALL registered `project_url` sources:
+`sync-state.json` (TCIP deals) and `drive-docs.yaml` (NDA project, etc.).
+
 ```bash
 python3 - <<'EOF'
-import json, os
-with open('/Users/ygontownik/cos-pipeline/tools/sync-state.json') as f:
-    ss = json.load(f)
-state_path = os.path.expanduser('~/dashboards/data/chat_capture_state.json')
-state = json.loads(open(state_path).read()) if os.path.exists(state_path) else {}
+import json, os, sys
+from pathlib import Path
+import yaml
+
+# --- TCIP deals from sync-state.json ---
+ss_path = Path('/Users/ygontownik/cos-pipeline/tools/sync-state.json')
+ss = json.loads(ss_path.read_text()) if ss_path.exists() else {}
+
+# --- Non-deal projects from drive-docs.yaml ---
+dy_path = Path.home() / 'cos-pipeline-config-tomac/drive-docs.yaml'
+dy = yaml.safe_load(dy_path.read_text()) if dy_path.exists() else {}
+
+state_path = Path.home() / 'dashboards/data/chat_capture_state.json'
+state = json.loads(state_path.read_text()) if state_path.exists() else {}
 
 DEAL = "$DEAL_ID_OR_ALL"
-if DEAL == "all":
-    targets = [(k, v["project_url"], state.get(k, {}))
-               for k, v in ss.items() if v.get("project_url")]
-else:
-    if DEAL not in ss or not ss[DEAL].get("project_url"):
-        import sys; sys.exit(f"deal {DEAL} not found")
-    targets = [(DEAL, ss[DEAL]["project_url"], state.get(DEAL, {}))]
-print(json.dumps([{"deal_id": t[0], "url": t[1],
-                   "last_capture": t[2].get("last_capture"),
-                   "captured_chat_ids": t[2].get("captured_chat_ids", [])}
-                  for t in targets], indent=2))
+
+targets = []
+
+if DEAL in ("all", "nda"):
+    nda = dy.get("nda_review", {})
+    nda_url = nda.get("project_instructions", {}).get("project_url", "")
+    if nda_url:
+        targets.append({
+            "project_id": "nda",
+            "url": nda_url,
+            "block_types": ["NDA-LESSONS"],
+            "last_capture": state.get("nda", {}).get("last_capture"),
+            "captured_chat_ids": state.get("nda", {}).get("captured_chat_ids", []),
+        })
+
+if DEAL != "nda":
+    for k, v in ss.items():
+        if not v.get("project_url"):
+            continue
+        if DEAL not in ("all",) and DEAL != k:
+            continue
+        targets.append({
+            "project_id": k,
+            "url": v["project_url"],
+            "block_types": ["DEAL-INTEL"],
+            "last_capture": state.get(k, {}).get("last_capture"),
+            "captured_chat_ids": state.get(k, {}).get("captured_chat_ids", []),
+        })
+
+if not targets:
+    sys.exit(f"No matching projects found for argument: {DEAL!r}")
+
+print(json.dumps(targets, indent=2))
 EOF
 ```
 
-Parse the result. You now have, per target: `deal_id`, project `url`,
-`last_capture` ISO timestamp (or null), and `captured_chat_ids` set.
+Parse the result. Each entry has: `project_id`, `url`, `block_types`,
+`last_capture` (ISO or null), `captured_chat_ids` set.
 
 ---
 
@@ -139,20 +174,31 @@ mcp__claude-in-chrome__computer({ action: "left_click", tabId, ref: <chat_ref> }
 mcp__claude-in-chrome__get_page_text({ tabId })
 ```
 
-4. Pipe through intel_capture (extracts ONLY DEAL-INTEL blocks):
+4. Route by block type. Scan the text for each block type the project
+   registers. For each type found, pipe to the correct handler:
 
+**`---DEAL-INTEL---` blocks** (TCIP deal projects):
 ```bash
 echo "<full chat text>" | python3 ~/cos-pipeline/tools/intel_capture.py parse-stdin
 ```
+Finds `---DEAL-INTEL---` ... `---END-DEAL-INTEL---` blocks, validates
+`deal:` against the registry, appends to the right `log.json`.
 
-The helper finds `---DEAL-INTEL---` ... `---END-DEAL-INTEL---` blocks,
-parses each, validates `deal:` is in the registry, appends to the
-right `log.json`. The chat text outside blocks is discarded — we never
-store full chat transcripts.
+**`---NDA-LESSONS---` blocks** (NDA Review project):
+```bash
+echo "<full chat text>" | python3 ~/cos-pipeline/tools/nda_log_processor.py parse-stdin
+```
+Finds `---NDA-LESSONS---` ... `---END-NDA-LESSONS---` blocks, deduplicates
+by SHA256 hash (state: `~/dashboards/data/nda_lessons_state.json`), and
+merges DEAL-LOG-ROW into §7, FRAMEWORK-UPDATE into §3, LANGUAGE-UPDATE
+into §9 of the NDA Reviewer doc via an LLM-supervised rewrite.
+
+Both handlers discard chat text outside their respective blocks — we never
+store full chat transcripts (Rule DS1).
 
 5. Record this chat as captured:
    - Compute `chat_id = djb2(chat_url)` or `djb2(chat_title + first_message_excerpt)` — whatever's stable
-   - Add to `captured_chat_ids` for this deal in state
+   - Add to `captured_chat_ids` for this project in state
 
 6. Click back/projects link to return to the project page for the
 next chat:
@@ -165,14 +211,14 @@ mcp__claude-in-chrome__navigate({ url: project_url, tabId })
 
 ### 3e. Update state file
 
-After processing all chats for this deal, write back:
+After processing all chats for this project, write back:
 
 ```python
 import json, os
 from datetime import datetime
 state_path = os.path.expanduser('~/dashboards/data/chat_capture_state.json')
 state = json.loads(open(state_path).read()) if os.path.exists(state_path) else {}
-state[deal_id] = {
+state[project_id] = {
     "last_capture": datetime.now().isoformat() + "Z",
     "captured_chat_ids": sorted(set(captured_chat_ids))
 }
@@ -186,11 +232,14 @@ open(state_path, 'w').write(json.dumps(state, indent=2))
 ```
 CAPTURE-DEAL-CHATS COMPLETE
 ============================
-{deal_id}: {N} chats scraped, {M} DEAL-INTEL blocks routed (via intel_capture)
-{deal_id}: skipped — no chats / no new messages
+{project_id}: {N} chats scraped, {M} DEAL-INTEL blocks routed (intel_capture)
+nda:          {N} chats scraped, {M} NDA-LESSONS blocks merged (nda_log_processor)
+{project_id}: skipped — no chats / no new messages
 ...
 
-Routing details: ~/dashboards/logs/intel_capture_errors.log
+Routing details:
+  DEAL-INTEL errors → ~/dashboards/logs/intel_capture_errors.log
+  NDA-LESSONS state → ~/dashboards/data/nda_lessons_state.json
 ```
 
 ---
@@ -244,17 +293,19 @@ Rules for cross_deal_link blocks:
 
 ## RULES (non-negotiable)
 
-- **Block-only.** Never store or upload full chat text. Only the
-  parsed `---DEAL-INTEL---` block contents reach `log.json`. Chat
-  text outside blocks is discarded by `intel_capture.py parse-stdin`.
-- **Idempotent.** Re-scraping a chat is safe — the block dedup at
-  helper-side (id collision) prevents double-routing.
-- **Block-only is privacy.** `log.json` is in a private repo
-  (`Private-Yoni-Dashboard`), but full chat content stays on
-  claude.ai. We export the structured intel only.
-- **Per-deal failures don't abort the run.** Log + continue.
+- **Block-only.** Never store or upload full chat text. Only parsed
+  block contents (`---DEAL-INTEL---`, `---NDA-LESSONS---`) reach their
+  handlers. Chat text outside blocks is discarded. (Rule DS1)
+- **Idempotent.** Re-scraping a chat is safe — block dedup at the
+  handler level (SHA256 / id collision) prevents double-routing.
+- **Block-only is privacy.** `log.json` and the NDA Reviewer doc are
+  in private storage; full chat content stays on claude.ai.
+- **Per-project failures don't abort the run.** Log + continue.
 - **Chrome not connected → exit cleanly.** Don't retry; the periodic
   trigger will fire again.
+- **New project_url auto-discovered.** Adding a `project_url` to
+  `drive-docs.yaml` or `sync-state.json` is sufficient — no code
+  changes needed to include a new project in the next run.
 
 ---
 
