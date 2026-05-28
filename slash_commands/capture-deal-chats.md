@@ -1,5 +1,5 @@
 ---
-description: Scrape claude.ai project chats for ---DEAL-INTEL--- and ---NDA-LESSONS--- blocks and route them to the right handlers. Block-only — never full transcripts.
+description: Scrape claude.ai project chats for ---DEAL-INTEL---, ---SESSION-CLOSE---, ---SESSION-OUTPUT---, and ---NDA-LESSONS--- blocks and route them to the right handlers. Block-only — never full transcripts.
 argument-hint: "[deal_id | nda | all]"
 ---
 
@@ -10,6 +10,13 @@ project), walk the chat list, open any chats with new messages since last
 capture, scrape ONLY structured blocks, and route them:
 
 - `---DEAL-INTEL---` → `intel_capture.py parse-stdin` → deal `log.json`
+- `---SESSION-CLOSE---` → `intel_capture.py parse-stdin` → decomposed into N
+  synthesized DEAL-INTEL entries (one per session_summary, decision,
+  pending_draft, research_task, critical_driver_update) → deal `log.json`.
+  /deal-sync then folds the entries into status + master brief like any
+  other intel.
+- `---SESSION-OUTPUT---` → `intel_capture.py parse-stdin` → session_log.md +
+  dashboard_entry.json in the deal's Drive folder (artifact recordkeeping).
 - `---NDA-LESSONS---` → `nda_log_processor.py parse-stdin` → NDA Reviewer doc
 
 `/deal-sync` folds DEAL-INTEL into status + master brief on next cycle.
@@ -17,7 +24,8 @@ capture, scrape ONLY structured blocks, and route them:
 
 This is the claude.ai counterpart to the Stop hook's
 `run_intel_capture_scan()` (which handles Claude Code transcripts).
-Two surfaces, one block format, one target each.
+Two surfaces, four block formats, one decomposition layer (intel_capture.py)
+that flattens session-close into intel entries.
 
 ---
 
@@ -177,12 +185,25 @@ mcp__claude-in-chrome__get_page_text({ tabId })
 4. Route by block type. Scan the text for each block type the project
    registers. For each type found, pipe to the correct handler:
 
-**`---DEAL-INTEL---` blocks** (TCIP deal projects):
+**`---DEAL-INTEL---`, `---SESSION-CLOSE---`, `---SESSION-OUTPUT---` blocks** (TCIP deal projects):
 ```bash
 echo "<full chat text>" | python3 ~/cos-pipeline/tools/intel_capture.py parse-stdin
 ```
-Finds `---DEAL-INTEL---` ... `---END-DEAL-INTEL---` blocks, validates
-`deal:` against the registry, appends to the right `log.json`.
+`intel_capture.py parse-stdin` is the single entry point for all three TCIP
+deal block types. In one pass it:
+  - Finds `---DEAL-INTEL--- … ---END-DEAL-INTEL---` blocks, validates `deal:`
+    against the registry, appends to the right `log.json`.
+  - Finds `---SESSION-CLOSE--- … ---END---` blocks (Level 4 close-out from
+    the project), decomposes each into N synthesized DEAL-INTEL entries
+    (one per session_summary, open_items_delta, decision, pending_draft,
+    research_task, critical_driver_update), routes each through the normal
+    intel pipeline. /deal-sync folds them into status + master brief on
+    the next cycle.
+  - Finds `---SESSION-OUTPUT--- … ---END-SESSION-OUTPUT---` blocks, routes
+    each as an artifact reference to session_log.md + dashboard_entry.json
+    in the deal's Drive folder.
+Idempotent: dedup is via stable content-hash IDs at each route, so
+re-scraping the same chat is safe.
 
 **`---NDA-LESSONS---` blocks** (NDA Review project):
 ```bash

@@ -191,6 +191,18 @@ Default to **INCREMENTAL** unless a full-rewrite trigger is present. When in dou
 - Remove past-due deadlines (dates before today) unless the item is still actionable
 - Trim Reference Documents sections entirely
 
+**What does NOT belong in the status doc** — these always route elsewhere, regardless of size budget:
+
+| Content type | Goes to | Why not status |
+|---|---|---|
+| Pending drafts (email/one-pager/memo to a named recipient) | `actions.md` as a `### Workstream: Pending Drafts` table; if dated + named external party, also CoS Follow-ups envelope (TEAM action) | Status describes deal state; drafts are owner-tasked work product |
+| Session deliverables / artifacts (PPTX, PDF, deck filenames) | Master brief "### Session deliverables" subsection of the dated incremental block | Status is current-state; artifacts are session-bound history |
+| Decisions ledger ("decided X, rejected Y") | Master brief dated incremental block | Status doesn't carry rejected alternatives or rationale text |
+| Session summaries / what-was-worked-on prose | Master brief dated incremental block | Repeats activity already in log.json + master brief |
+| Research-task questions (the questions themselves, not the task) | Master brief; the action goes to `actions.md` | Questions are exploration; status carries only the action |
+
+Status carries only: Critical Driver, Stage (one line), Structure Summary (terse), Hard Deadlines (open only), Counterparties (active), Open Items (titles + owner + due — no rationale prose). Everything else is master_brief or actions.md material.
+
 *Master brief*: Append a dated block to the relevant section only. Format:
 
 ```
