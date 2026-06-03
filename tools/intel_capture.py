@@ -73,6 +73,15 @@ SESSION_OUTPUT_RE = re.compile(
     re.DOTALL | re.IGNORECASE,
 )
 
+# SESSION-CLOSE blocks use generic ---END--- (not ---END-SESSION-CLOSE---).
+# The non-greedy match plus the lookahead-style stop on the first ---END---
+# is intentional: SESSION-CLOSE bodies do not themselves contain `---END---`
+# literally (Claude is instructed to use bullet markup for decisions).
+SESSION_CLOSE_RE = re.compile(
+    r"---SESSION-CLOSE---\s*\n(.*?)\n\s*---END---",
+    re.DOTALL | re.IGNORECASE,
+)
+
 
 # ── State ─────────────────────────────────────────────────────────────────────
 
@@ -152,6 +161,210 @@ def parse_session_output_block(body):
             if val:
                 out[key] = val
     return out
+
+
+def parse_session_close_block(body):
+    """Parse a SESSION-CLOSE block body into a dict.
+    Block format (claude.ai project Level 4 close-out):
+        deal_id: <id>
+        last_session_date: YYYY-MM-DD
+        session_summary: <free text>
+        open_items_delta: <free text>
+        decisions:
+          - decision: ... rationale: ... rejected: ...
+        pending_drafts:
+          - type: ... recipient: ... purpose: ... priority: ...
+        research_tasks:
+          - topic: ... driver: ... questions: ... priority: ...
+        critical_driver_update: <free text or "No change">
+
+    Returns a dict with top-level scalar fields plus list-of-dicts
+    for decisions / pending_drafts / research_tasks. Tolerant of
+    both YAML-style nesting and the flat compact form that claude.ai
+    sometimes emits.
+    """
+    out = {
+        "deal_id": None,
+        "last_session_date": None,
+        "session_summary": None,
+        "open_items_delta": None,
+        "decisions": [],
+        "pending_drafts": [],
+        "research_tasks": [],
+        "critical_driver_update": None,
+    }
+
+    # Strip a duplicate `---SESSION-CLOSE---` header line if present
+    body = re.sub(r"^---SESSION-CLOSE---\s*\n", "", body.strip(), count=1)
+
+    lines = body.split("\n")
+    i = 0
+    current_section = None  # one of: decisions, pending_drafts, research_tasks
+    current_item = None
+    scalar_buf_key = None
+    scalar_buf = []
+
+    def flush_scalar():
+        nonlocal scalar_buf_key, scalar_buf
+        if scalar_buf_key:
+            text = "\n".join(scalar_buf).strip()
+            if text:
+                out[scalar_buf_key] = text
+        scalar_buf_key = None
+        scalar_buf = []
+
+    def flush_item():
+        nonlocal current_item, current_section
+        if current_item and current_section:
+            out[current_section].append(current_item)
+        current_item = None
+
+    list_section_starts = {"decisions:", "pending_drafts:", "research_tasks:"}
+    scalar_keys = {"deal_id", "last_session_date", "session_summary",
+                   "open_items_delta", "critical_driver_update"}
+
+    while i < len(lines):
+        raw = lines[i]
+        stripped = raw.strip()
+        i += 1
+
+        # Section header (decisions:/pending_drafts:/research_tasks:)
+        if stripped.lower() in list_section_starts:
+            flush_scalar()
+            flush_item()
+            current_section = stripped.lower().rstrip(":")
+            continue
+
+        # List item start: "- key: value" or just "- value"
+        m_item = re.match(r"^-\s+(.*)$", stripped)
+        if m_item and current_section:
+            flush_item()
+            current_item = {}
+            rest = m_item.group(1)
+            # The first kv on the item line
+            mkv = re.match(r"^([a-zA-Z_][a-zA-Z_]*):\s*(.*)$", rest)
+            if mkv:
+                current_item[mkv.group(1).lower()] = mkv.group(2).strip()
+            else:
+                # Bare value — store as 'text'
+                current_item["text"] = rest
+            continue
+
+        # Continuation key inside current list item: "  key: value"
+        if current_section and current_item is not None:
+            mkv = re.match(r"^\s*([a-zA-Z_][a-zA-Z_]*):\s*(.*)$", raw)
+            if mkv and mkv.group(1).lower() in {"decision", "rationale", "rejected",
+                                                "type", "recipient", "purpose", "priority",
+                                                "topic", "driver", "questions"}:
+                current_item[mkv.group(1).lower()] = mkv.group(2).strip()
+                continue
+
+        # Top-level scalar key
+        mkv = re.match(r"^([a-zA-Z_][a-zA-Z_]*):\s*(.*)$", stripped)
+        if mkv and mkv.group(1).lower() in scalar_keys:
+            flush_scalar()
+            flush_item()
+            current_section = None
+            scalar_buf_key = mkv.group(1).lower()
+            initial_val = mkv.group(2).strip()
+            scalar_buf = [initial_val] if initial_val else []
+            continue
+
+        # Continuation of an in-progress scalar (multi-line free text)
+        if scalar_buf_key and stripped:
+            scalar_buf.append(stripped)
+            continue
+
+        # Blank line — flush in-progress list item if any
+        if not stripped:
+            flush_item()
+
+    flush_scalar()
+    flush_item()
+    return out
+
+
+def session_close_to_intel_blocks(parsed):
+    """Decompose a parsed SESSION-CLOSE dict into N synthesized
+    DEAL-INTEL blocks ready for route_block(). One block per discrete
+    intel signal (session summary, each decision, each pending draft,
+    each research task, critical-driver update if changed).
+    Returns a list of dicts in the same shape as parse_block() output.
+    """
+    deal_id = (parsed.get("deal_id") or "").strip()
+    date = (parsed.get("last_session_date") or "").strip()
+    if not deal_id or not date:
+        return []
+
+    blocks = []
+
+    def mk(title, summary, facts=None):
+        return {
+            "deal": deal_id,
+            "date": date,
+            "title": title[:120],
+            "summary": summary,
+            "facts": facts or [],
+            "counterparties": [],
+            "actions": [],
+            "_synthesized_from": "session-close",
+        }
+
+    if parsed.get("session_summary"):
+        blocks.append(mk(
+            f"Session summary {date}",
+            parsed["session_summary"],
+        ))
+
+    if parsed.get("open_items_delta"):
+        blocks.append(mk(
+            f"Open items delta {date}",
+            parsed["open_items_delta"],
+        ))
+
+    for d in parsed.get("decisions", []):
+        dec = d.get("decision", "").strip()
+        rationale = d.get("rationale", "").strip()
+        rejected = d.get("rejected", "").strip()
+        if not dec:
+            continue
+        facts = []
+        if rationale: facts.append(f"Rationale: {rationale}")
+        if rejected: facts.append(f"Rejected alternatives: {rejected}")
+        blocks.append(mk(f"Decision: {dec[:80]}", dec, facts))
+
+    for pd in parsed.get("pending_drafts", []):
+        dtype = pd.get("type", "").strip()
+        recipient = pd.get("recipient", "").strip()
+        purpose = pd.get("purpose", "").strip()
+        priority = pd.get("priority", "").strip()
+        if not (dtype or recipient or purpose):
+            continue
+        title = f"Pending draft: {dtype}"
+        if recipient: title += f" to {recipient}"
+        facts = []
+        if priority: facts.append(f"Priority: {priority}")
+        if purpose: facts.append(f"Purpose: {purpose}")
+        blocks.append(mk(title, purpose or f"Draft {dtype} to {recipient}", facts))
+
+    for rt in parsed.get("research_tasks", []):
+        topic = rt.get("topic", "").strip()
+        driver = rt.get("driver", "").strip()
+        questions = rt.get("questions", "").strip()
+        priority = rt.get("priority", "").strip()
+        if not topic:
+            continue
+        facts = []
+        if driver: facts.append(f"Driver: {driver}")
+        if questions: facts.append(f"Questions: {questions}")
+        if priority: facts.append(f"Priority: {priority}")
+        blocks.append(mk(f"Research: {topic}", topic, facts))
+
+    cdu = (parsed.get("critical_driver_update") or "").strip()
+    if cdu and not re.match(r"^(no change|none|unchanged|n/a)\b", cdu, re.IGNORECASE):
+        blocks.append(mk(f"Critical driver update {date}", cdu))
+
+    return blocks
 
 
 def _drive_read_text(file_id):
@@ -616,6 +829,35 @@ def cmd_scan_claude_code(args):
                 else:
                     errors += 1
 
+            # SESSION-CLOSE blocks — decompose into N synthesized DEAL-INTEL entries
+            for m in SESSION_CLOSE_RE.finditer(full):
+                body = m.group(1)
+                block_hash = djb2("session-close|" + body)
+                if block_hash in captured:
+                    skipped += 1
+                    continue
+                try:
+                    parsed_close = parse_session_close_block(body)
+                    synth_blocks = session_close_to_intel_blocks(parsed_close)
+                except Exception as e:
+                    log_error("claude-code", file_key, f"session-close parse failed: {e}")
+                    errors += 1
+                    continue
+                if not synth_blocks:
+                    captured.add(block_hash)
+                    skipped += 1
+                    continue
+                all_ok = True
+                for sb in synth_blocks:
+                    _, _, status = route_block(sb, "claude-code")
+                    if status == "ok":
+                        routed += 1
+                    else:
+                        errors += 1
+                        all_ok = False
+                if all_ok:
+                    captured.add(block_hash)
+
             file_state["captured"] = sorted(captured)
             file_state["last_scan"] = datetime.now().isoformat()
     save_state(state)
@@ -664,6 +906,32 @@ def cmd_parse_stdin(args):
         else:
             errors += 1
             print(f"  session-output error: {deal_id} ({block_id})", file=sys.stderr)
+
+    # SESSION-CLOSE blocks: decompose into N synthesized DEAL-INTEL entries
+    # and route each through the normal block pipeline.
+    for m in SESSION_CLOSE_RE.finditer(full):
+        body = m.group(1)
+        try:
+            parsed_close = parse_session_close_block(body)
+            synth_blocks = session_close_to_intel_blocks(parsed_close)
+        except Exception as e:
+            log_error("stdin", "<inline>", f"session-close parse failed: {e}")
+            errors += 1
+            continue
+        if not synth_blocks:
+            skipped += 1
+            print(f"  session-close skip: no usable intel decomposed")
+            continue
+        sc_deal = parsed_close.get("deal_id") or "?"
+        print(f"  session-close: {sc_deal} -> {len(synth_blocks)} synthesized intel blocks")
+        for sb in synth_blocks:
+            deal_id, entry_id, status = route_block(sb, "stdin")
+            if status == "ok":
+                routed += 1
+                print(f"    session-close intel ok: {deal_id} <- {entry_id}")
+            else:
+                errors += 1
+                print(f"    session-close intel error: {deal_id} ({entry_id})", file=sys.stderr)
 
     print(f"parse-stdin: routed={routed}, skipped={skipped}, errors={errors}")
 
