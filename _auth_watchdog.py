@@ -22,6 +22,13 @@ from pathlib import Path
 CREDS = Path.home() / 'credentials'
 HEALTH_FILE = CREDS / 'auth_health.json'
 
+# User-specific session-auth sources probed below. These are deployment
+# config, not pipeline logic — a future cleanup should move them to the
+# tenant config repo (Rule PD1). Jefferies (content.jefferies.com) is
+# similarly inlined in _check_jefferies().
+GS_ALERT_SENDER = 'gs-portal-emails@alerts.publishing.gs.com'
+GS_ALERT_WINDOW_DAYS = 7  # GS routine searches `newer_than:7d` for a trustedLink
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -164,6 +171,47 @@ def _check_jefferies() -> dict:
         return {'status': 'failed', 'last_error': str(e)}
 
 
+def _check_goldman() -> dict:
+    """Predict whether the GS Marquee elevated session can be warmed today.
+
+    GS research PDFs need an elevated session (authLevel=40000) that the
+    download routine warms by navigating a `trustedLink` from a GS alert
+    email. The session itself can't be probed cheaply (cookie presence !=
+    live session), but the *precondition* is checkable: a GS alert email
+    within the last 7 days. No fresh alert -> the routine will redirect to
+    idfs.gs.com and abort. So this is an EARLY-WARNING signal, not a live
+    session test. Uses token.json's Gmail scope. Never raises.
+    """
+    token_path = CREDS / 'token.json'
+    if not token_path.exists():
+        return {'status': 'failed', 'last_error': 'token.json missing — cannot check GS alert inbox'}
+    try:
+        from google.oauth2.credentials import Credentials
+        from google.auth.transport.requests import Request
+        from googleapiclient.discovery import build
+    except Exception as e:
+        return {'status': 'stale', 'last_error': f'google libs unavailable: {e}'}
+    try:
+        creds = Credentials.from_authorized_user_file(str(token_path))
+        if not creds.valid:
+            if creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+            else:
+                return {'status': 'failed', 'last_error': 'token invalid/no refresh — reauth required'}
+        gmail = build('gmail', 'v1', credentials=creds)
+        q = f'from:{GS_ALERT_SENDER} newer_than:{GS_ALERT_WINDOW_DAYS}d'
+        resp = gmail.users().messages().list(userId='me', q=q, maxResults=1).execute()
+        n = resp.get('resultSizeEstimate', 0) or len(resp.get('messages', []))
+        if n and resp.get('messages'):
+            return {'status': 'ok', 'last_error': None}
+        return {'status': 'stale',
+                'last_error': f'no GS alert email in {GS_ALERT_WINDOW_DAYS}d — '
+                              'Marquee session cannot be warmed; GS download will block '
+                              'until a fresh gs-portal alert arrives'}
+    except Exception as e:
+        return {'status': 'stale', 'last_error': f'GS inbox check failed: {e}'}
+
+
 # ── public API ─────────────────────────────────────────────────────────────────
 
 def check_all(write: bool = True) -> dict:
@@ -176,6 +224,7 @@ def check_all(write: bool = True) -> dict:
         'google':      _check_google,
         'chrome_cdp':  _check_chrome_cdp,
         'jefferies':   _check_jefferies,
+        'goldman':     _check_goldman,
     }
     health: dict = {}
     for key, fn in checks.items():
