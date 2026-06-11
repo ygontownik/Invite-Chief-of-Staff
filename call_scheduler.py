@@ -112,6 +112,9 @@ VIDEO_PATTERNS = [
     r"\+1[\s\-\.]?\(?\d{3}\)?[\s\-\.]\d{3}[\s\-\.]\d{4}",
     r"tel:\+?\d{7,}", r"dial[\s\-]in", r"conference\s+(id|code|pin)",
     r"passcode", r"meeting\s+id", r"access\s+code",
+    r"cvent\.(com|me)", r"attendee[\s\-]?hub", r"on24\.com",
+    r"gotowebinar\.com", r"zoom\.us/w(ebinar)?/", r"register(ation)?\s+(link|url)",
+    r"join\s+event", r"webinar",
 ]
 VIDEO_RE = re.compile("|".join(VIDEO_PATTERNS), re.IGNORECASE)
 
