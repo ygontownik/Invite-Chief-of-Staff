@@ -176,6 +176,13 @@ def scan_messages(jsonl_path: Path, since_ts: str | None = None) -> list[dict[st
         if "<system-reminder>" in text and len(text) < 1000:
             continue
 
+        # Skip slash-command / skill-prompt injections. These arrive as
+        # user-role messages but carry the skill's prompt body verbatim
+        # (e.g. the /wrap doc), which false-matches correction grammar like
+        # "X not involved". They are not user-typed corrections.
+        if "<command-name>" in text or "<command-message>" in text:
+            continue
+
         # --- Pattern matching ---
         deal_id = _identify_deal(text, slugs)
 
