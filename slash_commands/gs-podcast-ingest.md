@@ -17,7 +17,7 @@ Pipeline split (deliberate):
   audio URL off the page. These steps need an authenticated browser and adapt to
   email/page layout, so they live here, not in a headless script.
 - **Transcribe → memo → publish** (deterministic, tested):
-  [`gs_podcast_ingest.py`](../gs_podcast_ingest.py) wraps
+  [`research_audio_ingest.py`](../research_audio_ingest.py) wraps
   `podcast_transcribe.process_episode` — the canonical flow.
 
 The audio is a **public CloudFront MP3** (no auth) once you can see the page, so
@@ -79,7 +79,7 @@ deep link, or a direct `/content/research/.../<uuid>.html`).
 ## STEP 2 — Dedup against already-ingested episodes
 
 ```bash
-zsh -ic 'python3 ~/cos-pipeline/gs_podcast_ingest.py --list-processed'
+zsh -ic 'python3 ~/cos-pipeline/research_audio_ingest.py --list-processed --show "Goldman Sachs Research"'
 ```
 
 The guid for any report is `gs-marquee-<uuid>` where `<uuid>` is the last path
@@ -124,7 +124,7 @@ mcp__Claude_in_Chrome__javascript_tool({ tabId, action: "javascript_exec", text:
 For each audio candidate (per-item; a failure here must not abort the others):
 
 ```bash
-zsh -ic 'python3 ~/cos-pipeline/gs_podcast_ingest.py --ingest \
+zsh -ic 'python3 ~/cos-pipeline/research_audio_ingest.py --ingest --show "Goldman Sachs Research" \
   --url "<audio_url>" \
   --title "<title>" \
   --date "<YYYY-MM-DD>" \
@@ -140,7 +140,7 @@ emission, and writes to the show doc + Podcast Summaries. It is idempotent.
 ## STEP 5 — Rebuild TOCs once, after all ingests
 
 ```bash
-zsh -ic 'python3 ~/cos-pipeline/gs_podcast_ingest.py --rebuild-tocs'
+zsh -ic 'python3 ~/cos-pipeline/research_audio_ingest.py --rebuild-tocs --show "Goldman Sachs Research"'
 ```
 
 ---
