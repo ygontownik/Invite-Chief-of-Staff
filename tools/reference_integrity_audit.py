@@ -50,6 +50,14 @@ LOG_PREFIX   = "[reference_integrity_audit]"
 # short slugs in instruction prose.
 _DRIVE_ID_RE = re.compile(r'\b([0-9A-Za-z_-]{20,})\b')
 
+# A candidate immediately followed by one of these extensions is a filename, not an ID
+# (e.g. "align_infra_dashboard_entry.json"). Filenames share the Drive-ID character class
+# but must never be flagged as unregistered IDs.
+_FILE_EXT_RE = re.compile(
+    r'\.(json|md|txt|pdf|docx?|xlsx?|csv|yaml|yml|html?|jsx?|py|png|jpe?g)\b',
+    re.IGNORECASE,
+)
+
 # Fields whose values are Drive IDs (beyond the standard "doc_id").
 _ID_FIELD_SUFFIXES = ("doc_id", "folder_id", "file_id")
 
@@ -144,6 +152,23 @@ def audit_drive_resolution(drive_svc, all_ids: dict, section_filter: str | None)
 
 # ── Check 2: project_instructions docs reference only registered IDs ──────────
 
+# Per-run cache: candidate ID -> "live" | "trashed" | "missing"
+_resolve_cache: dict[str, str] = {}
+
+
+def _resolve_drive_id(drive_svc, file_id: str) -> str:
+    """Return 'live' if the ID points at an existing non-trashed Drive file,
+    'trashed' if it exists but is trashed, 'missing' on 404/error."""
+    from googleapiclient.errors import HttpError
+    try:
+        meta = drive_svc.files().get(fileId=file_id, fields="id,trashed").execute()
+        return "trashed" if meta.get("trashed") else "live"
+    except HttpError:
+        return "missing"
+    except Exception:
+        return "missing"
+
+
 def _doc_to_text(docs_svc, file_id: str) -> str:
     """Fetch a Google Doc and return its plain text."""
     doc = docs_svc.documents().get(documentId=file_id).execute()
@@ -156,11 +181,19 @@ def _doc_to_text(docs_svc, file_id: str) -> str:
     return "".join(parts)
 
 
-def audit_project_instructions(docs_svc, deal_docs: dict, registered_ids: set, section_filter: str | None) -> list[str]:
+def audit_project_instructions(docs_svc, drive_svc, deal_docs: dict, registered_ids: set, section_filter: str | None) -> list[str]:
     """
     For each deal's project_instructions doc, scan for Drive-ID-shaped strings.
     Flag any that are not in registered_ids and not a known safe external ID
     (e.g. claude.ai project UUIDs, which are not Drive IDs).
+
+    Two-stage false-positive suppression (added 2026-06-11):
+      1. Filename tokens (immediately followed by a file extension) are skipped —
+         they share the Drive-ID character class but are not IDs.
+      2. An unregistered candidate is resolved against Drive. If it points at a
+         live (non-trashed) file it is a valid-but-unregistered sub-doc reference
+         and is skipped. Only candidates that 404/trash/error — truly broken
+         references — are flagged. Resolutions are cached per run.
     """
     if section_filter and section_filter != "deal_docs":
         return []
@@ -190,15 +223,32 @@ def audit_project_instructions(docs_svc, deal_docs: dict, registered_ids: set, s
         # Strip UUID-shaped strings before scanning for raw Drive IDs
         text_no_uuid = _UUID_RE.sub("", text)
 
+        seen_in_doc: set[str] = set()  # dedupe repeated references within one doc
         for m in _DRIVE_ID_RE.finditer(text_no_uuid):
             cand = m.group(1)
             if cand in registered_ids:
                 continue
+            if cand in seen_in_doc:
+                continue
             # Skip short common English words that happen to match the pattern length
             if len(cand) < 25:
                 continue
+            seen_in_doc.add(cand)
+            # (1) Filename, not an ID — the token is immediately followed by an extension.
+            if _FILE_EXT_RE.match(text_no_uuid, m.end()):
+                continue
+            # (2) Resolve against Drive. A live file is a valid (if unregistered)
+            #     sub-doc reference, not a broken one — only flag if it does not
+            #     resolve. Cache to avoid re-hitting the API for repeated IDs.
+            resolution = _resolve_cache.get(cand)
+            if resolution is None:
+                resolution = _resolve_drive_id(drive_svc, cand)
+                _resolve_cache[cand] = resolution
+            if resolution == "live":
+                continue
+            detail = "trashed" if resolution == "trashed" else "does not resolve"
             violations.append(
-                f"{deal_id}: project_instructions references unregistered ID {cand}"
+                f"{deal_id}: project_instructions references unregistered ID {cand} ({detail})"
             )
 
     print(f"{LOG_PREFIX} check-2: scanned {checked} project_instructions docs, "
@@ -302,7 +352,7 @@ def main() -> int:
     violations: list[str] = []
 
     violations += audit_drive_resolution(drive_svc, all_ids, args.section)
-    violations += audit_project_instructions(docs_svc, deal_docs, registered_ids, args.section)
+    violations += audit_project_instructions(docs_svc, drive_svc, deal_docs, registered_ids, args.section)
 
     write_report(violations, all_ids, dry_run=False)
 
