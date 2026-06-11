@@ -48,7 +48,11 @@ LOG_PREFIX   = "[reference_integrity_audit]"
 # Pattern for a Google Drive file/folder ID (25–44 alphanumeric + hyphen/underscore chars).
 # Drive IDs are typically 25–44 chars; 20+ catches most while avoiding false positives on
 # short slugs in instruction prose.
-_DRIVE_ID_RE = re.compile(r'\b([0-9A-Za-z_-]{20,})\b')
+# Boundary with negative lookarounds (not \b): \b treats '-' as a boundary and would
+# truncate IDs that legitimately end in a hyphen (e.g. a deal-folder ID "...QIyT-"),
+# producing phantom "does not resolve" hits. Lookarounds capture the full token,
+# stopping only at a char outside the Drive-ID class (whitespace, ')', '.', etc.).
+_DRIVE_ID_RE = re.compile(r'(?<![0-9A-Za-z_-])([0-9A-Za-z_-]{20,})(?![0-9A-Za-z_-])')
 
 # A candidate immediately followed by one of these extensions is a filename, not an ID
 # (e.g. "align_infra_dashboard_entry.json"). Filenames share the Drive-ID character class
