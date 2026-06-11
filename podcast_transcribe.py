@@ -1198,7 +1198,11 @@ def rebuild_summary_toc(docs_svc, doc_id: str, processed: dict):
             return ""
         return max(v.get("pub_date", "") for v in eps)
 
-    ordered_shows = sorted(FEEDS.keys(), key=show_latest, reverse=True)
+    # Include RSS feeds AND any manually-ingested shows present in processed
+    # (e.g. browser-ingested Goldman Sachs Research audio reports, which have
+    # no RSS feed and therefore are not in FEEDS).
+    all_shows     = set(FEEDS.keys()) | {v.get("show") for v in processed.values() if v.get("show")}
+    ordered_shows = sorted(all_shows, key=show_latest, reverse=True)
 
     for show_name in ordered_shows:
         eps = [v for v in processed.values()
