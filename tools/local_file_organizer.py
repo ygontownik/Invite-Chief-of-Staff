@@ -53,6 +53,11 @@ except ImportError:
     _COORD_AVAILABLE = False
 
 try:
+    import naming
+except ImportError:
+    naming = None
+
+try:
     import yaml
 except ImportError:
     print("Missing dependency: pyyaml. Run: pip install pyyaml", file=sys.stderr)
@@ -112,7 +117,7 @@ DEFAULT_PERSONAL_KEYWORDS = [
     r"\butility\b.*\bbill\b",
 ]
 
-DEFAULT_SKIP_NAME_PREFIXES = ("_Routed", "_Junk", "_Personal", "_Unsorted", "_Archive")
+DEFAULT_SKIP_NAME_PREFIXES = ("_Routed", "_Junk", "_Personal", "_Unsorted", "_Archive", "_Uploaded")
 
 
 # ── Tenant config loader ──────────────────────────────────────────────────────
@@ -359,16 +364,26 @@ def process_folder(
 
         try:
             bucket, detail = classify(f, junk_pats, personal_pats, deal_aliases)
+            # Deal- and personal-bucket files are renamed to the canonical
+            # convention (YYYY-MM-DD_entity_doc-type_vN.ext). Junk and Unsorted
+            # keep their original names — junk is headed for review/trash and
+            # Unsorted has no known entity, so a fabricated slug would mislead.
             if bucket == "junk":
                 dst_dir = folder / "_Junk"
+                new_name = f.name
             elif bucket == "deal":
                 dst_dir = folder / "_Routed" / detail
+                new_name = (naming.convention_name(f.name, detail, src_path=f, dst_dir=dst_dir)
+                            if naming else f.name)
             elif bucket == "personal":
                 dst_dir = folder / "_Personal" / yyyy_mm(st.st_mtime)
+                new_name = (naming.convention_name(f.name, "personal", src_path=f, dst_dir=dst_dir)
+                            if naming else f.name)
             else:
                 dst_dir = folder / "_Unsorted" / yyyy_mm(st.st_mtime)
+                new_name = f.name
 
-            dst = unique_destination(dst_dir, f.name)
+            dst = unique_destination(dst_dir, new_name)
             mode = "MOVE" if apply else "DRY"
             print(f"  {mode} [{bucket}] {f.name} → {dst.relative_to(folder)}")
             move_one(f, dst, apply)

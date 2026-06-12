@@ -29,6 +29,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -45,6 +46,11 @@ try:
 except ImportError:
     _COORD_AVAILABLE = False
 
+try:
+    import naming
+except ImportError:
+    naming = None
+
 # ── Auth / Drive imports ──────────────────────────────────────────────────────
 try:
     from google.oauth2.credentials import Credentials
@@ -60,6 +66,10 @@ except ImportError as e:
 # ── Paths ─────────────────────────────────────────────────────────────────────
 HOME = Path.home()
 DOWNLOADS_DIR = HOME / "Downloads"
+# Watch all three top-level folders (was Downloads only).
+WATCH_DIRS = [HOME / "Downloads", HOME / "Desktop", HOME / "Documents"]
+# Never descend into the organizer's / router's own subfolders.
+SKIP_DIR_PREFIXES = ("_Routed", "_Junk", "_Personal", "_Unsorted", "_Archive", "_Uploaded", ".")
 CREDS_PATH    = HOME / "credentials" / "gdrive_credentials.json"
 TOKEN_PATH    = HOME / "credentials" / "gdrive_token.pickle"
 STATE_PATH    = HOME / "credentials" / "local_file_router_state.json"
@@ -293,6 +303,28 @@ def upload_to_drive(local_path: Path, drive_name: str, parent_folder_id: str) ->
     ).execute()
     return result["id"]
 
+
+def _yyyy_mm(ts: float) -> str:
+    return datetime.fromtimestamp(ts).strftime("%Y-%m")
+
+
+def archive_local(path: Path, archive_name: str) -> Path | None:
+    """Move an uploaded original into <top-folder>/_Uploaded/YYYY-MM/.
+    Never deletes — keeps a local copy out of the folder's top level."""
+    try:
+        ts = path.stat().st_mtime
+    except OSError:
+        ts = time.time()
+    dest_dir = path.parent / "_Uploaded" / _yyyy_mm(ts)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / archive_name
+    n = 1
+    while dest.exists():
+        dest = dest_dir / f"{Path(archive_name).stem} ({n}){Path(archive_name).suffix}"
+        n += 1
+    shutil.move(str(path), str(dest))
+    return dest
+
 # ── Mac notification ──────────────────────────────────────────────────────────
 
 def notify(title: str, message: str):
@@ -349,84 +381,69 @@ def route_file(path: Path, state: dict, dry_run: bool = False) -> dict | None:
     """
     name = path.name
     suffix = path.suffix.lower()
-    today = datetime.now().strftime("%Y-%m-%d")
 
     is_session_artifact = suffix in SESSION_ARTIFACT_EXTS
     is_document = suffix in DOCUMENT_EXTS
 
+    def _name_for(deal_id: str | None) -> str:
+        # Convention name when we know the deal; original name otherwise
+        # (unmatched staging artifacts have no entity).
+        if deal_id and naming:
+            return naming.convention_name(name, deal_id, src_path=path)
+        return name
+
     if is_session_artifact:
         deal_id = match_deal(name)
         if deal_id:
-            drive_name = f"{today} -- {name}"
             folder_id = DEALS[deal_id]["outputs_folder_id"]
             dest_label = "outputs"
-            log.info(f"[{deal_id}] SESSION ARTIFACT → _Outputs/: {name}"
-                     + (" [dry-run]" if dry_run else ""))
         else:
-            drive_name = name
             folder_id = STAGING_FOLDER_ID
             dest_label = "staging"
-            log.info(f"[unmatched] SESSION ARTIFACT → staging: {name}"
-                     + (" [dry-run]" if dry_run else ""))
+        drive_name = _name_for(deal_id)
+        log.info(f"[{deal_id or 'unmatched'}] SESSION ARTIFACT → {dest_label}: "
+                 f"{name} -> {drive_name}" + (" [dry-run]" if dry_run else ""))
 
         if dry_run:
-            return {
-                "uploaded_at": None,
-                "dest": dest_label,
-                "deal": deal_id,
-                "drive_file_id": None,
-                "drive_name": drive_name,
-                "dry_run": True,
-            }
+            return {"uploaded_at": None, "dest": dest_label, "deal": deal_id,
+                    "drive_file_id": None, "drive_name": drive_name, "dry_run": True}
 
         file_id = upload_to_drive(path, drive_name, folder_id)
-        log.info(f"  Uploaded → Drive file ID {file_id} (name: {drive_name})")
-        notif_deal = deal_id or "unmatched"
-        notify(
-            f"TCIP: {notif_deal}",
-            f"{name} → {'_Outputs/' if dest_label == 'outputs' else 'staging'}",
-        )
+        archived = archive_local(path, drive_name)
+        log.info(f"  Uploaded → {file_id} ({drive_name}); archived → _Uploaded/")
+        notify(f"TCIP: {deal_id or 'unmatched'}", f"{drive_name} → {dest_label}")
         return {
             "uploaded_at": datetime.now(timezone.utc).isoformat(),
-            "dest": dest_label,
-            "deal": deal_id,
-            "drive_file_id": file_id,
+            "dest": dest_label, "deal": deal_id, "drive_file_id": file_id,
             "drive_name": drive_name,
+            "archived_to": str(archived) if archived else None,
         }
 
     elif is_document:
-        # Use two-stage classifier: filename then content (for .md/.txt)
+        # Two-stage classifier: filename then content (for .md/.txt)
         deal_id = classify_document(path)
-        match_source = "filename" if match_deal(name) else "content"
-
         if deal_id:
-            drive_name = name
-            folder_id = STAGING_FOLDER_ID
-            dest_label = "staging"
-            log.info(f"[{deal_id}] DOCUMENT ({match_source} match) → staging: {name}"
-                     + (" [dry-run]" if dry_run else ""))
+            match_source = "filename" if match_deal(name) else "content"
+            folder_id = DEALS[deal_id]["root_folder_id"]   # straight to the deal folder
+            dest_label = "deal-folder"
+            drive_name = _name_for(deal_id)
+            log.info(f"[{deal_id}] DOCUMENT ({match_source}) → deal folder: "
+                     f"{name} -> {drive_name}" + (" [dry-run]" if dry_run else ""))
 
             if dry_run:
-                return {
-                    "uploaded_at": None,
-                    "dest": dest_label,
-                    "deal": deal_id,
-                    "drive_file_id": None,
-                    "drive_name": drive_name,
-                    "match_source": match_source,
-                    "dry_run": True,
-                }
+                return {"uploaded_at": None, "dest": dest_label, "deal": deal_id,
+                        "drive_file_id": None, "drive_name": drive_name,
+                        "match_source": match_source, "dry_run": True}
 
             file_id = upload_to_drive(path, drive_name, folder_id)
-            log.info(f"  Uploaded → Drive file ID {file_id}")
-            notify(f"TCIP: {deal_id}", f"{name} → staging (Drive Organizer will route)")
+            archived = archive_local(path, drive_name)
+            log.info(f"  Uploaded → {file_id} ({drive_name}); archived → _Uploaded/")
+            notify(f"TCIP: {deal_id}", f"{drive_name} → deal folder")
             return {
                 "uploaded_at": datetime.now(timezone.utc).isoformat(),
-                "dest": dest_label,
-                "deal": deal_id,
-                "drive_file_id": file_id,
-                "drive_name": drive_name,
-                "match_source": match_source,
+                "dest": dest_label, "deal": deal_id, "drive_file_id": file_id,
+                "drive_name": drive_name, "match_source": match_source,
+                "archived_to": str(archived) if archived else None,
             }
         else:
             log.info(f"[skip] No deal match for document: {name}"
@@ -445,11 +462,15 @@ def scan_once(state: dict, dry_run: bool = False):
     skipped = 0
     errors = 0
 
-    try:
-        files = sorted(DOWNLOADS_DIR.iterdir())
-    except OSError as e:
-        log.error(f"Cannot read Downloads folder: {e}")
-        return
+    files = []
+    for wd in WATCH_DIRS:
+        try:
+            for p in sorted(wd.iterdir()):
+                if p.name.startswith(SKIP_DIR_PREFIXES):
+                    continue
+                files.append(p)
+        except OSError as e:
+            log.error(f"Cannot read {wd}: {e}")
 
     for path in files:
         if not path.is_file():
@@ -522,7 +543,7 @@ def main():
 
     log.info("=" * 60)
     log.info(f"local_file_router starting (once={run_once}, dry_run={dry_run})")
-    log.info(f"  Watching: {DOWNLOADS_DIR}")
+    log.info(f"  Watching: {', '.join(str(d) for d in WATCH_DIRS)}")
     log.info(f"  State:    {STATE_PATH}")
     log.info(f"  Log:      {LOG_PATH}")
     log.info("=" * 60)
