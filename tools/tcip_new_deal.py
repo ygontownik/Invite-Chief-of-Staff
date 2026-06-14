@@ -1211,6 +1211,47 @@ def save_instructions_locally(deal_id, instructions):
     print(f"   ✓ Saved Project instructions to {out}")
     return out
 
+
+def create_project_instructions_drive_doc(drive, deal_id, instructions, drive_folder_id):
+    """Create the project_instructions Drive doc and register its ID in drive-docs.yaml.
+
+    Returns the new doc_id, or None on failure.
+
+    Why: without a registered doc_id, /refresh-project-instructions silently skips
+    this deal every time it runs. The Drive doc is the source of truth that the
+    refresh skill reads and pastes into the claude.ai project.
+    """
+    import yaml as _yaml
+
+    title = f"{deal_id}_project_instructions"
+    try:
+        doc_id, _ = create_drive_doc(drive, title, instructions, drive_folder_id)
+        print(f"   ✓ Project instructions Drive doc created — ID: {doc_id}")
+    except Exception as e:
+        print(f"   ⚠️  Could not create project_instructions Drive doc: {e}")
+        return None
+
+    # Register in drive-docs.yaml so /refresh-project-instructions picks it up.
+    drive_docs_yaml = Path.home() / "dashboards" / "config" / "drive-docs.yaml"
+    if not drive_docs_yaml.exists():
+        print(f"   ⚠️  drive-docs.yaml not found at {drive_docs_yaml} — skipping registration")
+        return doc_id
+
+    try:
+        data = _yaml.safe_load(drive_docs_yaml.read_text()) or {}
+        deal_entry = data.setdefault("deal_docs", {}).setdefault(deal_id, {})
+        deal_entry.setdefault("project_instructions", {})["doc_id"] = doc_id
+        deal_entry["project_instructions"]["name"] = title
+        drive_docs_yaml.write_text(
+            _yaml.safe_dump(data, sort_keys=False, allow_unicode=True, width=200)
+        )
+        print(f"   ✓ Registered project_instructions.doc_id in drive-docs.yaml")
+    except Exception as e:
+        print(f"   ⚠️  Could not update drive-docs.yaml: {e} — wire manually: {doc_id}")
+
+    return doc_id
+
+
 # ── CLAUDE CODE ANALYSIS (CLAUDE MAX) ────────────────────────────────────────
 
 def _find_claude_bin():
@@ -1919,6 +1960,9 @@ def main():
         session_log_file_id=session_log_file_id,
     )
     instructions_path = save_instructions_locally(deal_id, instructions)
+    pi_doc_id = create_project_instructions_drive_doc(
+        drive, deal_id, instructions, drive_folder_id
+    )
 
     # ── PHASE 9: UPDATE FIRM CONTEXT ─────────────────────────────────────────
     print("\n─────────────────────────────────")
@@ -1971,6 +2015,7 @@ STEP 2 -- Give the Project URL to Claude Code
 deal_id: {deal_id}
 deal_name: {deal_name}
 instructions_path: {instructions_path}
+project_instructions_doc_id: {pi_doc_id or 'FAILED — wire manually in drive-docs.yaml'}
 status_id: {status_id}
 brief_id: {brief_id}
 outputs_folder_id: {outputs_folder_id}
