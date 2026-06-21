@@ -272,6 +272,8 @@ When writing or updating `actions.md`, apply these rules to keep the list action
 
 **2. Group by workstream.** If 2+ open actions answer the same underlying question or belong to the same workstream, group them under a `### Workstream: <label>` header. Each workstream gets its own table header row. The parser skips section headers, so this is fully compatible with `compile-dashboard.py`.
 
+**2b. Multi-strategy deals — Track → Topic → Subtopic.** For a deal running parallel strategies (e.g. Freedom Fuels: gas stations + refinery), use a 3-level hierarchy: `## TRACK <X — name>` per strategy, `### <Topic>` per workstream, optional `#### <Subtopic>` for sub-groups. `parse_actions` in `compile-dashboard.py` reads these headers and tags every action with `track`/`topic`/`subtopic`; the React deal page (`/portfolio/?deal=<id>`) renders them as a collapsible Track → Topic → Subtopic tree. File each new action under an existing node, or add a node deliberately — never flatten the hierarchy. The 7-column row contract is unchanged.
+
 Format:
 ```markdown
 # Open Actions
