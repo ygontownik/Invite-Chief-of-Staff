@@ -4909,6 +4909,8 @@ Runs async — returns immediately, hook completes in ~30-60 sec on background.<
             self._handle_deal_override()
         elif self.path == '/deal/workstream':
             self._handle_deal_workstream()
+        elif self.path == '/deal/action-dates':
+            self._handle_deal_action_dates()
         elif self.path == '/admin/invite':
             if not self._is_localhost():
                 user = self._authenticate()
@@ -6149,6 +6151,80 @@ function copyInstructions() {{
         except Exception:
             pass
         self.send_json(200, {'ok': True, 'workstreams': workstreams})
+
+    def _handle_deal_action_dates(self):
+        """POST /deal/action-dates — update opened/due on one or more actions.
+        body: {deal_id, changes:[{id, opened?, due?}]}. Rewrites the matching
+        rows in actions.md (canonical) and patches deal-system-data.json so the
+        change reflects immediately; triggers a background recompile."""
+        body = self._read_json_body()
+        if body is None:
+            self.send_json(400, {'ok': False, 'error': 'invalid JSON'}); return
+        deal_id = re.sub(r'[^a-z0-9_-]', '', str(body.get('deal_id') or body.get('ticker') or '').strip().lower())
+        changes = body.get('changes') or []
+        if not deal_id or not isinstance(changes, list) or not changes:
+            self.send_json(400, {'ok': False, 'error': 'deal_id and changes required'}); return
+        actions_path = _ROOT / 'data' / 'deals' / deal_id / 'actions.md'
+        if not actions_path.exists():
+            self.send_json(404, {'ok': False, 'error': 'deal actions not found'}); return
+        DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+        by_id = {}
+        for c in changes:
+            cid = str(c.get('id') or '').strip()
+            if not cid:
+                continue
+            upd = {}
+            for fld in ('opened', 'due'):
+                v = c.get(fld)
+                if v is not None:
+                    v = str(v).strip()
+                    if not DATE_RE.match(v):
+                        self.send_json(400, {'ok': False, 'error': f'bad date: {v}'}); return
+                    upd[fld] = v
+            if upd:
+                by_id[cid] = upd
+        if not by_id:
+            self.send_json(400, {'ok': False, 'error': 'no valid changes'}); return
+        # Rewrite actions.md rows: | # | Action | Owner | Due | Priority | Status | Opened |
+        lines = actions_path.read_text().split('\n')
+        applied = 0
+        for i, line in enumerate(lines):
+            if not line.strip().startswith('|'):
+                continue
+            cells = [c.strip() for c in line.split('|')[1:-1]]
+            if len(cells) < 7 or cells[0] not in by_id:
+                continue
+            upd = by_id[cells[0]]
+            if 'due' in upd:
+                cells[3] = upd['due']
+            if 'opened' in upd:
+                cells[6] = upd['opened']
+            lines[i] = '| ' + ' | '.join(cells) + ' |'
+            applied += 1
+        if applied:
+            actions_path.write_text('\n'.join(lines))
+        # Patch deal-system-data.json for instant reflection on next fetch.
+        try:
+            dsd = json.loads(DEAL_SYSTEM_DATA.read_text())
+            for d in dsd.get('deals', []):
+                if (d.get('id') or d.get('deal_id')) == deal_id:
+                    for a in d.get('actions', []):
+                        if a.get('id') in by_id:
+                            u = by_id[a['id']]
+                            if 'due' in u:
+                                a['due'] = u['due']
+                            if 'opened' in u:
+                                a['opened'] = u['opened']
+                    break
+            DEAL_SYSTEM_DATA.write_text(json.dumps(dsd, indent=2, default=str))
+        except Exception:
+            pass
+        try:
+            subprocess.Popen([sys.executable, COMPILE_SCRIPT],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+        self.send_json(200, {'ok': True, 'applied': applied})
 
     def _handle_routines_kickstart(self):
         # POST /routines/<task>/kickstart  body: {"confirm":"yes"}
